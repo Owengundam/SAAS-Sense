@@ -9,7 +9,7 @@ The repository currently contains a runnable local paid-pilot vertical slice. It
 - Multi-tenant SQLite storage and server-side source/check quotas.
 - Supplier source onboarding with SKU, title, URL, and match terms.
 - Mock provider with realistic fixtures; no account or paid runs required.
-- Apify Website Content Crawler adapter behind a replaceable interface.
+- Apify E-commerce Scraping Tool adapter behind a replaceable interface.
 - Deterministic product matching and availability classification.
 - `IN_STOCK`, `OUT_OF_STOCK`, `UNCERTAIN`, and `SOURCE_ERROR` states.
 - Two-check confirmation before a factual state-change alert.
@@ -66,10 +66,10 @@ Set these only through a secure secret configuration interface:
 ```text
 PROVIDER=apify
 APIFY_API_TOKEN=...
-APIFY_ACTOR_ID=apify~website-content-crawler
+APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 ```
 
-The adapter runs one page at a time with AI summarization disabled. No paid or external run has been performed. Before production, verify the exact Actor input schema, response headers, target-domain permission, and cost using an approved spending cap.
+The primary adapter requests one structured product detail in HTTP mode with optional enrichments and AI summarization disabled. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. No paid or external run has been performed. Before production, verify response fields, target-domain permission, extraction accuracy, and exact cost using an approved spending cap.
 
 ## Shopify integration path
 

@@ -49,6 +49,16 @@ export function classifyObservation(source, providerResult, now = new Date()) {
     };
   }
 
+  if ([STATES.IN_STOCK, STATES.OUT_OF_STOCK].includes(providerResult.availabilityState)) {
+    return {
+      state: providerResult.availabilityState,
+      confidence: Math.min(0.99, 0.9 + matchedTerms.length * 0.03),
+      reason: "Structured provider availability",
+      checkedAt: now.toISOString(),
+      factual: true,
+    };
+  }
+
   const inTerms = source.inStockTerms?.length ? source.inStockTerms : DEFAULT_IN_STOCK_TERMS;
   const outTerms = source.outOfStockTerms?.length ? source.outOfStockTerms : DEFAULT_OUT_OF_STOCK_TERMS;
   const inHits = inTerms.filter((term) => containsTerm(text, term));

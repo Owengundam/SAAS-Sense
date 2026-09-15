@@ -71,7 +71,7 @@ No outreach has been sent.
 
 ## Dependency permission and pricing
 
-Proposed Actor: [Apify Website Content Crawler](https://apify.com/apify/website-content-crawler), maintained by Apify.
+Primary Actor: [Apify E-commerce Scraping Tool](https://apify.com/apify/e-commerce-scraping-tool), maintained by Apify. It accepts product-detail URLs and returns structured product identifiers, variants, pricing, shipping, and stock status. The generic [Website Content Crawler](https://apify.com/apify/website-content-crawler) remains an explicit fallback for unusual public catalogue pages.
 
 Evidence:
 
@@ -86,7 +86,7 @@ Assessment: using the maintained Actor internally to create a derived availabili
 
 Licensing question prepared but not sent:
 
-> We plan to operate `apify/website-content-crawler` from our own Apify account as an internal component of a multi-tenant Shopify app. Merchants provide product-page URLs they are authorized to monitor. We do not expose or resell Actor access and do not republish page content; we store a short evidence excerpt and deliver derived availability/staleness alerts. Is this use permitted under the July 9, 2026 General and Actor Terms on standard self-service plans, or is a separate commercial agreement required?
+> We plan to operate `apify/e-commerce-scraping-tool`, with `apify/website-content-crawler` as a limited fallback, from our own Apify account as internal components of a multi-tenant Shopify app. Merchants provide product-page URLs they are authorized to monitor. We do not expose or resell Actor access and do not republish page content; we store a short evidence excerpt and deliver derived availability/staleness alerts. Is this use permitted under the July 9, 2026 General and Actor Terms on standard self-service plans, or is a separate commercial agreement required?
 
 Compatible alternatives:
 

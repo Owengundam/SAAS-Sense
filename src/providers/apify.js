@@ -1,14 +1,56 @@
-export class ApifyProvider {
-  constructor({ token, actorId = "apify~website-content-crawler", fetchImpl = fetch } = {}) {
-    this.token = token;
-    this.actorId = actorId;
-    this.fetchImpl = fetchImpl;
-  }
+const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
+const CONTENT_CRAWLER_ACTOR_ID = "apify~website-content-crawler";
 
-  async fetchPage(source) {
-    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true`;
-    const input = {
+function firstText(...values) {
+  return values.find((value) => typeof value === "string" && value.trim())?.trim() || "";
+}
+
+function structuredAvailabilityState(item) {
+  const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
+  const value = item.stockStatus ?? item.availability ?? offers?.stockStatus ?? offers?.availability;
+  const booleanValue = item.inStock ?? item.isInStock ?? item.available ?? offers?.inStock;
+  if (booleanValue === true) return "IN_STOCK";
+  if (booleanValue === false) return "OUT_OF_STOCK";
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[^a-z]/gi, "").toLowerCase();
+  if (/outofstock|soldout|unavailable|discontinued/.test(normalized)) return "OUT_OF_STOCK";
+  if (/instock|limitedavailability|preorder/.test(normalized)) return "IN_STOCK";
+  return null;
+}
+
+function availabilityText(item) {
+  const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
+  const value = item.stockStatus ?? item.availability ?? offers?.stockStatus ?? offers?.availability;
+  const state = structuredAvailabilityState(item);
+  if (state === "IN_STOCK") return "In stock";
+  if (state === "OUT_OF_STOCK") return "Out of stock";
+  if (typeof value !== "string") return "";
+  return value;
+}
+
+function ecommerceEvidence(item) {
+  const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
+  const identifiers = item.identifiers || item.productIdentifiers || {};
+  const variants = Array.isArray(item.variants)
+    ? item.variants.slice(0, 10).map((variant) => [
+      variant.name || variant.title,
+      variant.sku,
+      availabilityText(variant),
+    ].filter(Boolean).join(" ")).filter(Boolean)
+    : [];
+  return [
+    firstText(item.name, item.title, item.productName, item.product?.title),
+    firstText(item.sku, item.mpn, item.gtin, item.productId, identifiers.sku, identifiers.mpn, identifiers.gtin),
+    availabilityText(item),
+    offers?.price != null ? `Price ${offers.price} ${offers.priceCurrency || ""}`.trim() : "",
+    firstText(item.shipping, item.shippingInformation, item.description),
+    ...variants,
+  ].filter(Boolean).join(". ");
+}
+
+function buildInput(actorId, source) {
+  if (actorId === CONTENT_CRAWLER_ACTOR_ID) {
+    return {
       startUrls: [{ url: source.url }],
       maxCrawlDepth: 0,
       maxCrawlPages: 1,
@@ -20,6 +62,26 @@ export class ApifyProvider {
       saveMarkdown: false,
       maxConcurrency: 1,
     };
+  }
+  return {
+    detailsUrls: [source.url],
+    scrapeMode: "HTTP",
+    maxProductResults: 1,
+    additionalProperties: false,
+  };
+}
+
+export class ApifyProvider {
+  constructor({ token, actorId = ECOMMERCE_ACTOR_ID, fetchImpl = fetch } = {}) {
+    this.token = token;
+    this.actorId = actorId;
+    this.fetchImpl = fetchImpl;
+  }
+
+  async fetchPage(source) {
+    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true`;
+    const input = buildInput(this.actorId, source);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 70_000);
     try {
@@ -34,12 +96,16 @@ export class ApifyProvider {
       const items = await response.json();
       const item = Array.isArray(items) ? items[0] : null;
       if (!item) return { ok: false, error: "Apify returned no dataset item", runId };
+      const ecommerce = this.actorId !== CONTENT_CRAWLER_ACTOR_ID;
       return {
         ok: true,
         runId,
-        url: item.url || item.crawl?.loadedUrl || source.url,
-        title: item.metadata?.title || "",
-        text: item.text || item.markdown || "",
+        url: item.url || item.productUrl || item.crawl?.loadedUrl || source.url,
+        title: ecommerce
+          ? firstText(item.name, item.title, item.productName, item.product?.title)
+          : item.metadata?.title || "",
+        text: ecommerce ? ecommerceEvidence(item) : item.text || item.markdown || "",
+        availabilityState: ecommerce ? structuredAvailabilityState(item) : null,
       };
     } catch (error) {
       return { ok: false, error: error.name === "AbortError" ? "Apify timeout" : error.message, runId: `apify-error-${Date.now()}` };

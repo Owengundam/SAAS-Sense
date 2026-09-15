@@ -11,7 +11,7 @@ test("Apify adapter fails closed without a token", async () => {
   assert.match(result.error, /not configured/);
 });
 
-test("Apify adapter sends a one-page, robots-aware, no-retry request", async () => {
+test("Apify adapter sends a cost-capped structured product request", async () => {
   let captured;
   const provider = new ApifyProvider({
     token: "secret-token",
@@ -19,8 +19,9 @@ test("Apify adapter sends a one-page, robots-aware, no-retry request", async () 
       captured = { url, options };
       return new Response(JSON.stringify([{
         url: source.url,
-        text: "SKU A-1. In stock.",
-        metadata: { title: "Product A" },
+        name: "Product A",
+        sku: "A-1",
+        offers: { availability: "https://schema.org/InStock", price: 49, priceCurrency: "USD" },
       }]), { status: 200, headers: { "x-apify-actor-run-id": "run-123" } });
     },
   });
@@ -29,12 +30,53 @@ test("Apify adapter sends a one-page, robots-aware, no-retry request", async () 
   assert.equal(result.ok, true);
   assert.equal(result.runId, "run-123");
   assert.equal(result.title, "Product A");
-  assert.equal(body.maxCrawlPages, 1);
-  assert.equal(body.maxCrawlDepth, 0);
-  assert.equal(body.respectRobotsTxtFile, true);
-  assert.equal(body.maxRequestRetries, 0);
+  assert.equal(result.availabilityState, "IN_STOCK");
+  assert.match(result.text, /A-1/);
+  assert.match(result.text, /In stock/);
+  assert.deepEqual(body.detailsUrls, [source.url]);
+  assert.equal(body.scrapeMode, "HTTP");
+  assert.equal(body.maxProductResults, 1);
+  assert.equal(body.additionalProperties, false);
+  assert.match(captured.url, /apify~e-commerce-scraping-tool/);
   assert.match(captured.url, /run-sync-get-dataset-items/);
   assert.doesNotMatch(captured.options.body, /secret-token/);
+});
+
+test("generic content crawler remains an explicit fallback", async () => {
+  let captured;
+  const provider = new ApifyProvider({
+    token: "token",
+    actorId: "apify~website-content-crawler",
+    fetchImpl: async (url, options) => {
+      captured = { url, options };
+      return new Response(JSON.stringify([{
+        url: source.url,
+        text: "SKU A-1. Sold out.",
+        metadata: { title: "Product A" },
+      }]), { status: 200 });
+    },
+  });
+  const result = await provider.fetchPage(source);
+  const body = JSON.parse(captured.options.body);
+  assert.equal(result.ok, true);
+  assert.equal(result.title, "Product A");
+  assert.equal(body.maxCrawlPages, 1);
+  assert.equal(body.respectRobotsTxtFile, true);
+});
+
+test("structured false availability normalizes to out of stock", async () => {
+  const provider = new ApifyProvider({
+    token: "token",
+    fetchImpl: async () => new Response(JSON.stringify([{
+      productUrl: source.url,
+      title: "Product A",
+      sku: "A-1",
+      inStock: false,
+    }]), { status: 200 }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.match(result.text, /Out of stock/);
+  assert.equal(result.availabilityState, "OUT_OF_STOCK");
 });
 
 test("Apify rate limit is returned as a source error", async () => {

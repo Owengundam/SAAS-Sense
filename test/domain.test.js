@@ -32,6 +32,19 @@ test("classifies an explicit sold-out page", () => {
   assert.equal(result.factual, true);
 });
 
+test("prefers structured provider availability over ambiguous page copy", () => {
+  const result = classifyObservation(source, {
+    ok: true,
+    url: "https://supplier.test/a-1",
+    title: "Arc Floor Lamp",
+    text: "Arc Floor Lamp SKU AFL-220. Contact us for available accessories.",
+    availabilityState: "OUT_OF_STOCK",
+  });
+  assert.equal(result.state, STATES.OUT_OF_STOCK);
+  assert.equal(result.factual, true);
+  assert.match(result.reason, /Structured provider/);
+});
+
 test("conflicting stock phrases are uncertain", () => {
   const result = classifyObservation(source, {
     ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp AFL-220",

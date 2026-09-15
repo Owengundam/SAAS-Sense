@@ -18,7 +18,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Provider errors and ambiguous pages stay non-factual.
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
 - Node 24 + built-in SQLite for the local slice; Shopify's official React Router template is the production shell once owner credentials exist.
-- Apify Website Content Crawler is the first production adapter; mock remains the default.
+- Apify E-commerce Scraping Tool is the primary production adapter; the generic Website Content Crawler is an explicit fallback and mock remains the default.
 
 ## Completed
 
@@ -29,6 +29,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Built tenant-isolated data model, quotas, check pipeline, evidence log, alerts, webhooks, provider adapters, dashboard, onboarding form, and billing integration points.
 - Added business, research, legal-draft, and operating records.
 - Local test suite passes.
+- Published `codex/supplier-signal-pilot` and opened GitHub PR #1; its initial CI run passed.
 
 ## Tested locally
 
@@ -53,16 +54,15 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Production blockers
 
-1. The connected GitHub installation can read the new repository but returned `403 Resource not accessible by integration` for branch creation. Grant the GitHub connection access to `Owengundam/SAAS-Sense`; the work is committed locally on `codex/supplier-signal-pilot`.
-2. Owner must connect or create a Shopify developer account and development store.
-3. Owner must approve a small Apify test budget and securely configure the token.
-4. Initial supplier domains must be chosen with merchants who confirm authorization to monitor them.
-5. Company/legal identity, support email, governing law, and business address are needed before public policies or listing submission.
-6. Public deployment, outreach, and App Store submission each require explicit owner authorization.
+1. Owner must connect or create a Shopify developer account and development store.
+2. Owner must approve a small Apify test budget and securely configure the token.
+3. Initial supplier domains must be chosen with merchants who confirm authorization to monitor them.
+4. Company/legal identity, support email, governing law, and business address are needed before public policies or listing submission.
+5. Public deployment, outreach, and App Store submission each require explicit owner authorization.
 
 ## Minimum next owner action
 
-First, grant the ChatGPT GitHub connection repository access to **`Owengundam/SAAS-Sense`** so the local branch can be pushed. Then connect a Shopify developer account with a development store. Separately approve a maximum **$10 Apify test budget** if live extraction validation should begin. Do not paste credentials into chat.
+Connect a Shopify developer account with a development store. Separately approve a maximum **$10 Apify test budget** if live extraction validation should begin. Do not paste credentials into chat.
 
 ## Next execution step
 
