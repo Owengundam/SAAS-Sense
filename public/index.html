@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SupplierSignal — availability confidence for Shopify</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SupplierSignal home">
+        <span class="brand-mark">S</span>
+        <span>SupplierSignal</span>
+      </a>
+      <div class="pilot-badge"><span></span> Pilot workspace · simulated data</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Supplier availability, without blind inventory writes</p>
+          <h1>Know what changed.<br /><em>Trust what didn’t.</em></h1>
+          <p class="hero-copy">Daily checks of supplier product pages, with evidence, stale-data warnings, and a two-check confirmation rule before an alert becomes fact.</p>
+        </div>
+        <button id="run-checks" class="primary">Run all checks <span>↗</span></button>
+      </section>
+
+      <section id="metrics" class="metrics" aria-label="Monitoring summary"></section>
+
+      <section class="panel watchlist-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Daily watchlist</p>
+            <h2>Supplier sources</h2>
+          </div>
+          <button id="show-add" class="secondary">+ Add source</button>
+        </div>
+        <div id="notice" class="notice" hidden></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Product</th><th>Supplier state</th><th>Evidence</th><th>Last checked</th><th></th></tr>
+            </thead>
+            <tbody id="sources"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="lower-grid">
+        <article class="panel">
+          <div class="panel-heading compact"><div><p class="eyebrow">Guardrail</p><h2>Confidence queue</h2></div></div>
+          <div id="queue"></div>
+        </article>
+        <article class="panel dark-panel">
+          <p class="eyebrow">Operating principle</p>
+          <blockquote>“A failed extraction is not an out-of-stock event.”</blockquote>
+          <p class="muted">Only high-confidence, repeated changes become alerts. Everything else stays visible as uncertain or unavailable.</p>
+        </article>
+      </section>
+
+      <section class="plans">
+        <p class="eyebrow">Paid pilot</p>
+        <h2>Small enough to prove, strict enough to stay profitable.</h2>
+        <div class="plan-row">
+          <div><strong>$49</strong><span>/ month</span></div>
+          <p>25 monitored product links · daily checks · 1,500 checks/month · in-app evidence log · assisted setup</p>
+          <span class="outline-tag">No automatic store changes</span>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="add-dialog">
+      <form id="add-form">
+        <div class="dialog-title"><h2>Add a supplier source</h2><button type="button" id="close-dialog" aria-label="Close">×</button></div>
+        <label>Shopify SKU<input name="sku" required placeholder="AFL-220" /></label>
+        <label>Product title<input name="productTitle" required placeholder="Arc Floor Lamp" /></label>
+        <label>Supplier product URL<input name="url" type="url" required placeholder="https://supplier.example/product" /></label>
+        <label>Match terms <small>comma separated</small><input name="matchTerms" placeholder="AFL-220, Arc Floor Lamp" /></label>
+        <p class="form-note">Pilot sources must be public HTTPS pages the merchant is authorized to monitor.</p>
+        <button class="primary" type="submit">Add to watchlist</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
