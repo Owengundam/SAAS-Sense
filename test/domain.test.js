@@ -1,0 +1,103 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { classifyObservation, decideTransition, isStale, STATES } from "../src/domain.js";
+
+const source = {
+  sku: "AFL-220",
+  productTitle: "Arc Floor Lamp",
+  matchTerms: ["AFL-220", "Arc Floor Lamp"],
+  inStockTerms: [],
+  outOfStockTerms: [],
+  lastState: STATES.IN_STOCK,
+  candidateState: null,
+  candidateCount: 0,
+};
+
+test("classifies a matched in-stock page as factual", () => {
+  const result = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. In stock and ships in 3 days.",
+  });
+  assert.equal(result.state, STATES.IN_STOCK);
+  assert.equal(result.factual, true);
+  assert.ok(result.confidence >= 0.8);
+});
+
+test("classifies an explicit sold-out page", () => {
+  const result = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Sold out.",
+  });
+  assert.equal(result.state, STATES.OUT_OF_STOCK);
+  assert.equal(result.factual, true);
+});
+
+test("prefers structured provider availability over ambiguous page copy", () => {
+  const result = classifyObservation(source, {
+    ok: true,
+    url: "https://supplier.test/a-1",
+    title: "Arc Floor Lamp",
+    text: "Arc Floor Lamp SKU AFL-220. Contact us for available accessories.",
+    availabilityState: "OUT_OF_STOCK",
+  });
+  assert.equal(result.state, STATES.OUT_OF_STOCK);
+  assert.equal(result.factual, true);
+  assert.match(result.reason, /Structured provider/);
+});
+
+test("conflicting stock phrases are uncertain", () => {
+  const result = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp AFL-220",
+    text: "In stock for display only. Online item sold out.",
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+});
+
+test("wrong product match is uncertain", () => {
+  const result = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/wrong", title: "Different lamp",
+    text: "In stock.",
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.match(result.reason, /ambiguous/i);
+});
+
+test("missing fields are uncertain, not out of stock", () => {
+  const result = classifyObservation(source, { ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp" });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+});
+
+test("provider failure is a source error, not a stock event", () => {
+  const result = classifyObservation(source, { ok: false, error: "HTTP 503" });
+  assert.equal(result.state, STATES.SOURCE_ERROR);
+  assert.equal(result.factual, false);
+});
+
+test("a transition requires two consistent factual checks", () => {
+  const observation = { state: STATES.OUT_OF_STOCK, factual: true, confidence: 0.92 };
+  const first = decideTransition(source, observation, 2);
+  assert.equal(first.confirmedState, STATES.IN_STOCK);
+  assert.equal(first.candidateCount, 1);
+  assert.equal(first.alert, null);
+  const second = decideTransition({ ...source, candidateState: STATES.OUT_OF_STOCK, candidateCount: 1 }, observation, 2);
+  assert.equal(second.confirmedState, STATES.OUT_OF_STOCK);
+  assert.equal(second.alert.to, STATES.OUT_OF_STOCK);
+});
+
+test("uncertain observations clear pending transitions", () => {
+  const result = decideTransition({ ...source, candidateState: STATES.OUT_OF_STOCK, candidateCount: 1 }, {
+    state: STATES.UNCERTAIN, factual: false, confidence: 0.4,
+  });
+  assert.equal(result.confirmedState, STATES.IN_STOCK);
+  assert.equal(result.candidateState, null);
+  assert.equal(result.alert, null);
+});
+
+test("stale calculation respects the source threshold", () => {
+  const now = new Date("2026-09-15T12:00:00Z");
+  assert.equal(isStale("2026-09-14T00:00:00Z", 24, now), true);
+  assert.equal(isStale("2026-09-15T00:00:00Z", 24, now), false);
+  assert.equal(isStale(null, 24, now), true);
+});

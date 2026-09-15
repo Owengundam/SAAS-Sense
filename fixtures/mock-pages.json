@@ -1,0 +1,20 @@
+{
+  "https://supplier.example/products/arc-floor-lamp": {
+    "url": "https://supplier.example/products/arc-floor-lamp",
+    "title": "Arc Floor Lamp — brushed brass",
+    "text": "Arc Floor Lamp. Brushed brass. SKU AFL-220. In stock. Ships in 3–5 business days.",
+    "runId": "mock-arc-001"
+  },
+  "https://supplier.example/products/luma-side-table": {
+    "url": "https://supplier.example/products/luma-side-table",
+    "title": "Luma Side Table — oak",
+    "text": "Luma Side Table in oak. SKU LST-104. Sold out. Restock date unavailable.",
+    "runId": "mock-luma-001"
+  },
+  "https://supplier.example/products/cloud-chair": {
+    "url": "https://supplier.example/products/cloud-chair",
+    "title": "Cloud Lounge Chair",
+    "text": "Cloud Lounge Chair. SKU CLC-090. Contact us for availability.",
+    "runId": "mock-cloud-001"
+  }
+}

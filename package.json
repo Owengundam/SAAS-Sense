@@ -1,0 +1,17 @@
+{
+  "name": "supplier-signal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only supplier availability monitoring pilot for Shopify merchants",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "DEMO_MODE=true node --watch src/server.js",
+    "test": "node --test",
+    "test:coverage": "node --experimental-test-coverage --test"
+  },
+  "license": "MIT"
+}
