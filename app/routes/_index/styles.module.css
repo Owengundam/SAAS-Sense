@@ -1,0 +1,10 @@
+.page { min-height: 100vh; display: grid; place-items: center; padding: 32px; color: #f4f7f5; background: radial-gradient(circle at 70% 20%, #355d49 0, #14281d 35%, #09120d 100%); }
+.hero { max-width: 860px; }
+.mark { display: inline-block; font-size: 15px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #acd7bd; }
+.hero h1 { font-size: clamp(42px, 7vw, 78px); line-height: .98; letter-spacing: -.045em; margin: 22px 0; }
+.hero p { color: #c2cec6; font-size: 19px; line-height: 1.6; max-width: 720px; }
+.form { display: flex; gap: 10px; margin-top: 30px; }
+.form input { flex: 1; min-width: 220px; border: 1px solid #587260; border-radius: 11px; background: #f8fbf9; color: #15231a; font: inherit; padding: 14px; }
+.form button { border: 0; border-radius: 11px; background: #b7e5c8; color: #0f2116; cursor: pointer; font-weight: 800; padding: 14px 20px; }
+.points { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 34px; color: #8faa98; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+@media (max-width: 640px) { .form { flex-direction: column; } .page { place-items: start; } }

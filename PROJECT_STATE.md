@@ -17,7 +17,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Two consecutive high-confidence observations are required to confirm a change.
 - Provider errors and ambiguous pages stay non-factual.
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
-- Node 24 + built-in SQLite for the local slice; Shopify's official React Router template is the production shell once owner credentials exist.
+- Node 22.12+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
+- Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
 - Apify E-commerce Scraping Tool is the primary production adapter; the generic Website Content Crawler is an explicit fallback and mock remains the default.
 
 ## Completed
@@ -30,6 +31,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added business, research, legal-draft, and operating records.
 - Local test suite passes.
 - Published `codex/supplier-signal-pilot` and opened GitHub PR #1; its initial CI run passed.
+- Added the official Shopify React Router shell, authenticated embedded routes, Prisma sessions, and production webhook handlers.
+- Added a Docker/Railway build; tests, typecheck, and production build pass locally.
 
 ## Tested locally
 
@@ -47,23 +50,23 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Not verified
 
-- Real Shopify install, OAuth/session tokens, Partner API subscription query, or app-plan selection.
+- Real Shopify install/session tokens, Partner API subscription query, or app-plan selection.
 - Real Apify Actor execution, exact runtime cost, timeout behavior, and source-specific extraction accuracy.
 - Scheduling, email delivery, or production observability.
-- Deployment, App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
+- Hosted deployment verification, App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
 
 ## Production blockers
 
-1. Owner must connect or create a Shopify developer account and development store.
-2. Owner must approve a small Apify test budget and securely configure the token.
+1. Owner must create/link the Shopify Partner app and securely configure its client secret in Railway.
+2. Owner must securely configure the Apify token in Railway; the existing $5 credit is the hard test cap.
 3. Initial supplier domains must be chosen with merchants who confirm authorization to monitor them.
 4. Company/legal identity, support email, governing law, and business address are needed before public policies or listing submission.
-5. Public deployment, outreach, and App Store submission each require explicit owner authorization.
+5. App Store submission and paid outreach each require separate explicit owner authorization.
 
 ## Minimum next owner action
 
-Connect a Shopify developer account with a development store. Separately approve a maximum **$10 Apify test budget** if live extraction validation should begin. Do not paste credentials into chat.
+Create or link the Shopify app after the Railway URL exists, then add Shopify and Apify secrets directly in Railway Variables. Do not paste credentials into chat.
 
 ## Next execution step
 
-After Shopify access exists: scaffold the recommended React Router app, integrate this tested core, install it on the dev store, register webhooks, configure a $0 private test plan, and verify tenant/session/billing behavior end to end. In parallel, run capped checks against 3–5 merchant-authorized supplier pages and measure false/uncertain rates.
+Deploy the production shell to Railway, install it on a Shopify development store, verify sessions and webhooks end to end, then run capped checks against 3–5 merchant-authorized supplier pages and measure false/uncertain rates.

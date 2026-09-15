@@ -74,6 +74,10 @@ export function createDatabase(path = ":memory:") {
       shop TEXT,
       processed_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
   const mapSource = (row) => row ? decodeSource({
@@ -114,6 +118,9 @@ export function createDatabase(path = ":memory:") {
     },
     getTenant(shop) {
       return db.prepare("SELECT * FROM tenants WHERE shop = ?").get(shop);
+    },
+    listActiveTenants() {
+      return db.prepare("SELECT * FROM tenants WHERE active = 1 ORDER BY created_at").all();
     },
     disableTenant(shop) {
       db.prepare("UPDATE tenants SET active = 0 WHERE shop = ?").run(shop);
@@ -196,6 +203,13 @@ export function createDatabase(path = ":memory:") {
         if (String(error.message).includes("UNIQUE constraint failed")) return false;
         throw error;
       }
+    },
+    getAppState(key) {
+      return db.prepare("SELECT value FROM app_state WHERE key = ?").get(key)?.value ?? null;
+    },
+    setAppState(key, value) {
+      db.prepare(`INSERT INTO app_state (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(key, String(value));
     },
   };
 }

@@ -2,7 +2,7 @@
 
 SupplierSignal is a read-only supplier availability monitor for small Shopify home, furniture, and lighting retailers. It checks merchant-authorized supplier product pages, validates that the page still matches the expected SKU/product, records evidence, and requires two consistent high-confidence observations before raising a change alert.
 
-The repository currently contains a runnable local paid-pilot vertical slice. It deliberately does **not** edit Shopify inventory, prices, or products.
+The repository contains a Shopify-authenticated production shell and a tested paid-pilot core. It deliberately does **not** edit Shopify inventory, prices, or products.
 
 ## What works
 
@@ -17,23 +17,24 @@ The repository currently contains a runnable local paid-pilot vertical slice. It
 - HMAC verification, webhook deduplication, uninstall disablement, and shop-redaction deletion.
 - Shopify App Pricing redirect and subscription-gate integration points.
 - Responsive merchant dashboard and add-source flow.
+- Shopify's official React Router authentication shell with Prisma session storage.
+- Verified uninstall, scope-change, and privacy webhook endpoints.
+- Docker/Railway production build and health endpoint.
 
 ## Run locally
 
-Requirements: Node.js 24 or newer. There are no third-party runtime dependencies.
+Requirements: Node.js 22.12 or newer.
 
 ```bash
+npm install
 cp .env.example .env
-npm start
-```
-
-Open `http://localhost:3000`. Demo mode is on by default. The dashboard uses simulated supplier pages and simulated subscription state; it is visibly labeled.
-
-Run the tests:
-
-```bash
+npm run setup
 npm test
+npm run typecheck
+npm run build
 ```
+
+For an authenticated development install, create or link the app in the Shopify Dev Dashboard, put its credentials in `.env`, then run `npm run dev`. The legacy mock HTTP harness remains available through `npm run demo` and `npm run start:legacy` for deterministic core testing.
 
 Optional coverage:
 
@@ -41,17 +42,16 @@ Optional coverage:
 npm run test:coverage
 ```
 
-## API routes
+## Production routes
 
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `/health` | GET | Liveness and configured provider mode |
-| `/api/dashboard` | GET | Tenant-scoped sources, observations, alerts, and quota use |
-| `/api/sources` | POST | Add an HTTPS supplier product source |
-| `/api/checks/run` | POST | Check one `sourceId` or all enabled sources |
-| `/webhooks/shopify` | POST | Verified Shopify compliance and uninstall webhooks |
+| `/` | GET | Public landing and Shopify install entry |
+| `/app` | GET/POST | Shopify-authenticated embedded dashboard and actions |
+| `/webhooks/*` | POST | Verified uninstall, scope, and privacy webhooks |
 
-The local demo sends `x-shop-domain` and a demo bearer token. Production must replace this path with session-token verification supplied by Shopify's official React Router template.
+The production shell uses Shopify's official React Router adapter, managed installation, expiring offline tokens, minimal `read_products` scope, and Prisma session storage. The isolated core harness in `src/server.js` remains only for deterministic testing.
 
 ## Provider modes
 
@@ -71,18 +71,20 @@ APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 
 The primary adapter requests one structured product detail in HTTP mode with optional enrichments and AI summarization disabled. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. No paid or external run has been performed. Before production, verify response fields, target-domain permission, extraction accuracy, and exact cost using an approved spending cap.
 
-## Shopify integration path
+## Railway configuration
 
-Shopify currently recommends its CLI-generated React Router template for most apps. This repository keeps the business-critical core framework-independent so it can be tested without credentials. When the owner connects a Shopify developer account and development store:
+Mount a persistent Railway volume at `/data`, then configure these non-secret variables:
 
-1. Run `shopify app init` and choose the React Router template.
-2. Move `src/domain.js`, `src/service.js`, `src/db.js`, and `src/providers/` into the generated app.
-3. Replace demo authentication with `authenticate.admin(request)` from the template.
-4. Query Shopify App Pricing `activeSubscription` through the Partner API and map plan handles to server-side limits.
-5. Register the four required webhook topics in app configuration and call the existing handler only after framework authentication.
-6. Request only `read_products` initially. Do not request write scopes for the pilot.
+```text
+DATABASE_URL=file:/data/shopify.sqlite
+SUPPLIER_DATABASE_PATH=/data/supplier-signal.db
+PROVIDER=mock
+APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
+SCHEDULER_ENABLED=false
+SCOPES=read_products
+```
 
-See `shopify.app.toml.example` for the intended minimum scope and webhook shape. Do not use it as live configuration until placeholder URLs are replaced.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and `APIFY_API_TOKEN` directly in Railway Variables. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
 
 ## Security boundaries
 
@@ -109,4 +111,4 @@ See `shopify.app.toml.example` for the intended minimum scope and webhook shape.
 - **Live verified:** exercised against the real external system.
 - **Deployed:** running at an owner-authorized public or private host.
 
-Current state: implemented and tested locally with mocks; not live verified; not deployed.
+Current state: production shell implemented, typechecked, and built; Railway and live Shopify verification remain pending.
