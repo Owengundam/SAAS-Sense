@@ -73,6 +73,8 @@ No outreach has been sent.
 
 Primary Actor: [Apify E-commerce Scraping Tool](https://apify.com/apify/e-commerce-scraping-tool), maintained by Apify. It accepts product-detail URLs and returns structured product identifiers, variants, pricing, shipping, and stock status. The generic [Website Content Crawler](https://apify.com/apify/website-content-crawler) remains an explicit fallback for unusual public catalogue pages.
 
+The live Actor console showed pricing from $6.00 per 1,000 product details on 2026-09-15. Its current input schema represents `detailsUrls` as an array of `{ "url": "https://…" }` objects. The adapter was updated to that contract after an initial HTTP 400 validation attempt created no run and incurred no recorded usage.
+
 Evidence:
 
 - The listing explicitly says it can be integrated into customer-facing products where customers enter a URL; results are available through API.

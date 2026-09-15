@@ -16,9 +16,9 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 
 | Input | Basis |
 | --- | --- |
-| Structured product extraction | Apify E-commerce Scraping Tool listing: from $1.00/1,000 product details |
+| Structured product extraction | Apify E-commerce Scraping Tool listing observed 2026-09-15: from $6.00/1,000 product details |
 | Generic fallback | Website Content Crawler listing: ~$0.20/1,000 raw HTTP pages or ~$0.50–$5/1,000 browser pages |
-| Expected blend | Assumption: 90% structured at $0.001/product and 10% generic browser fallback at $0.002/page = $0.0011/check |
+| Expected blend | Assumption: 90% structured at $0.006/product and 10% generic browser fallback at $0.002/page = $0.0056/check |
 | Apify account allocation | $19 Starter spread across 10 pilot merchants = $1.90 each |
 | App hosting/database | Assumption: $3–$6 allocated per merchant |
 | Storage/observability/email | Assumption: $0.50–$1.00 per merchant |
@@ -31,13 +31,13 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 | --- | ---: | ---: | ---: |
 | Revenue | $49.00 | $49.00 | $49.00 |
 | Checks/pages | 500 | 750 | 1,500 |
-| Extraction | $0.50 structured | $0.83 blended | $7.50 all-browser stress case |
+| Extraction | $3.00 structured | $4.20 blended | $9.00 structured at the full cap |
 | Apify account allocation | $1.90 | $1.90 | $1.90 |
 | Hosting/database | $3.00 | $4.00 | $6.00 |
 | Storage/observability/email | $0.50 | $0.75 | $1.00 |
 | Platform/payment reserve | $7.35 | $7.35 | $7.35 |
 | Support allowance | $6.00 | $10.00 | $20.00 |
-| **Contribution margin** | **$29.75 (60.7%)** | **$24.17 (49.3%)** | **$5.25 (10.7%)** |
+| **Contribution margin** | **$27.25 (55.6%)** | **$20.80 (42.4%)** | **$3.75 (7.7%)** |
 
 Heavy use remains barely positive under the assumptions. If measured browser cost or support exceeds these values, reduce the check cap, restrict supported domains, charge a source-specific premium, or abandon the configuration. Do not silently subsidize it.
 
@@ -59,7 +59,7 @@ The commercial target is useful only if churn and support are controlled. A reas
 
 - Source count stored on each tenant and enforced before insert.
 - Monthly observation count enforced before provider execution.
-- One-product Actor input, HTTP mode, optional enrichments disabled; AI summary disabled.
+- One-product Actor input, optional enrichments disabled, AI summary disabled, and a $0.01 maximum-charge guard per run.
 - Per-run timeout and small evidence excerpts.
 - Duplicate provider run IDs do not create duplicate observations or alerts.
 

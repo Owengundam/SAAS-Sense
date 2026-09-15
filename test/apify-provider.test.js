@@ -33,12 +33,15 @@ test("Apify adapter sends a cost-capped structured product request", async () =>
   assert.equal(result.availabilityState, "IN_STOCK");
   assert.match(result.text, /A-1/);
   assert.match(result.text, /In stock/);
-  assert.deepEqual(body.detailsUrls, [source.url]);
-  assert.equal(body.scrapeMode, "HTTP");
-  assert.equal(body.maxProductResults, 1);
+  assert.deepEqual(body.detailsUrls, [{ url: source.url }]);
   assert.equal(body.additionalProperties, false);
+  assert.equal(body.additionalPropertiesSearchEngine, false);
+  assert.equal(body.additionalReviewProperties, false);
+  assert.equal(body.scrapeInfluencerProducts, false);
+  assert.equal(body.scrapeReviewsDelivery, false);
   assert.match(captured.url, /apify~e-commerce-scraping-tool/);
   assert.match(captured.url, /run-sync-get-dataset-items/);
+  assert.match(captured.url, /maxTotalChargeUsd=0\.01/);
   assert.doesNotMatch(captured.options.body, /secret-token/);
 });
 
@@ -86,7 +89,18 @@ test("Apify rate limit is returned as a source error", async () => {
   });
   const result = await provider.fetchPage(source);
   assert.equal(result.ok, false);
-  assert.equal(result.error, "Apify HTTP 429");
+  assert.equal(result.error, "Apify HTTP 429: rate limited");
+});
+
+test("Apify error details are whitespace-normalized and bounded", async () => {
+  const provider = new ApifyProvider({
+    token: "token",
+    fetchImpl: async () => new Response(` invalid\n input ${"x".repeat(500)}`, { status: 400 }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /^Apify HTTP 400: invalid input/);
+  assert.ok(result.error.length <= 316);
 });
 
 test("empty Apify dataset fails closed", async () => {

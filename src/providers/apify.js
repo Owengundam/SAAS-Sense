@@ -64,10 +64,13 @@ function buildInput(actorId, source) {
     };
   }
   return {
-    detailsUrls: [source.url],
-    scrapeMode: "HTTP",
-    maxProductResults: 1,
+    detailsUrls: [{ url: source.url }],
     additionalProperties: false,
+    additionalPropertiesSearchEngine: false,
+    additionalReviewProperties: false,
+    disableFallbacks: false,
+    scrapeInfluencerProducts: false,
+    scrapeReviewsDelivery: false,
   };
 }
 
@@ -80,7 +83,7 @@ export class ApifyProvider {
 
   async fetchPage(source) {
     if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true`;
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=0.01`;
     const input = buildInput(this.actorId, source);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 70_000);
@@ -92,7 +95,10 @@ export class ApifyProvider {
         signal: controller.signal,
       });
       const runId = response.headers.get("x-apify-actor-run-id") || `apify-${Date.now()}`;
-      if (!response.ok) return { ok: false, error: `Apify HTTP ${response.status}`, runId };
+      if (!response.ok) {
+        const detail = (await response.text()).replace(/\s+/g, " ").trim().slice(0, 300);
+        return { ok: false, error: `Apify HTTP ${response.status}${detail ? `: ${detail}` : ""}`, runId };
+      }
       const items = await response.json();
       const item = Array.isArray(items) ? items[0] : null;
       if (!item) return { ok: false, error: "Apify returned no dataset item", runId };

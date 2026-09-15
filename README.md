@@ -59,7 +59,7 @@ The production shell uses Shopify's official React Router adapter, managed insta
 
 `PROVIDER=mock` uses `fixtures/mock-pages.json`. Tests can queue malformed, ambiguous, failed, or changing results without spending money.
 
-### Apify — implemented, not live-tested
+### Apify — connected; live contract validation in progress
 
 Set these only through a secure secret configuration interface:
 
@@ -69,7 +69,7 @@ APIFY_API_TOKEN=...
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 ```
 
-The primary adapter requests one structured product detail in HTTP mode with optional enrichments and AI summarization disabled. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. No paid or external run has been performed. Before production, verify response fields, target-domain permission, extraction accuracy, and exact cost using an approved spending cap.
+The primary adapter requests one structured product detail with optional enrichments, reviews, and AI summarization disabled. Each run has a $0.01 maximum-charge guard. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. The first live API attempt on 2026-09-15 exposed an input-schema mismatch and was rejected before an Actor run was created or usage was charged. Before unattended production checks, verify response fields, target-domain permission, extraction accuracy, and exact cost using a successful controlled run.
 
 ## Railway configuration
 
