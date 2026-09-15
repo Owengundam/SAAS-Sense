@@ -49,7 +49,7 @@ export function createAppServer(overrides = {}) {
   const appDb = overrides.db || db;
   const appService = overrides.service || service;
   const appDemoMode = overrides.demoMode ?? demoMode;
-  const publicRoot = overrides.publicRoot || join(root, "public");
+  const publicRoot = overrides.publicRoot || join(root, "legacy-public");
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);

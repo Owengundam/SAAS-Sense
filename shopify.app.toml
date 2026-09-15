@@ -1,0 +1,39 @@
+# Link this file to the owner's app with `npm run config:link` before the first
+# Shopify deployment. The CLI fills client_id without committing secrets.
+client_id = "2ca849887c2376c9eae5b5b9f9ed3243"
+name = "SupplierSignal"
+handle = "supplier-signal"
+application_url = "https://suppliersignal-production.up.railway.app"
+embedded = true
+
+[access_scopes]
+scopes = "read_products"
+
+[auth]
+redirect_urls = [ "https://suppliersignal-production.up.railway.app/auth/callback" ]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "/webhooks/app/uninstalled"
+
+[[webhooks.subscriptions]]
+topics = [ "app/scopes_update" ]
+uri = "/webhooks/app/scopes_update"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/data_request" ]
+uri = "/webhooks/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/redact" ]
+uri = "/webhooks/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "shop/redact" ]
+uri = "/webhooks/shop/redact"
+
+[build]
+automatically_update_urls_on_dev = true

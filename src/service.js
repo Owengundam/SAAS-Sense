@@ -1,11 +1,12 @@
 import { classifyObservation, decideTransition, isStale } from "./domain.js";
 
 export class SupplierSignalService {
-  constructor({ db, provider, confirmationCount = 2, now = () => new Date() }) {
+  constructor({ db, provider, confirmationCount = 2, now = () => new Date(), simulated = true }) {
     this.db = db;
     this.provider = provider;
     this.confirmationCount = confirmationCount;
     this.now = now;
+    this.simulated = simulated;
   }
 
   addSource(shop, input) {
@@ -70,7 +71,7 @@ export class SupplierSignalService {
       stale: isStale(source.lastCheckedAt, source.staleAfterHours, now),
     }));
     return {
-      simulated: true,
+      simulated: this.simulated,
       tenant: {
         shop,
         plan: tenant.plan,

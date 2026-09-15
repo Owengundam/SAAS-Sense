@@ -1,17 +1,55 @@
 {
   "name": "supplier-signal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Read-only supplier availability monitoring pilot for Shopify merchants",
+  "description": "Evidence-backed supplier availability monitoring for Shopify merchants",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22.12"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "DEMO_MODE=true node --watch src/server.js",
+    "build": "react-router build",
+    "dev": "shopify app dev",
+    "dev:web": "DEMO_MODE=true react-router dev",
+    "start": "react-router-serve ./build/server/index.js",
+    "docker-start": "npm run setup && npm run start",
+    "setup": "prisma generate && prisma migrate deploy",
+    "deploy": "shopify app deploy",
+    "config:link": "shopify app config link",
     "test": "node --test",
-    "test:coverage": "node --experimental-test-coverage --test"
+    "test:coverage": "node --experimental-test-coverage --test",
+    "typecheck": "react-router typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.3",
+    "@react-router/dev": "7.18.2",
+    "@react-router/fs-routes": "7.18.2",
+    "@react-router/node": "7.18.2",
+    "@react-router/serve": "7.18.2",
+    "@shopify/app-bridge-react": "^4.2.4",
+    "@shopify/shopify-app-react-router": "^1.1.0",
+    "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
+    "isbot": "^5.1.31",
+    "prisma": "^6.16.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router": "7.18.2",
+    "vite-tsconfig-paths": "^6.0.4"
+  },
+  "devDependencies": {
+    "@shopify/api-codegen-preset": "^2.0.0",
+    "@shopify/polaris-types": "1.0.1",
+    "@types/node": "^25.0.0",
+    "@types/react": "^18.3.25",
+    "@types/react-dom": "^18.3.7",
+    "graphql-config": "^5.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "workspaces": {
+    "packages": [
+      "extensions/*"
+    ]
   },
   "license": "MIT"
 }
