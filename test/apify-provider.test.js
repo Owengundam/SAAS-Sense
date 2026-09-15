@@ -82,6 +82,36 @@ test("structured false availability normalizes to out of stock", async () => {
   assert.equal(result.availabilityState, "OUT_OF_STOCK");
 });
 
+test("structured preorder remains distinct from in stock", async () => {
+  const provider = new ApifyProvider({
+    token: "token",
+    fetchImpl: async () => new Response(JSON.stringify([{
+      productUrl: source.url,
+      title: "Product A",
+      sku: "A-1",
+      available: true,
+      availability: "https://schema.org/PreOrder",
+    }]), { status: 200 }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.match(result.text, /Preorder/);
+  assert.equal(result.availabilityState, "PREORDER");
+});
+
+test("structured discontinued remains distinct from out of stock", async () => {
+  const provider = new ApifyProvider({
+    token: "token",
+    fetchImpl: async () => new Response(JSON.stringify([{
+      productUrl: source.url,
+      title: "Product A",
+      sku: "A-1",
+      stockStatus: "Discontinued",
+    }]), { status: 200 }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.equal(result.availabilityState, "DISCONTINUED");
+});
+
 test("Apify rate limit is returned as a source error", async () => {
   const provider = new ApifyProvider({
     token: "token",

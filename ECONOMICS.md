@@ -45,6 +45,7 @@ Heavy use remains barely positive under the assumptions. If measured browser cos
 
 - A check counts when a provider run is attempted, successful or not.
 - The current cost-safe adapter performs zero internal Actor retries. A future service-level retry can run at most twice, with every attempt counted against the 1,500-check cap.
+- A possible factual change schedules one confirmation 20 minutes later; that confirmation also counts toward the monthly cap.
 - Authentication blocks, CAPTCHA, and repeated parsing uncertainty disable a source pending review rather than retrying indefinitely.
 - Group runs by domain where the provider supports it, but keep idempotent observations per source.
 - AI extraction must be separately metered and cannot be enabled within the $49 plan until measured.

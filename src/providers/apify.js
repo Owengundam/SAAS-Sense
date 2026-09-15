@@ -9,12 +9,16 @@ function structuredAvailabilityState(item) {
   const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
   const value = item.stockStatus ?? item.availability ?? offers?.stockStatus ?? offers?.availability;
   const booleanValue = item.inStock ?? item.isInStock ?? item.available ?? offers?.inStock;
+  if (typeof value === "string") {
+    const normalized = value.replace(/[^a-z]/gi, "").toLowerCase();
+    if (/discontinued|endoflife/.test(normalized)) return "DISCONTINUED";
+    if (/backorder|backordered/.test(normalized)) return "BACKORDERED";
+    if (/preorder|presale/.test(normalized)) return "PREORDER";
+    if (/outofstock|soldout|unavailable/.test(normalized)) return "OUT_OF_STOCK";
+    if (/instock|limitedavailability/.test(normalized)) return "IN_STOCK";
+  }
   if (booleanValue === true) return "IN_STOCK";
   if (booleanValue === false) return "OUT_OF_STOCK";
-  if (typeof value !== "string") return null;
-  const normalized = value.replace(/[^a-z]/gi, "").toLowerCase();
-  if (/outofstock|soldout|unavailable|discontinued/.test(normalized)) return "OUT_OF_STOCK";
-  if (/instock|limitedavailability|preorder/.test(normalized)) return "IN_STOCK";
   return null;
 }
 
@@ -23,7 +27,10 @@ function availabilityText(item) {
   const value = item.stockStatus ?? item.availability ?? offers?.stockStatus ?? offers?.availability;
   const state = structuredAvailabilityState(item);
   if (state === "IN_STOCK") return "In stock";
+  if (state === "PREORDER") return "Preorder";
+  if (state === "BACKORDERED") return "Backordered";
   if (state === "OUT_OF_STOCK") return "Out of stock";
+  if (state === "DISCONTINUED") return "Discontinued";
   if (typeof value !== "string") return "";
   return value;
 }

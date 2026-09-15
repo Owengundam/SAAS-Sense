@@ -27,12 +27,15 @@ function createCore(): Core {
   return { db, service, liveProvider };
 }
 
-async function runDailyChecks(core: Core) {
+async function runScheduledChecks(core: Core) {
   const today = new Date().toISOString().slice(0, 10);
-  if (core.db.getAppState("last_daily_run") === today) return;
-  core.db.setAppState("last_daily_run", today);
   for (const tenant of core.db.listActiveTenants()) {
-    await core.service.checkAll(tenant.shop);
+    const dailyKey = `last_daily_run:${tenant.shop}`;
+    if (core.db.getAppState(dailyKey) !== today) {
+      await core.service.checkAll(tenant.shop);
+      core.db.setAppState(dailyKey, today);
+    }
+    await core.service.checkDueRechecks(tenant.shop);
   }
 }
 
@@ -41,9 +44,9 @@ export function getSupplierSignal(): Core {
   global.supplierSignalCore = core;
 
   if (process.env.SCHEDULER_ENABLED === "true" && !global.supplierSignalScheduler) {
-    const tick = () => runDailyChecks(core).catch((error) =>
+    const tick = () => runScheduledChecks(core).catch((error) =>
       console.error("SupplierSignal scheduled check failed", error));
-    global.supplierSignalScheduler = setInterval(tick, 60 * 60 * 1000);
+    global.supplierSignalScheduler = setInterval(tick, 5 * 60 * 1000);
     setTimeout(tick, 15_000);
   }
   return core;

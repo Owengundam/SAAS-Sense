@@ -32,6 +32,40 @@ test("classifies an explicit sold-out page", () => {
   assert.equal(result.factual, true);
 });
 
+test("does not present preorder or backorder as in stock", () => {
+  const preorder = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Available for pre-order.",
+  });
+  const backordered = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. This item is backordered.",
+  });
+  assert.equal(preorder.state, STATES.PREORDER);
+  assert.equal(backordered.state, STATES.BACKORDERED);
+});
+
+test("distinguishes discontinued products and lead-time-only copy", () => {
+  const discontinued = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. This model is discontinued.",
+  });
+  const leadTime = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Ships in 8 weeks.",
+  });
+  assert.equal(discontinued.state, STATES.DISCONTINUED);
+  assert.equal(leadTime.state, STATES.LEAD_TIME);
+});
+
+test("does not mistake unavailable for available", () => {
+  const result = classifyObservation(source, {
+    ok: true, url: "https://supplier.test/a", title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Currently unavailable.",
+  });
+  assert.equal(result.state, STATES.OUT_OF_STOCK);
+});
+
 test("prefers structured provider availability over ambiguous page copy", () => {
   const result = classifyObservation(source, {
     ok: true,

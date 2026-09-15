@@ -1,12 +1,29 @@
-const DEFAULT_IN_STOCK_TERMS = ["in stock", "available", "ships in", "ready to ship"];
-const DEFAULT_OUT_OF_STOCK_TERMS = ["out of stock", "sold out", "unavailable", "discontinued"];
+const DEFAULT_IN_STOCK_TERMS = ["in stock", "available now", "ready to ship"];
+const DEFAULT_OUT_OF_STOCK_TERMS = ["out of stock", "sold out", "unavailable"];
+const DEFAULT_PREORDER_TERMS = ["preorder", "pre order", "pre-order"];
+const DEFAULT_BACKORDER_TERMS = ["backorder", "back order", "back-order", "backordered"];
+const DEFAULT_DISCONTINUED_TERMS = ["discontinued", "no longer available", "end of life"];
+const DEFAULT_LEAD_TIME_TERMS = ["ships in", "dispatches in", "lead time"];
 
 export const STATES = Object.freeze({
   IN_STOCK: "IN_STOCK",
+  PREORDER: "PREORDER",
+  BACKORDERED: "BACKORDERED",
   OUT_OF_STOCK: "OUT_OF_STOCK",
+  DISCONTINUED: "DISCONTINUED",
+  LEAD_TIME: "LEAD_TIME",
   UNCERTAIN: "UNCERTAIN",
   SOURCE_ERROR: "SOURCE_ERROR",
 });
+
+const FACTUAL_STATES = new Set([
+  STATES.IN_STOCK,
+  STATES.PREORDER,
+  STATES.BACKORDERED,
+  STATES.OUT_OF_STOCK,
+  STATES.DISCONTINUED,
+  STATES.LEAD_TIME,
+]);
 
 function normalize(value) {
   return String(value ?? "")
@@ -17,7 +34,12 @@ function normalize(value) {
 }
 
 function containsTerm(haystack, term) {
-  return haystack.includes(normalize(term));
+  const normalizedTerm = normalize(term);
+  return normalizedTerm && ` ${haystack} `.includes(` ${normalizedTerm} `);
+}
+
+function result(state, reason, checkedAt, confidence = 0.9) {
+  return { state, confidence, reason, checkedAt, factual: true };
 }
 
 export function classifyObservation(source, providerResult, now = new Date()) {
@@ -49,49 +71,49 @@ export function classifyObservation(source, providerResult, now = new Date()) {
     };
   }
 
-  if ([STATES.IN_STOCK, STATES.OUT_OF_STOCK].includes(providerResult.availabilityState)) {
-    return {
-      state: providerResult.availabilityState,
-      confidence: Math.min(0.99, 0.9 + matchedTerms.length * 0.03),
-      reason: "Structured provider availability",
-      checkedAt: now.toISOString(),
-      factual: true,
-    };
+  if (FACTUAL_STATES.has(providerResult.availabilityState)) {
+    return result(
+      providerResult.availabilityState,
+      "Structured provider availability",
+      now.toISOString(),
+      Math.min(0.99, 0.9 + matchedTerms.length * 0.03),
+    );
   }
 
   const inTerms = source.inStockTerms?.length ? source.inStockTerms : DEFAULT_IN_STOCK_TERMS;
   const outTerms = source.outOfStockTerms?.length ? source.outOfStockTerms : DEFAULT_OUT_OF_STOCK_TERMS;
   const inHits = inTerms.filter((term) => containsTerm(text, term));
   const outHits = outTerms.filter((term) => containsTerm(text, term));
+  const preorderHits = DEFAULT_PREORDER_TERMS.filter((term) => containsTerm(text, term));
+  const backorderHits = DEFAULT_BACKORDER_TERMS.filter((term) => containsTerm(text, term));
+  const discontinuedHits = DEFAULT_DISCONTINUED_TERMS.filter((term) => containsTerm(text, term));
+  const leadTimeHits = DEFAULT_LEAD_TIME_TERMS.filter((term) => containsTerm(text, term));
 
-  if (inHits.length > 0 && outHits.length > 0) {
+  const primaryMatches = [
+    [STATES.DISCONTINUED, discontinuedHits],
+    [STATES.BACKORDERED, backorderHits],
+    [STATES.PREORDER, preorderHits],
+    [STATES.OUT_OF_STOCK, outHits],
+    [STATES.IN_STOCK, inHits],
+  ].filter(([, hits]) => hits.length > 0);
+
+  if (primaryMatches.length > 1) {
     return {
       state: STATES.UNCERTAIN,
       confidence: 0.45,
-      reason: `Conflicting availability terms: ${inHits[0]} / ${outHits[0]}`,
+      reason: `Conflicting availability terms: ${primaryMatches.map(([, hits]) => hits[0]).join(" / ")}`,
       checkedAt: now.toISOString(),
       factual: false,
     };
   }
 
-  if (outHits.length > 0) {
-    return {
-      state: STATES.OUT_OF_STOCK,
-      confidence: Math.min(0.99, 0.82 + matchedTerms.length * 0.05),
-      reason: `Matched “${outHits[0]}”`,
-      checkedAt: now.toISOString(),
-      factual: true,
-    };
+  if (primaryMatches.length === 1) {
+    const [state, hits] = primaryMatches[0];
+    return result(state, `Matched “${hits[0]}”`, now.toISOString(), Math.min(0.99, 0.82 + matchedTerms.length * 0.05));
   }
 
-  if (inHits.length > 0) {
-    return {
-      state: STATES.IN_STOCK,
-      confidence: Math.min(0.99, 0.82 + matchedTerms.length * 0.05),
-      reason: `Matched “${inHits[0]}”`,
-      checkedAt: now.toISOString(),
-      factual: true,
-    };
+  if (leadTimeHits.length > 0) {
+    return result(STATES.LEAD_TIME, `Matched “${leadTimeHits[0]}” without an explicit stock statement`, now.toISOString(), 0.82);
   }
 
   return {
