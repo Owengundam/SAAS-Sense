@@ -33,7 +33,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Published `codex/supplier-signal-pilot` and opened GitHub PR #1; its initial CI run passed.
 - Added the official Shopify React Router shell, authenticated embedded routes, Prisma sessions, and production webhook handlers.
 - Added a Docker/Railway build; tests, typecheck, and production build pass locally.
-- Deployed Railway commit `ce924d2` at `https://suppliersignal-production.up.railway.app` in safe mock mode, with persistent `/data` storage and an external `200` health check.
+- Deployed Railway commit `06133f5` at `https://suppliersignal-production.up.railway.app` in safe mock mode, with persistent `/data` storage and an external `200` health check.
+- Linked the repository configuration to the owner's Shopify app client ID; the secret remains only in Railway.
 
 ## Tested locally
 

@@ -1,6 +1,6 @@
 # Link this file to the owner's app with `npm run config:link` before the first
 # Shopify deployment. The CLI fills client_id without committing secrets.
-client_id = ""
+client_id = "2ca849887c2376c9eae5b5b9f9ed3243"
 name = "SupplierSignal"
 handle = "supplier-signal"
 application_url = "https://suppliersignal-production.up.railway.app"
