@@ -34,7 +34,7 @@ npm run typecheck
 npm run build
 ```
 
-For an authenticated development install, create or link the app in the Shopify Dev Dashboard, put its credentials in `.env`, then run `npm run dev`. The legacy mock HTTP harness remains available through `npm run demo` and `npm run start:legacy` for deterministic core testing.
+For an authenticated development install, create or link the app in the Shopify Dev Dashboard, put its credentials in `.env`, then run `npm run dev`. The isolated mock HTTP harness and its `legacy-public/` assets remain available through `npm run demo` and `npm run start:legacy` for deterministic core testing; they are not copied into the production Shopify bundle.
 
 Optional coverage:
 
