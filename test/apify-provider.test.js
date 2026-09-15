@@ -41,7 +41,7 @@ test("Apify adapter sends a cost-capped structured product request", async () =>
   assert.equal(body.scrapeReviewsDelivery, false);
   assert.match(captured.url, /apify~e-commerce-scraping-tool/);
   assert.match(captured.url, /run-sync-get-dataset-items/);
-  assert.match(captured.url, /maxTotalChargeUsd=0\.01/);
+  assert.match(captured.url, /maxTotalChargeUsd=1/);
   assert.doesNotMatch(captured.options.body, /secret-token/);
 });
 

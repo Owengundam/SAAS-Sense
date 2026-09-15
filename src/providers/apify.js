@@ -83,7 +83,7 @@ export class ApifyProvider {
 
   async fetchPage(source) {
     if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=0.01`;
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=1`;
     const input = buildInput(this.actorId, source);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 70_000);

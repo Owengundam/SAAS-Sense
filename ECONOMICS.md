@@ -59,7 +59,7 @@ The commercial target is useful only if churn and support are controlled. A reas
 
 - Source count stored on each tenant and enforced before insert.
 - Monthly observation count enforced before provider execution.
-- One-product Actor input, optional enrichments disabled, AI summary disabled, and a $0.01 maximum-charge guard per run.
+- One-product Actor input, optional enrichments disabled, AI summary disabled, and Apify's minimum supported $1 maximum-charge guard per run. Normal expected product-detail usage remains about $0.006 per successful product at the current listed rate.
 - Per-run timeout and small evidence excerpts.
 - Duplicate provider run IDs do not create duplicate observations or alerts.
 
