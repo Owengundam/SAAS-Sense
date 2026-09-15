@@ -78,6 +78,7 @@ Mount a persistent Railway volume at `/data`, then configure these non-secret va
 ```text
 DATABASE_URL=file:/data/shopify.sqlite
 SUPPLIER_DATABASE_PATH=/data/supplier-signal.db
+PORT=3000
 PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SCHEDULER_ENABLED=false
@@ -111,4 +112,4 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and `APIFY_API_T
 - **Live verified:** exercised against the real external system.
 - **Deployed:** running at an owner-authorized public or private host.
 
-Current state: production shell implemented, typechecked, and built; Railway and live Shopify verification remain pending.
+Current state: the production shell is deployed at `https://suppliersignal-production.up.railway.app`, with its external health check passing. It remains in safe mock mode until Shopify and Apify credentials are configured and verified.

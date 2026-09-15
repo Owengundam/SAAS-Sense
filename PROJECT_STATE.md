@@ -33,6 +33,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Published `codex/supplier-signal-pilot` and opened GitHub PR #1; its initial CI run passed.
 - Added the official Shopify React Router shell, authenticated embedded routes, Prisma sessions, and production webhook handlers.
 - Added a Docker/Railway build; tests, typecheck, and production build pass locally.
+- Deployed Railway commit `ce924d2` at `https://suppliersignal-production.up.railway.app` in safe mock mode, with persistent `/data` storage and an external `200` health check.
 
 ## Tested locally
 
@@ -53,7 +54,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Real Shopify install/session tokens, Partner API subscription query, or app-plan selection.
 - Real Apify Actor execution, exact runtime cost, timeout behavior, and source-specific extraction accuracy.
 - Scheduling, email delivery, or production observability.
-- Hosted deployment verification, App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
+- Authenticated Shopify installation, App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
 
 ## Production blockers
 
@@ -69,4 +70,4 @@ Create or link the Shopify app after the Railway URL exists, then add Shopify an
 
 ## Next execution step
 
-Deploy the production shell to Railway, install it on a Shopify development store, verify sessions and webhooks end to end, then run capped checks against 3–5 merchant-authorized supplier pages and measure false/uncertain rates.
+Link the live Railway URL to the Shopify Partner app, install it on a Shopify development store, verify sessions and webhooks end to end, then run capped checks against 3–5 merchant-authorized supplier pages and measure false/uncertain rates.

@@ -3,14 +3,14 @@
 client_id = ""
 name = "SupplierSignal"
 handle = "supplier-signal"
-application_url = "https://REPLACE_AFTER_RAILWAY_DEPLOY"
+application_url = "https://suppliersignal-production.up.railway.app"
 embedded = true
 
 [access_scopes]
 scopes = "read_products"
 
 [auth]
-redirect_urls = [ "https://REPLACE_AFTER_RAILWAY_DEPLOY/auth/callback" ]
+redirect_urls = [ "https://suppliersignal-production.up.railway.app/auth/callback" ]
 
 [webhooks]
 api_version = "2026-07"
