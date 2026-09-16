@@ -34,7 +34,7 @@ test("Apify adapter sends a cost-capped structured product request", async () =>
   assert.match(result.text, /A-1/);
   assert.match(result.text, /In stock/);
   assert.deepEqual(body.detailsUrls, [{ url: source.url }]);
-  assert.equal(body.additionalProperties, false);
+  assert.equal(body.additionalProperties, true);
   assert.equal(body.additionalPropertiesSearchEngine, false);
   assert.equal(body.additionalReviewProperties, false);
   assert.equal(body.scrapeInfluencerProducts, false);
@@ -43,6 +43,24 @@ test("Apify adapter sends a cost-capped structured product request", async () =>
   assert.match(captured.url, /run-sync-get-dataset-items/);
   assert.match(captured.url, /maxTotalChargeUsd=1/);
   assert.doesNotMatch(captured.options.body, /secret-token/);
+});
+
+test("additional product properties are preserved as AI-readable evidence", async () => {
+  const provider = new ApifyProvider({
+    token: "token",
+    fetchImpl: async () => new Response(JSON.stringify([{
+      productUrl: source.url,
+      title: "A Light in the Attic",
+      sku: "TEST-BOOK-001",
+      additionalProperties: {
+        Availability: "In stock (22 available)",
+        "Product Type": "Books",
+      },
+    }]), { status: 200 }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.match(result.text, /Availability: In stock \(22 available\)/);
+  assert.match(result.text, /Product Type: Books/);
 });
 
 test("generic content crawler remains an explicit fallback", async () => {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyObservation, decideTransition, isStale, STATES } from "../src/domain.js";
+import { classifyObservation, decideTransition, incorporateAiObservation, isStale, STATES } from "../src/domain.js";
 
 const source = {
   sku: "AFL-220",
@@ -107,6 +107,72 @@ test("provider failure is a source error, not a stock event", () => {
   const result = classifyObservation(source, { ok: false, error: "HTTP 503" });
   assert.equal(result.state, STATES.SOURCE_ERROR);
   assert.equal(result.factual, false);
+});
+
+test("AI can turn unrecognized captured wording into verified availability", () => {
+  const providerResult = {
+    ok: true,
+    url: "https://supplier.test/book",
+    title: "A Light in the Attic",
+    text: "TEST-BOOK-001. Availability: In stock (22 available)",
+  };
+  const deterministic = {
+    state: STATES.UNCERTAIN,
+    confidence: 0.55,
+    reason: "No recognized availability statement",
+    checkedAt: "2026-09-16T08:43:00.000Z",
+    factual: false,
+  };
+  const result = incorporateAiObservation(deterministic, providerResult, {
+    ok: true,
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: "In stock (22 available)",
+    confidence: 0.96,
+  });
+  assert.equal(result.state, STATES.IN_STOCK);
+  assert.equal(result.factual, true);
+  assert.match(result.reason, /AI verified/);
+});
+
+test("AI cannot promote a fabricated evidence quote into a fact", () => {
+  const deterministic = {
+    state: STATES.UNCERTAIN,
+    confidence: 0.55,
+    reason: "No recognized availability statement",
+    checkedAt: "2026-09-16T08:43:00.000Z",
+    factual: false,
+  };
+  const result = incorporateAiObservation(deterministic, { text: "Contact the supplier for details." }, {
+    ok: true,
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: "In stock now",
+    confidence: 0.99,
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+  assert.match(result.reason, /could not be verified/);
+});
+
+test("rules and AI disagreement stays uncertain", () => {
+  const deterministic = {
+    state: STATES.OUT_OF_STOCK,
+    confidence: 0.9,
+    reason: "Matched sold out",
+    checkedAt: "2026-09-16T08:43:00.000Z",
+    factual: true,
+  };
+  const result = incorporateAiObservation(deterministic, { text: "In stock for display only. Online item sold out." }, {
+    ok: true,
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: "In stock",
+    confidence: 0.94,
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+  assert.match(result.reason, /conflict/);
 });
 
 test("a transition requires two consistent factual checks", () => {

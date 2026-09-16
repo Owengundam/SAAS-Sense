@@ -11,7 +11,13 @@ function setup(overrides = {}) {
   db.upsertTenant({ shop: "b.myshopify.com", demoToken: "b", sourceLimit: 5, monthlyCheckLimit: 20 });
   const provider = new MockProvider({ fixtures: {} });
   const clock = { value: new Date("2026-09-15T12:00:00Z") };
-  const service = new SupplierSignalService({ db, provider, now: () => clock.value, recheckDelayMinutes: 20 });
+  const service = new SupplierSignalService({
+    db,
+    provider,
+    evidenceReader: overrides.evidenceReader,
+    now: () => clock.value,
+    recheckDelayMinutes: 20,
+  });
   return { db, provider, service, clock };
 }
 
@@ -25,6 +31,48 @@ function add(service, shop = "a.myshopify.com") {
 const page = (runId, stockText) => ({
   ok: true, runId, url: "https://supplier.test/arc", title: "Arc Floor Lamp",
   text: `SKU AFL-220. ${stockText}`,
+});
+
+test("AI evidence reader participates before transition decisions", async () => {
+  const calls = [];
+  const evidenceReader = {
+    async analyze(source, providerResult) {
+      calls.push({ source, providerResult });
+      return {
+        ok: true,
+        productMatch: "MATCH",
+        availability: "IN_STOCK",
+        evidenceQuote: "Only a few copies remain",
+        confidence: 0.95,
+      };
+    },
+  };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [{
+    ok: true,
+    runId: "ai-run",
+    url: source.url,
+    title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Only a few copies remain.",
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(calls.length, 1);
+  assert.equal(result.observation.state, STATES.IN_STOCK);
+  assert.match(result.observation.reason, /AI verified/);
+  assert.equal(result.source.lastState, STATES.IN_STOCK);
+  db.close();
+});
+
+test("AI outage falls back to deterministic classification", async () => {
+  const evidenceReader = { async analyze() { return { ok: false, error: "rate limited" }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [page("ai-down", "In stock")]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.IN_STOCK);
+  assert.match(result.observation.reason, /Matched/);
+  db.close();
 });
 
 test("source records are tenant-isolated", () => {

@@ -1,9 +1,10 @@
-import { classifyObservation, decideTransition, isStale } from "./domain.js";
+import { classifyObservation, decideTransition, incorporateAiObservation, isStale } from "./domain.js";
 
 export class SupplierSignalService {
-  constructor({ db, provider, confirmationCount = 2, recheckDelayMinutes = 20, now = () => new Date(), simulated = true }) {
+  constructor({ db, provider, evidenceReader = null, confirmationCount = 2, recheckDelayMinutes = 20, now = () => new Date(), simulated = true }) {
     this.db = db;
     this.provider = provider;
+    this.evidenceReader = evidenceReader;
     this.confirmationCount = confirmationCount;
     this.recheckDelayMinutes = recheckDelayMinutes;
     this.now = now;
@@ -55,7 +56,17 @@ export class SupplierSignalService {
     if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
 
     const providerResult = await this.provider.fetchPage(source);
-    const observation = classifyObservation(source, providerResult, this.now());
+    const checkedAt = this.now();
+    let observation = classifyObservation(source, providerResult, checkedAt);
+    if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState) {
+      let aiResult;
+      try {
+        aiResult = await this.evidenceReader.analyze(source, providerResult);
+      } catch (error) {
+        aiResult = { ok: false, error: error.message };
+      }
+      observation = incorporateAiObservation(observation, providerResult, aiResult);
+    }
     const providerRunId = providerResult.runId || `${source.id}-${observation.checkedAt}`;
     const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
     if (!inserted.inserted) return { duplicate: true, source: this.db.getSource(shop, source.id), observation };

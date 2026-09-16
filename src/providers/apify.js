@@ -45,14 +45,40 @@ function ecommerceEvidence(item) {
       availabilityText(variant),
     ].filter(Boolean).join(" ")).filter(Boolean)
     : [];
+  const additional = flattenEvidence(
+    item.additionalProperties ?? item.additional_properties ?? item.properties,
+  );
   return [
     firstText(item.name, item.title, item.productName, item.product?.title),
     firstText(item.sku, item.mpn, item.gtin, item.productId, identifiers.sku, identifiers.mpn, identifiers.gtin),
     availabilityText(item),
     offers?.price != null ? `Price ${offers.price} ${offers.priceCurrency || ""}`.trim() : "",
     firstText(item.shipping, item.shippingInformation, item.description),
+    firstText(item.text, item.markdown, item.content, item.bodyText),
     ...variants,
+    ...additional,
   ].filter(Boolean).join(". ");
+}
+
+function flattenEvidence(value, prefix = "", output = [], depth = 0) {
+  if (value == null || depth > 3 || output.length >= 40) return output;
+  if (["string", "number", "boolean"].includes(typeof value)) {
+    const text = String(value).replace(/\s+/g, " ").trim().slice(0, 1_000);
+    if (text) output.push(prefix ? `${prefix}: ${text}` : text);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 20)) flattenEvidence(item, prefix, output, depth + 1);
+    return output;
+  }
+  if (typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      if (/image|thumbnail|review|rating/i.test(key)) continue;
+      flattenEvidence(item, prefix ? `${prefix} ${key}` : key, output, depth + 1);
+      if (output.length >= 40) break;
+    }
+  }
+  return output;
 }
 
 function buildInput(actorId, source) {
@@ -72,7 +98,7 @@ function buildInput(actorId, source) {
   }
   return {
     detailsUrls: [{ url: source.url }],
-    additionalProperties: false,
+    additionalProperties: true,
     additionalPropertiesSearchEngine: false,
     additionalReviewProperties: false,
     disableFallbacks: false,

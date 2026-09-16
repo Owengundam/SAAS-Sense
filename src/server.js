@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createDatabase } from "./db.js";
 import { MockProvider } from "./providers/mock.js";
 import { ApifyProvider } from "./providers/apify.js";
+import { SiliconFlowEvidenceReader } from "./providers/siliconflow.js";
 import { SupplierSignalService } from "./service.js";
 import { authenticateRequest } from "./security.js";
 import { handleShopifyWebhook } from "./shopify/webhooks.js";
@@ -20,7 +21,13 @@ if (demoMode) seedDemo(db);
 const provider = process.env.PROVIDER === "apify"
   ? new ApifyProvider({ token: process.env.APIFY_API_TOKEN, actorId: process.env.APIFY_ACTOR_ID })
   : new MockProvider({ fixturePath: join(root, "fixtures", "mock-pages.json") });
-const service = new SupplierSignalService({ db, provider });
+const evidenceReader = process.env.SILICONFLOW_API_KEY
+  ? new SiliconFlowEvidenceReader({
+    token: process.env.SILICONFLOW_API_KEY,
+    model: process.env.SILICONFLOW_MODEL,
+  })
+  : null;
+const service = new SupplierSignalService({ db, provider, evidenceReader });
 
 const mime = {
   ".html": "text/html; charset=utf-8",

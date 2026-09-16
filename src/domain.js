@@ -42,6 +42,66 @@ function result(state, reason, checkedAt, confidence = 0.9) {
   return { state, confidence, reason, checkedAt, factual: true };
 }
 
+function evidenceIncludesQuote(evidence, quote) {
+  const normalizedEvidence = String(evidence ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const normalizedQuote = String(quote ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return normalizedQuote.length >= 3 && normalizedEvidence.includes(normalizedQuote);
+}
+
+export function incorporateAiObservation(deterministic, providerResult, aiResult) {
+  if (!aiResult?.ok) return deterministic;
+
+  if (aiResult.productMatch !== "MATCH") {
+    return {
+      state: STATES.UNCERTAIN,
+      confidence: Math.min(Number(aiResult.confidence) || 0, 0.6),
+      reason: `AI product match ${String(aiResult.productMatch).toLowerCase()}`,
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    };
+  }
+
+  if (aiResult.availability === "UNKNOWN") return deterministic;
+
+  if (!FACTUAL_STATES.has(aiResult.availability) || !evidenceIncludesQuote(providerResult?.text, aiResult.evidenceQuote)) {
+    return {
+      state: STATES.UNCERTAIN,
+      confidence: 0.4,
+      reason: "AI availability evidence could not be verified in the captured page text",
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    };
+  }
+
+  const confidence = Math.min(Number(aiResult.confidence) || 0, 0.97);
+  if (confidence < 0.8) {
+    return {
+      state: STATES.UNCERTAIN,
+      confidence,
+      reason: "AI availability reading was below the confidence threshold",
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    };
+  }
+
+  if (deterministic.factual && deterministic.state !== aiResult.availability) {
+    return {
+      state: STATES.UNCERTAIN,
+      confidence: Math.min(confidence, deterministic.confidence, 0.6),
+      reason: `Rules and AI conflict (${deterministic.state} / ${aiResult.availability})`,
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    };
+  }
+
+  return result(
+    aiResult.availability,
+    `AI verified “${aiResult.evidenceQuote}”`,
+    deterministic.checkedAt,
+    confidence,
+  );
+}
+
 export function classifyObservation(source, providerResult, now = new Date()) {
   if (!providerResult || providerResult.ok === false) {
     return {

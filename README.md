@@ -10,7 +10,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 - Supplier source onboarding with SKU, title, URL, and match terms.
 - Mock provider with realistic fixtures; no account or paid runs required.
 - Apify E-commerce Scraping Tool adapter behind a replaceable interface.
-- Deterministic product matching and availability classification.
+- Deterministic classification plus a constrained SiliconFlow/DeepSeek evidence reader when structured availability is absent.
 - Distinct available-now, preorder, backordered, out-of-stock, discontinued, lead-time, uncertain, and source-error states.
 - Two-check confirmation before a factual state-change alert, with a due time for a fast 20-minute confirmation.
 - Stale-result visibility, source links, timestamps, evidence excerpts, classification reasons, and an uncertainty queue.
@@ -70,7 +70,18 @@ APIFY_API_TOKEN=...
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 ```
 
-The primary adapter requests one structured product detail with optional enrichments, reviews, and AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard; normal input is still restricted to one URL and the current listed product-detail event price is about $0.006. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. A controlled live run completed successfully for $0.01 and correctly remained uncertain when the page contained no recognizable availability statement. Before unattended checks, measure extraction accuracy and cost across several merchant-authorized supplier domains.
+The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard; normal input is still restricted to one URL and the current listed product-detail event price is about $0.006 before extra-property events. Set `APIFY_ACTOR_ID=apify~website-content-crawler` only as an explicit fallback for unusual public catalogue pages that the e-commerce Actor cannot parse. A controlled live run completed successfully for $0.01 and correctly remained uncertain when the page contained no recognizable availability statement. Before unattended checks, measure extraction accuracy and cost across several merchant-authorized supplier domains.
+
+### SiliconFlow DeepSeek — implemented; live verification pending
+
+When Apify does not return a structured availability state, SupplierSignal can send a bounded evidence excerpt to `deepseek-ai/DeepSeek-V4-Flash` through SiliconFlow. The request disables thinking, exposes no tools, and requires a strict JSON-schema response. A factual AI result is accepted only when the model matches the expected product, confidence is at least 0.8, and its verbatim evidence quote exists in the captured page text. Rules-versus-AI conflicts remain uncertain, model failures fall back to deterministic classification, and the two-check transition rule still applies.
+
+Configure these only through the deployment host's secret interface:
+
+```text
+SILICONFLOW_API_KEY=...
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+```
 
 ## Railway configuration
 
@@ -82,11 +93,12 @@ SUPPLIER_DATABASE_PATH=/data/supplier-signal.db
 PORT=3000
 PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and `APIFY_API_TOKEN` directly in Railway Variables. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
 
 ## Security boundaries
 
@@ -96,6 +108,7 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and `APIFY_API_T
 - Only HTTPS source URLs are accepted.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.
+- Supplier-page text is untrusted model input; the AI receives no tools, and every factual quote is verified server-side.
 - The pilot stores no customer, order, or payment data.
 
 ## Project documents
