@@ -17,8 +17,8 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 | Input | Basis |
 | --- | --- |
 | Structured product extraction | Apify E-commerce Scraping Tool listing observed 2026-09-15: from $6.00/1,000 product details |
-| Generic fallback | Website Content Crawler listing: ~$0.20/1,000 raw HTTP pages or ~$0.50–$5/1,000 browser pages |
-| Expected blend | Assumption: 90% structured at $0.006/product and 10% generic browser fallback at $0.002/page = $0.0056/check |
+| Generic fallback | Website Content Crawler listing: ~$0.20/1,000 raw HTTP pages or ~$0.50–$5/1,000 browser pages; now invoked automatically when structured availability is absent |
+| Expected blend | Illustrative assumption: 90% structured-only at $0.006/product and 10% structured plus generic fallback at $0.002/page = $0.0062/check |
 | AI evidence fallback | SiliconFlow DeepSeek V4 Flash observed 2026-09-16: off-peak ¥1.5/M input and ¥4.5/M output; otherwise ¥3/M input and ¥9/M output |
 | Apify account allocation | $19 Starter spread across 10 pilot merchants = $1.90 each |
 | App hosting/database | Assumption: $3–$6 allocated per merchant |

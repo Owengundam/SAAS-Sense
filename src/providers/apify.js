@@ -114,10 +114,9 @@ export class ApifyProvider {
     this.fetchImpl = fetchImpl;
   }
 
-  async fetchPage(source) {
-    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(this.actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=1`;
-    const input = buildInput(this.actorId, source);
+  async fetchFromActor(actorId, source) {
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=1`;
+    const input = buildInput(actorId, source);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 70_000);
     try {
@@ -135,7 +134,7 @@ export class ApifyProvider {
       const items = await response.json();
       const item = Array.isArray(items) ? items[0] : null;
       if (!item) return { ok: false, error: "Apify returned no dataset item", runId };
-      const ecommerce = this.actorId !== CONTENT_CRAWLER_ACTOR_ID;
+      const ecommerce = actorId !== CONTENT_CRAWLER_ACTOR_ID;
       return {
         ok: true,
         runId,
@@ -151,5 +150,27 @@ export class ApifyProvider {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  async fetchPage(source) {
+    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
+
+    const primary = await this.fetchFromActor(this.actorId, source);
+    const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
+      (!primary.ok || !primary.availabilityState);
+    if (!shouldFallback) return primary;
+
+    const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
+    if (!fallback.ok) return { ...primary, fallbackError: fallback.error };
+    if (!primary.ok) return { ...fallback, fallbackUsed: true, primaryError: primary.error };
+
+    return {
+      ...primary,
+      runId: `${primary.runId}+${fallback.runId}`,
+      url: fallback.url || primary.url,
+      title: primary.title || fallback.title,
+      text: [fallback.text, primary.text].filter(Boolean).join("\n\n"),
+      fallbackUsed: true,
+    };
   }
 }
