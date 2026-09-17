@@ -40,6 +40,7 @@ export function createDatabase(path = ":memory:") {
       candidate_state TEXT,
       candidate_count INTEGER NOT NULL DEFAULT 0,
       last_checked_at TEXT,
+      next_recheck_at TEXT,
       stale_after_hours INTEGER NOT NULL DEFAULT 36,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
@@ -79,6 +80,8 @@ export function createDatabase(path = ":memory:") {
       value TEXT NOT NULL
     );
   `);
+  const sourceColumns = new Set(db.prepare("PRAGMA table_info(sources)").all().map((column) => column.name));
+  if (!sourceColumns.has("next_recheck_at")) db.exec("ALTER TABLE sources ADD COLUMN next_recheck_at TEXT");
 
   const mapSource = (row) => row ? decodeSource({
     id: row.id,
@@ -93,6 +96,7 @@ export function createDatabase(path = ":memory:") {
     candidateState: row.candidate_state,
     candidateCount: row.candidate_count,
     lastCheckedAt: row.last_checked_at,
+    nextRecheckAt: row.next_recheck_at,
     staleAfterHours: row.stale_after_hours,
     enabled: row.enabled,
     createdAt: row.created_at,
@@ -156,11 +160,27 @@ export function createDatabase(path = ":memory:") {
     listSources(shop) {
       return db.prepare("SELECT * FROM sources WHERE shop = ? ORDER BY created_at").all(shop).map(mapSource);
     },
-    updateTransition(shop, id, transition, checkedAt) {
-      db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?, last_checked_at=?
+    listDueRechecks(shop, now = new Date(), limit = 25) {
+      return db.prepare(`SELECT * FROM sources WHERE shop = ? AND enabled = 1
+        AND next_recheck_at IS NOT NULL AND next_recheck_at <= ? ORDER BY next_recheck_at LIMIT ?`)
+        .all(shop, now.toISOString(), limit).map(mapSource);
+    },
+    updateSource(shop, id, input) {
+      const result = db.prepare(`UPDATE sources SET sku=?, product_title=?, url=?, match_terms=?,
+        last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL, next_recheck_at=NULL
+        WHERE shop=? AND id=?`).run(
+        input.sku, input.productTitle, input.url, JSON.stringify(input.matchTerms || []), shop, id,
+      );
+      return result.changes ? this.getSource(shop, id) : null;
+    },
+    deleteSource(shop, id) {
+      return db.prepare("DELETE FROM sources WHERE shop = ? AND id = ?").run(shop, id).changes > 0;
+    },
+    updateTransition(shop, id, transition, checkedAt, nextRecheckAt = null) {
+      db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?, last_checked_at=?, next_recheck_at=?
         WHERE shop=? AND id=?`).run(
         transition.confirmedState || null, transition.candidateState || null,
-        transition.candidateCount || 0, checkedAt, shop, id,
+        transition.candidateCount || 0, checkedAt, nextRecheckAt, shop, id,
       );
     },
     insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "") {

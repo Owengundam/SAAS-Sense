@@ -10,8 +10,15 @@ function setup(overrides = {}) {
   db.upsertTenant({ shop: "a.myshopify.com", demoToken: "a", sourceLimit: overrides.sourceLimit ?? 5, monthlyCheckLimit: overrides.checkLimit ?? 20 });
   db.upsertTenant({ shop: "b.myshopify.com", demoToken: "b", sourceLimit: 5, monthlyCheckLimit: 20 });
   const provider = new MockProvider({ fixtures: {} });
-  const service = new SupplierSignalService({ db, provider, now: () => new Date("2026-09-15T12:00:00Z") });
-  return { db, provider, service };
+  const clock = { value: new Date("2026-09-15T12:00:00Z") };
+  const service = new SupplierSignalService({
+    db,
+    provider,
+    evidenceReader: overrides.evidenceReader,
+    now: () => clock.value,
+    recheckDelayMinutes: 20,
+  });
+  return { db, provider, service, clock };
 }
 
 function add(service, shop = "a.myshopify.com") {
@@ -24,6 +31,48 @@ function add(service, shop = "a.myshopify.com") {
 const page = (runId, stockText) => ({
   ok: true, runId, url: "https://supplier.test/arc", title: "Arc Floor Lamp",
   text: `SKU AFL-220. ${stockText}`,
+});
+
+test("AI evidence reader participates before transition decisions", async () => {
+  const calls = [];
+  const evidenceReader = {
+    async analyze(source, providerResult) {
+      calls.push({ source, providerResult });
+      return {
+        ok: true,
+        productMatch: "MATCH",
+        availability: "IN_STOCK",
+        evidenceQuote: "Only a few copies remain",
+        confidence: 0.95,
+      };
+    },
+  };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [{
+    ok: true,
+    runId: "ai-run",
+    url: source.url,
+    title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Only a few copies remain.",
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(calls.length, 1);
+  assert.equal(result.observation.state, STATES.IN_STOCK);
+  assert.match(result.observation.reason, /AI verified/);
+  assert.equal(result.source.lastState, STATES.IN_STOCK);
+  db.close();
+});
+
+test("AI outage falls back to deterministic classification", async () => {
+  const evidenceReader = { async analyze() { return { ok: false, error: "rate limited" }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [page("ai-down", "In stock")]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.IN_STOCK);
+  assert.match(result.observation.reason, /Matched/);
+  db.close();
 });
 
 test("source records are tenant-isolated", () => {
@@ -86,6 +135,54 @@ test("two matching change checks create exactly one alert", async () => {
   const dashboard = service.dashboard("a.myshopify.com");
   assert.equal(dashboard.sources[0].lastState, STATES.OUT_OF_STOCK);
   assert.equal(dashboard.alerts.length, 1);
+  db.close();
+});
+
+test("a possible change schedules one fast confirmation check", async () => {
+  const { db, provider, service, clock } = setup();
+  const source = add(service);
+  provider.queue(source.url, [page("base", "In stock"), page("out-1", "Sold out"), page("out-2", "Sold out")]);
+  await service.checkSource("a.myshopify.com", source.id);
+  await service.checkSource("a.myshopify.com", source.id);
+  const pending = db.getSource("a.myshopify.com", source.id);
+  assert.equal(pending.candidateState, STATES.OUT_OF_STOCK);
+  assert.equal(pending.nextRecheckAt, "2026-09-15T12:20:00.000Z");
+  assert.equal(db.listDueRechecks("a.myshopify.com", clock.value).length, 0);
+
+  clock.value = new Date("2026-09-15T12:20:00Z");
+  const results = await service.checkDueRechecks("a.myshopify.com");
+  assert.equal(results.length, 1);
+  assert.equal(db.getSource("a.myshopify.com", source.id).lastState, STATES.OUT_OF_STOCK);
+  assert.equal(db.getSource("a.myshopify.com", source.id).nextRecheckAt, null);
+  db.close();
+});
+
+test("source edits are tenant-isolated and reset the baseline", async () => {
+  const { db, provider, service } = setup();
+  const source = add(service);
+  provider.queue(source.url, [page("base", "In stock")]);
+  await service.checkSource("a.myshopify.com", source.id);
+  assert.throws(() => service.updateSource("b.myshopify.com", source.id, {
+    sku: "OTHER", productTitle: "Other", url: "https://supplier.test/other",
+  }), /SOURCE_NOT_FOUND/);
+  const updated = service.updateSource("a.myshopify.com", source.id, {
+    sku: "AFL-221", productTitle: "Updated Lamp", url: "https://supplier.test/updated",
+  });
+  assert.equal(updated.sku, "AFL-221");
+  assert.equal(updated.lastState, null);
+  assert.equal(updated.lastCheckedAt, null);
+  db.close();
+});
+
+test("source deletion is tenant-isolated and cascades its history", async () => {
+  const { db, provider, service } = setup();
+  const source = add(service);
+  provider.queue(source.url, [page("base", "In stock")]);
+  await service.checkSource("a.myshopify.com", source.id);
+  assert.throws(() => service.deleteSource("b.myshopify.com", source.id), /SOURCE_NOT_FOUND/);
+  service.deleteSource("a.myshopify.com", source.id);
+  assert.equal(service.dashboard("a.myshopify.com").sources.length, 0);
+  assert.equal(service.dashboard("a.myshopify.com").observations.length, 0);
   db.close();
 });
 

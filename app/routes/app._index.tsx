@@ -33,8 +33,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: true, message: `Checked ${results.length} source${results.length === 1 ? "" : "s"}.` };
     }
     if (intent === "check-one") {
-      await service.checkSource(session.shop, String(form.get("sourceId") || ""));
-      return { ok: true, message: "Source checked and evidence recorded." };
+      const result = await service.checkSource(session.shop, String(form.get("sourceId") || ""));
+      if (result.observation.state === "SOURCE_ERROR") return { ok: false, message: "Source check failed. Open the evidence for details." };
+      if (result.observation.state === "UNCERTAIN") return { ok: true, warning: true, message: "Checked, but availability needs review." };
+      return { ok: true, message: `Checked: ${stateLabel(result.observation.state, false)}.` };
+    }
+    if (intent === "edit-source") {
+      service.updateSource(session.shop, String(form.get("sourceId") || ""), {
+        sku: String(form.get("sku") || "").trim(),
+        productTitle: String(form.get("productTitle") || "").trim(),
+        url: String(form.get("url") || "").trim(),
+        matchTerms: String(form.get("matchTerms") || "").split(",").map((value) => value.trim()).filter(Boolean),
+      });
+      return { ok: true, message: "Supplier source updated. Run a check to set its new baseline." };
+    }
+    if (intent === "delete-source") {
+      service.deleteSource(session.shop, String(form.get("sourceId") || ""));
+      return { ok: true, message: "Supplier source and its history deleted." };
     }
     return { ok: false, message: "Unknown action." };
   } catch (error) {
@@ -45,12 +60,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 function stateClass(state: string | null, stale: boolean) {
   if (stale || !state || state === "UNCERTAIN" || state === "SOURCE_ERROR") return `${styles.state} ${styles.warn}`;
   if (state === "IN_STOCK") return `${styles.state} ${styles.good}`;
-  return `${styles.state} ${styles.bad}`;
+  if (state === "OUT_OF_STOCK" || state === "DISCONTINUED") return `${styles.state} ${styles.bad}`;
+  return `${styles.state} ${styles.info}`;
 }
 
 function stateLabel(state: string | null, stale: boolean) {
   if (stale) return "Stale";
-  return ({ IN_STOCK: "In stock", OUT_OF_STOCK: "Out of stock", UNCERTAIN: "Needs review", SOURCE_ERROR: "Source failed" } as Record<string, string>)[state || ""] || "Awaiting baseline";
+  return ({
+    IN_STOCK: "Available now",
+    PREORDER: "Preorder",
+    BACKORDERED: "Backordered",
+    OUT_OF_STOCK: "Out of stock",
+    DISCONTINUED: "Discontinued",
+    LEAD_TIME: "Lead time shown",
+    UNCERTAIN: "Needs review",
+    SOURCE_ERROR: "Source failed",
+  } as Record<string, string>)[state || ""] || "Awaiting baseline";
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "Not checked yet";
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 export default function Index() {
@@ -63,9 +93,16 @@ export default function Index() {
     if (fetcher.data?.message) shopify.toast.show(fetcher.data.message, { isError: !fetcher.data.ok });
   }, [fetcher.data, shopify]);
 
-  const latest = new Map(data.observations.map((item: any) => [item.source_id, item]));
+  const latest = new Map<string, any>();
+  for (const item of data.observations as any[]) {
+    if (!latest.has(item.source_id)) latest.set(item.source_id, item);
+  }
   const confirmed = data.sources.filter((item: any) => item.lastState).length;
-  const review = data.observations.filter((item: any) => !item.factual).slice(0, 5);
+  const activeLatest = data.sources.map((source: any) => {
+    const observation = latest.get(source.id);
+    return observation?.checked_at === source.lastCheckedAt ? observation : null;
+  }).filter(Boolean);
+  const review = activeLatest.filter((item: any) => !item.factual).slice(0, 5);
 
   return (
     <div className={styles.page}>
@@ -81,7 +118,7 @@ export default function Index() {
         </fetcher.Form>
       </div>
       {data.simulated && <div className={`${styles.notice} ${styles.error}`}>Demo provider is active. No live supplier pages are being checked.</div>}
-      {fetcher.data?.message && <div className={`${styles.notice} ${fetcher.data.ok ? "" : styles.error}`}>{fetcher.data.message}</div>}
+      {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : fetcher.data.warning ? styles.warningNotice : ""}`}>{fetcher.data.message}</div>}
       <div className={styles.metrics}>
         <div className={styles.card}><span className={styles.metricLabel}>Monitored links</span><strong className={styles.metric}>{data.tenant.sourceUsage}/{data.tenant.sourceLimit}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Confirmed baselines</span><strong className={styles.metric}>{confirmed}</strong></div>
@@ -97,12 +134,46 @@ export default function Index() {
               <tbody>
                 {data.sources.length === 0 && <tr><td colSpan={4} className={styles.muted}>Add your first authorized supplier product page.</td></tr>}
                 {data.sources.map((source: any) => {
-                  const observation: any = latest.get(source.id);
+                  const candidateObservation: any = latest.get(source.id);
+                  const observation = candidateObservation?.checked_at === source.lastCheckedAt ? candidateObservation : null;
+                  const modalId = `delete-source-${source.id}`;
                   return <tr key={source.id}>
                     <td><span className={styles.product}>{source.productTitle}</span><span className={styles.sku}>{source.sku}</span></td>
-                    <td><span className={stateClass(source.lastState, source.stale)}>{stateLabel(source.lastState, source.stale)}</span></td>
-                    <td>{observation?.reason || "Run a check to establish a baseline"}</td>
-                    <td><fetcher.Form method="post"><input type="hidden" name="intent" value="check-one" /><input type="hidden" name="sourceId" value={source.id} /><button className={`${styles.button} ${styles.secondary}`} disabled={busy}>Check</button></fetcher.Form></td>
+                    <td>
+                      <span className={stateClass(source.lastState, source.stale)}>{stateLabel(source.lastState, source.stale)}</span>
+                      {source.candidateState && <span className={styles.pending}>Possible change to {stateLabel(source.candidateState, false)}. Confirmation due {formatTime(source.nextRecheckAt)}.</span>}
+                    </td>
+                    <td className={styles.evidence}>
+                      <strong>{observation?.reason || "Run a check to establish a baseline"}</strong>
+                      {observation && <>
+                        <span className={styles.muted}>Checked {formatTime(observation.checked_at)}</span>
+                        <a href={source.url} target="_blank" rel="noreferrer">Open supplier page</a>
+                        {observation.raw_excerpt && <details><summary>View captured evidence</summary><p>{observation.raw_excerpt}</p></details>}
+                      </>}
+                    </td>
+                    <td>
+                      <div className={styles.actions}>
+                        <fetcher.Form method="post"><input type="hidden" name="intent" value="check-one" /><input type="hidden" name="sourceId" value={source.id} /><button className={`${styles.button} ${styles.secondary}`} disabled={busy}>Check</button></fetcher.Form>
+                        <details className={styles.editPanel}>
+                          <summary>Edit</summary>
+                          <Form method="post" className={styles.compactForm}>
+                            <input type="hidden" name="intent" value="edit-source" />
+                            <input type="hidden" name="sourceId" value={source.id} />
+                            <label>SKU<input name="sku" required defaultValue={source.sku} /></label>
+                            <label>Title<input name="productTitle" required defaultValue={source.productTitle} /></label>
+                            <label>URL<input name="url" type="url" required defaultValue={source.url} /></label>
+                            <label>Match terms<input name="matchTerms" defaultValue={source.matchTerms.join(", ")} /></label>
+                            <button className={styles.button} disabled={busy}>Save changes</button>
+                          </Form>
+                        </details>
+                        <s-button tone="critical" commandFor={modalId} command="--show">Delete</s-button>
+                        <s-modal id={modalId} heading={`Delete ${source.productTitle}?`}>
+                          <s-paragraph>This permanently deletes this source, its check evidence, and alerts.</s-paragraph>
+                          <s-button slot="secondary-actions" commandFor={modalId} command="--hide">Cancel</s-button>
+                          <s-button slot="primary-action" variant="primary" tone="critical" commandFor={modalId} command="--hide" onClick={() => fetcher.submit({ intent: "delete-source", sourceId: source.id }, { method: "post" })}>Delete source</s-button>
+                        </s-modal>
+                      </div>
+                    </td>
                   </tr>;
                 })}
               </tbody>
