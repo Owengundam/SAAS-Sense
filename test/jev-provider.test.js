@@ -47,7 +47,7 @@ test("JEV composes evidence selection before availability classification", async
       const body = JSON.parse(options.body);
       requests.push(body);
       if (requests.length === 1) return response({
-        evidence: choiceAnswer("P002", { P001: 0.02, P002: 0.96, NONE: 0.02 }, 0.91),
+        evidence: choiceAnswer("P001", { P001: 0.96, NONE: 0.04 }, 0.91),
         product_match: choiceAnswer("MATCH", { MATCH: 0.98, MISMATCH: 0.01, UNCERTAIN: 0.01 }, 0.95),
         consistency: choiceAnswer("CONSISTENT", { CONSISTENT: 0.97, CONTRADICTORY: 0.01, UNCERTAIN: 0.02 }, 0.93),
       });
@@ -59,12 +59,17 @@ test("JEV composes evidence selection before availability classification", async
   });
   const result = await reader.analyze(source, providerResult);
   assert.equal(requests.length, 2);
+  assert.equal(requests[0].state.expectedProduct.merchantSku, undefined);
+  assert.equal(requests[0].state.expectedProduct.shopifyVariantId, undefined);
+  assert.equal(requests[0].state.expectedProduct.supplierSku, source.supplierSku);
+  assert.equal(requests[1].state.pageTitle, providerResult.title);
+  assert.ok(Object.values(requests[0].questions.evidence.criteria).every(value => typeof value === "string"));
   assert.match(requests[1].state.selectedEvidence.text, /Only a few copies remain/);
   assert.equal(result.ok, true);
   assert.equal(result.acceptedByPolicy, true);
   assert.equal(result.productMatch, "MATCH");
   assert.equal(result.availability, "IN_STOCK");
-  assert.equal(result.evidenceQuote, "Only a few copies remain.");
+  assert.equal(result.evidenceQuote, pageText);
   assert.equal(result.evidenceReference.origin, "PAGE_TEXT");
   assert.equal(result.confidenceKind, "MIN_WINNING_PROBABILITY");
   assert.deepEqual(result.usage, { inputTokens: 140, outputTokens: 30 });
@@ -78,7 +83,7 @@ test("JEV keeps native confidence separate from winning probability", async () =
     fetchImpl: async () => {
       call += 1;
       if (call === 1) return response({
-        evidence: choiceAnswer("P002", { P002: 0.96, NONE: 0.04 }, 0.91),
+        evidence: choiceAnswer("P001", { P001: 0.96, NONE: 0.04 }, 0.91),
         product_match: choiceAnswer("MATCH", { MATCH: 0.98, UNCERTAIN: 0.02 }, 0.95),
         consistency: choiceAnswer("CONSISTENT", { CONSISTENT: 0.98, UNCERTAIN: 0.02 }, 0.95),
       });

@@ -2,13 +2,13 @@
 
 ## Status
 
-The TypeSafe JEV adapter, shadow reader, and JEV-primary/DeepSeek-fallback cascade are implemented locally. No live TypeSafe request has been made, and JEV is not enabled by default.
+Production was last verified at `b69f8be` in `jev-shadow` mode with DeepSeek authoritative. The v2 evidence-window improvement is locally implemented and live-evaluated in an isolated reader: 19/20 correct effective synthetic outcomes, 10/11 correct accepted factual results, zero incorrect accepted results. It has not been deployed. See `JEV_ACCURACY_EVALUATION_2026-09-21.md` for limitations and reproduction. A configured JEV key selects shadow mode when no explicit mode is set.
 
 ## Decision flow
 
 1. Accept usable structured supplier availability through the existing deterministic path.
 2. Otherwise preserve captured page text and structured fields as separate evidence records.
-3. Generate bounded evidence candidates with origin, source URL, snapshot ID, field path or page offsets.
+3. Generate bounded evidence candidates with origin, source URL, snapshot ID, field path or page offsets. JEV v2 groups adjacent captured text into verbatim windows without merging across blank paragraphs or structured-field boundaries.
 4. JEV stage 1 independently selects evidence, checks exact product identity, and checks whether relevant availability statements conflict.
 5. Code retrieves the selected evidence and surrounding captured context.
 6. JEV stage 2 independently checks whether that evidence applies to the monitored product/variant and classifies availability.

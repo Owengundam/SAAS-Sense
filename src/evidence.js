@@ -69,9 +69,28 @@ function normalizeRecord(record, providerResult) {
   };
 }
 
+// Non-overlapping, verbatim windows keep adjacent identity and stock text together.
+// Paragraph boundaries remain separate: adjacency alone never establishes identity.
+export function windowCapturedText(text, options = {}) {
+  const input = String(text ?? "");
+  const limit = options.maxCandidateChars ?? DEFAULT_MAX_CANDIDATE_CHARS;
+  const spans = segmentCapturedText(input, options);
+  const windows = [];
+  for (const span of spans) {
+    const previous = windows.at(-1);
+    const gap = previous ? input.slice(previous.offsetEnd, span.offsetStart) : "";
+    if (previous && span.offsetEnd - previous.offsetStart <= limit && !/\n\s*\n/.test(gap)) {
+      previous.offsetEnd = span.offsetEnd;
+      previous.text = input.slice(previous.offsetStart, previous.offsetEnd);
+    } else windows.push({ ...span });
+  }
+  return windows;
+}
+
 export function prepareEvidenceBundle(providerResult, {
   maxCandidates = DEFAULT_MAX_CANDIDATES,
   maxCandidateChars = DEFAULT_MAX_CANDIDATE_CHARS,
+  groupAdjacent = false,
 } = {}) {
   const records = Array.isArray(providerResult?.evidenceRecords)
     ? providerResult.evidenceRecords
@@ -79,10 +98,11 @@ export function prepareEvidenceBundle(providerResult, {
   const candidates = [];
   const pageRecords = records.filter((record) => record?.origin === "PAGE_TEXT");
   const structuredRecords = records.filter((record) => record?.origin !== "PAGE_TEXT");
+  const segment = groupAdjacent ? windowCapturedText : segmentCapturedText;
 
   for (const record of pageRecords) {
     const raw = String(record.text ?? record.value ?? "");
-    candidates.push(...segmentCapturedText(raw, {
+    candidates.push(...segment(raw, {
       snapshotId: record.snapshotId || providerResult?.runId || null,
       sourceUrl: record.sourceUrl || providerResult?.url || null,
       maxCandidateChars,
@@ -91,7 +111,7 @@ export function prepareEvidenceBundle(providerResult, {
 
   if (!pageRecords.length) {
     const raw = providerResult?.rawPageText ?? (!records.length ? providerResult?.text : "");
-    candidates.push(...segmentCapturedText(raw, {
+    candidates.push(...segment(raw, {
       snapshotId: providerResult?.pageSnapshotId || providerResult?.runId || null,
       sourceUrl: providerResult?.url || null,
       maxCandidateChars,
