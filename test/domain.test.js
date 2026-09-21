@@ -175,6 +175,25 @@ test("rules and AI disagreement stays uncertain", () => {
   assert.match(result.reason, /conflict/);
 });
 
+test("JEV hard evidence failures cannot fall back to a convenient rules fact", () => {
+  const deterministic = classifyObservation(source, {
+    ok: true,
+    title: "Arc Floor Lamp",
+    text: "AFL-220. In stock.",
+  });
+  const result = incorporateAiObservation(deterministic, { text: "AFL-220. In stock." }, {
+    ok: true,
+    provider: "typesafe",
+    productMatch: "MATCH",
+    availability: "UNKNOWN",
+    confidence: 0.95,
+    reasonCode: "HARD_EVIDENCE_CONFLICT",
+    reason: "Relevant supplier evidence is contradictory",
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+});
+
 test("a transition requires two consistent factual checks", () => {
   const observation = { state: STATES.OUT_OF_STOCK, factual: true, confidence: 0.92 };
   const first = decideTransition(source, observation, 2);

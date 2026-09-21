@@ -83,6 +83,24 @@ SILICONFLOW_API_KEY=...
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 ```
 
+### TypeSafe JEV — implemented behind evaluation modes; live verification pending
+
+JEV uses two explicitly composed stages. The first selects an exact captured evidence candidate and checks page identity/consistency. Code then retrieves that candidate and a second request classifies its product scope and availability. JEV's native confidence and winning-option probability are stored separately; they are not treated as interchangeable with DeepSeek's generated confidence.
+
+DeepSeek remains authoritative by default. Available modes are:
+
+```text
+AI_READER_MODE=deepseek     # current behavior; no JEV calls
+AI_READER_MODE=jev-shadow   # DeepSeek decides; JEV is measured only
+AI_READER_MODE=jev-primary  # accepted JEV decisions first; bounded DeepSeek fallback
+TYPESAFE_API_KEY=...
+TYPESAFE_MODEL=jev-1.13.0
+```
+
+Fallback is reason-specific. Service errors and inconclusive interpretations may reach DeepSeek. Missing evidence, strong product/variant mismatch, contradictory evidence, and truncated candidate retrieval remain uncertain instead of asking another model for a more convenient answer. Shadow evaluations never change observations, transitions, or alerts.
+
+Captured page spans retain snapshot IDs and offsets. Structured provider fields retain their original field paths and values, so the dashboard does not present adapter-normalized text as a verbatim supplier-page quote. See `JEV_INTEGRATION.md` for the acceptance policy and promotion gate.
+
 ## Railway configuration
 
 Mount a persistent Railway volume at `/data`, then configure these non-secret variables:
@@ -94,13 +112,15 @@ PORT=3000
 PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+AI_READER_MODE=deepseek
+TYPESAFE_MODEL=jev-1.13.0
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
 SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `TYPESAFE_API_KEY` only when intentionally enabling a JEV evaluation mode. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
 
 ## Security boundaries
 
@@ -110,6 +130,7 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 - Latest attempt health is stored separately from the last confirmed availability, so a failed or uncertain attempt cannot make an old fact look newly verified.
 - New sources must use an explicitly supported HTTPS domain, contain supplier-side identity, and be manually confirmed as the exact product/variant before monitoring.
 - Every observation has a decision audit recording structured/rules/AI provenance, AI acceptance or rejection, model and trace metadata, prompt version, token usage, timing, quote, and bounded context.
+- Multi-model runs record each provider evaluation, shadow status, fallback reason, separate probability/confidence signals, and exact evidence provenance.
 - Only HTTPS source URLs are accepted.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.
@@ -123,6 +144,7 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 - `ECONOMICS.md` — quota-linked unit economics with low/expected/heavy cases.
 - `PILOT_AND_GTM.md` — landing copy, onboarding, support, paid-pilot offer, outreach draft, and kill criteria.
 - `PRIVACY_AND_TERMS_DRAFT.md` — pre-legal-review policy drafts with owner facts clearly unresolved.
+- `JEV_INTEGRATION.md` — JEV/DeepSeek routing, evidence policy, provisional thresholds, and promotion gates.
 
 ## Status vocabulary
 

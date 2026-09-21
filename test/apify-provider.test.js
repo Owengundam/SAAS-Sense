@@ -34,6 +34,8 @@ test("Apify adapter sends a cost-capped structured product request", async () =>
   assert.equal(result.availabilityState, "IN_STOCK");
   assert.match(result.text, /A-1/);
   assert.match(result.text, /In stock/);
+  assert.ok(result.evidenceRecords.some((record) =>
+    record.path === "offers.availability" && record.text === "https://schema.org/InStock"));
   assert.deepEqual(body.detailsUrls, [{ url: source.url }]);
   assert.equal(body.additionalProperties, true);
   assert.equal(body.additionalPropertiesSearchEngine, false);
@@ -97,6 +99,9 @@ test("missing structured availability automatically falls back to full page text
   assert.equal(result.title, "A Light in the Attic");
   assert.match(result.text, /In stock \(22 available\)/);
   assert.match(result.text, /A poetry collection/);
+  assert.equal(result.rawPageText, "A Light in the Attic. In stock (22 available).");
+  assert.ok(result.evidenceRecords.some((record) =>
+    record.origin === "PAGE_TEXT" && record.snapshotId === "content-1"));
   const observation = classifyObservation({ matchTerms: ["A Light in the Attic"] }, result);
   assert.equal(observation.state, "IN_STOCK");
   assert.equal(observation.factual, true);

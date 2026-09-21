@@ -121,6 +121,12 @@ export default function Index() {
   }
   const decisions = new Map<string, any>();
   for (const item of data.decisions as any[]) decisions.set(item.observation_id, item);
+  const modelEvaluations = new Map<string, any[]>();
+  for (const item of data.modelEvaluations as any[]) {
+    const items = modelEvaluations.get(item.observation_id) || [];
+    items.push(item);
+    modelEvaluations.set(item.observation_id, items);
+  }
   const confirmed = data.sources.filter((item: any) => item.lastState).length;
   const activeLatest = data.sources.map((source: any) => {
     const observation = latest.get(source.id);
@@ -184,14 +190,25 @@ export default function Index() {
                             <dt>Final source</dt><dd>{decision.decision_source}</dd>
                             <dt>Rules</dt><dd>{stateLabel(decision.rules_state, false)} · {Math.round(decision.rules_confidence * 100)}%</dd>
                             <dt>AI</dt><dd>{decision.ai_status}{decision.ai_reason ? ` · ${decision.ai_reason}` : ""}</dd>
+                            {decision.ai_provider && <><dt>Provider</dt><dd>{decision.ai_provider}{decision.reader_mode ? ` · ${decision.reader_mode}` : ""}</dd></>}
+                            {decision.fallback_reason && <><dt>Fallback</dt><dd>{decision.fallback_reason}</dd></>}
                             {decision.configured_model && <><dt>Model</dt><dd>{decision.returned_model || decision.configured_model}</dd></>}
                             {decision.trace_id && <><dt>Trace</dt><dd><code>{decision.trace_id}</code></dd></>}
                             {decision.prompt_version && <><dt>Prompt</dt><dd>{decision.prompt_version}</dd></>}
                             {(decision.input_tokens != null || decision.output_tokens != null) && <><dt>Tokens</dt><dd>{decision.input_tokens ?? "?"} in / {decision.output_tokens ?? "?"} out</dd></>}
                             {decision.latency_ms != null && <><dt>AI latency</dt><dd>{Math.round(decision.latency_ms)} ms</dd></>}
                             {decision.evidence_quote && <><dt>Quote</dt><dd>“{decision.evidence_quote}”</dd></>}
+                            {decision.evidence_origin && <><dt>Evidence origin</dt><dd>{decision.evidence_origin}{decision.evidence_path ? ` · ${decision.evidence_path}` : ""}{decision.evidence_snapshot_id ? ` · ${decision.evidence_snapshot_id}` : ""}</dd></>}
                             {decision.evidence_context && <><dt>Context</dt><dd>{decision.evidence_context}</dd></>}
                           </dl>
+                          {(modelEvaluations.get(observation.id) || []).map((evaluation: any) =>
+                            <p key={evaluation.id} className={styles.muted}>
+                              {evaluation.shadow ? "Shadow" : evaluation.role} · {evaluation.provider} · {evaluation.status}
+                              {evaluation.selected_state ? ` · ${evaluation.selected_state}` : ""}
+                              {evaluation.selected_probability != null ? ` · p=${Number(evaluation.selected_probability).toFixed(2)}` : ""}
+                              {evaluation.native_confidence != null ? ` · native confidence=${Number(evaluation.native_confidence).toFixed(2)}` : ""}
+                              {evaluation.reason ? ` · ${evaluation.reason}` : ""}
+                            </p>)}
                         </details>}
                       </>}
                     </td>

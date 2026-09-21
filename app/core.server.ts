@@ -2,7 +2,7 @@ import { join, resolve } from "node:path";
 import { createDatabase } from "../src/db.js";
 import { MockProvider } from "../src/providers/mock.js";
 import { ApifyProvider } from "../src/providers/apify.js";
-import { SiliconFlowEvidenceReader } from "../src/providers/siliconflow.js";
+import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
 
 type Core = {
@@ -24,12 +24,7 @@ function createCore(): Core {
   const provider = liveProvider
     ? new (ApifyProvider as any)({ token: process.env.APIFY_API_TOKEN, actorId: process.env.APIFY_ACTOR_ID })
     : new MockProvider({ fixturePath: resolve(process.cwd(), "fixtures", "mock-pages.json") });
-  const evidenceReader = process.env.SILICONFLOW_API_KEY
-    ? new (SiliconFlowEvidenceReader as any)({
-      token: process.env.SILICONFLOW_API_KEY,
-      model: process.env.SILICONFLOW_MODEL,
-    })
-    : null;
+  const evidenceReader = createEvidenceReader(process.env);
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
   const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
     ?.split(",")
@@ -38,7 +33,7 @@ function createCore(): Core {
   const service = new SupplierSignalService({
     db,
     provider,
-    evidenceReader,
+    evidenceReader: evidenceReader as any,
     globalMonthlyCheckLimit: Number.isInteger(configuredGlobalLimit) && configuredGlobalLimit >= 0
       ? configuredGlobalLimit
       : 5000,

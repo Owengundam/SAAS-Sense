@@ -1,4 +1,5 @@
 import { classifyObservation, decideTransition, evaluateAiObservation, isStale } from "./domain.js";
+import { evidenceContextForReference } from "./evidence.js";
 import {
   DEFAULT_SUPPORTED_DOMAINS,
   normalizeSupportedDomains,
@@ -165,16 +166,22 @@ export class SupplierSignalService {
           aiResult = { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
         aiLatencyMs = performance.now() - aiStartedAt;
-        this.db.recordProviderAttempt(shop, usage.operationId, {
-          provider: "siliconflow",
-          role: "evidence",
-          providerRunId: aiResult.traceId,
-          traceId: aiResult.traceId,
-          model: aiResult.returnedModel || aiResult.configuredModel || aiResult.model,
-          inputTokens: aiResult.usage?.inputTokens,
-          outputTokens: aiResult.usage?.outputTokens,
-          outcome: aiResult.ok ? "SUCCEEDED" : "FAILED",
-        }, this.now());
+        const aiAttempts = Array.isArray(aiResult.aiAttempts)
+          ? aiResult.aiAttempts
+          : [{
+            provider: aiResult.provider || this.evidenceReader.provider || this.evidenceReader.constructor?.name || "ai",
+            role: "evidence",
+            providerRunId: aiResult.traceId,
+            traceId: aiResult.traceId,
+            model: aiResult.returnedModel || aiResult.configuredModel || aiResult.model,
+            inputTokens: aiResult.usage?.inputTokens,
+            outputTokens: aiResult.usage?.outputTokens,
+            latencyMs: aiLatencyMs,
+            outcome: aiResult.ok ? "SUCCEEDED" : "FAILED",
+          }];
+        for (const attempt of aiAttempts) {
+          this.db.recordProviderAttempt(shop, usage.operationId, attempt, this.now());
+        }
         const evaluation = evaluateAiObservation(rulesObservation, providerResult, aiResult);
         observation = evaluation.observation;
         aiStatus = aiResult.ok ? (evaluation.accepted ? "ACCEPTED" : "REJECTED") : "FAILED";
@@ -184,6 +191,9 @@ export class SupplierSignalService {
       }
       const providerRunId = providerResult.runId || `${source.id}-${observation.checkedAt}`;
       const evidenceQuote = aiResult?.evidenceQuote || matchedQuote(observation.reason);
+      const evidenceContextValue = aiResult?.evidenceReference
+        ? evidenceContextForReference(providerResult, aiResult.evidenceReference)
+        : evidenceContext(providerResult?.text, evidenceQuote);
       const decision = {
         decisionSource,
         rulesState: rulesObservation.state,
@@ -194,11 +204,21 @@ export class SupplierSignalService {
         returnedModel: aiResult?.returnedModel,
         traceId: aiResult?.traceId,
         promptVersion: aiResult?.promptVersion || this.evidenceReader?.promptVersion,
+        aiProvider: aiResult?.provider || this.evidenceReader?.provider,
+        readerMode: aiResult?.readerMode || "DIRECT",
+        fallbackReason: aiResult?.fallbackReason,
         inputTokens: aiResult?.usage?.inputTokens,
         outputTokens: aiResult?.usage?.outputTokens,
         latencyMs: aiLatencyMs,
         evidenceQuote,
-        evidenceContext: evidenceContext(providerResult?.text, evidenceQuote),
+        evidenceContext: evidenceContextValue,
+        evidenceReference: aiResult?.evidenceReference,
+        decisionDetails: aiResult?.decisionSignals ? {
+          confidenceKind: aiResult.confidenceKind || null,
+          acceptancePolicyVersion: aiResult.acceptancePolicyVersion || null,
+          signals: aiResult.decisionSignals,
+          shadowSummary: aiResult.shadowSummary || null,
+        } : aiResult?.shadowSummary ? { shadowSummary: aiResult.shadowSummary } : null,
         finalState: observation.state,
         finalConfidence: observation.confidence,
       };
@@ -212,6 +232,16 @@ export class SupplierSignalService {
           decision,
           this.now(),
         );
+        if (inserted.inserted && Array.isArray(aiResult?.modelEvaluations)) {
+          this.db.insertModelEvaluations(
+            shop,
+            source.id,
+            inserted.id,
+            usage.operationId,
+            aiResult.modelEvaluations,
+            this.now(),
+          );
+        }
       }
       if (!inserted.inserted) {
         this.db.completeCheckUsage(shop, usage.operationId, {
@@ -309,6 +339,7 @@ export class SupplierSignalService {
       sources,
       observations: this.db.listObservations(shop),
       decisions: this.db.listDecisionRecords(shop),
+      modelEvaluations: this.db.listModelEvaluations(shop),
       alerts: this.db.listAlerts(shop),
       generatedAt: now.toISOString(),
     };

@@ -60,6 +60,62 @@ function ecommerceEvidence(item) {
   ].filter(Boolean).join(". ");
 }
 
+function addEvidenceRecord(output, path, value) {
+  if (value == null || output.length >= 80) return;
+  if (!["string", "number", "boolean"].includes(typeof value)) return;
+  const text = String(value).replace(/\s+/g, " ").trim().slice(0, 2_000);
+  if (text) output.push({ origin: "STRUCTURED_FIELD", path, text });
+}
+
+function flattenEvidenceRecords(value, prefix = "", output = [], depth = 0) {
+  if (value == null || depth > 3 || output.length >= 80) return output;
+  if (["string", "number", "boolean"].includes(typeof value)) {
+    addEvidenceRecord(output, prefix || "value", value);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.slice(0, 20).forEach((item, index) =>
+      flattenEvidenceRecords(item, `${prefix}[${index}]`, output, depth + 1));
+    return output;
+  }
+  if (typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      if (/image|thumbnail|review|rating/i.test(key)) continue;
+      flattenEvidenceRecords(item, prefix ? `${prefix}.${key}` : key, output, depth + 1);
+      if (output.length >= 80) break;
+    }
+  }
+  return output;
+}
+
+function ecommerceEvidenceRecords(item, runId, sourceUrl) {
+  const records = [];
+  const selected = {
+    name: item.name,
+    title: item.title,
+    productName: item.productName,
+    product: item.product,
+    sku: item.sku,
+    mpn: item.mpn,
+    gtin: item.gtin,
+    productId: item.productId,
+    identifiers: item.identifiers || item.productIdentifiers,
+    stockStatus: item.stockStatus,
+    availability: item.availability,
+    inStock: item.inStock,
+    isInStock: item.isInStock,
+    available: item.available,
+    offers: item.offers,
+    shipping: item.shipping,
+    shippingInformation: item.shippingInformation,
+    description: item.description,
+    variants: item.variants,
+    additionalProperties: item.additionalProperties ?? item.additional_properties ?? item.properties,
+  };
+  flattenEvidenceRecords(selected, "", records);
+  return records.map((record) => ({ ...record, snapshotId: runId, sourceUrl }));
+}
+
 function flattenEvidence(value, prefix = "", output = [], depth = 0) {
   if (value == null || depth > 3 || output.length >= 40) return output;
   if (["string", "number", "boolean"].includes(typeof value)) {
@@ -145,14 +201,23 @@ export class ApifyProvider {
       const item = Array.isArray(items) ? items[0] : null;
       if (!item) return { ok: false, error: "Apify returned no dataset item", runId };
       const ecommerce = actorId !== CONTENT_CRAWLER_ACTOR_ID;
+      const sourceUrl = item.url || item.productUrl || item.crawl?.loadedUrl || source.url;
+      const rawPageText = ecommerce ? "" : item.text || item.markdown || "";
       return {
         ok: true,
         runId,
-        url: item.url || item.productUrl || item.crawl?.loadedUrl || source.url,
+        url: sourceUrl,
         title: ecommerce
           ? firstText(item.name, item.title, item.productName, item.product?.title)
           : item.metadata?.title || "",
-        text: ecommerce ? ecommerceEvidence(item) : item.text || item.markdown || "",
+        text: ecommerce ? ecommerceEvidence(item) : rawPageText,
+        rawPageText,
+        pageSnapshotId: ecommerce ? null : runId,
+        evidenceRecords: ecommerce
+          ? ecommerceEvidenceRecords(item, runId, sourceUrl)
+          : rawPageText
+            ? [{ origin: "PAGE_TEXT", path: null, text: rawPageText, snapshotId: runId, sourceUrl }]
+            : [],
         availabilityState: ecommerce ? structuredAvailabilityState(item) : null,
       };
     } catch (error) {
@@ -182,6 +247,12 @@ export class ApifyProvider {
       url: fallback.url || primary.url,
       title: primary.title || fallback.title,
       text: [fallback.text, primary.text].filter(Boolean).join("\n\n"),
+      rawPageText: fallback.rawPageText || fallback.text || "",
+      pageSnapshotId: fallback.pageSnapshotId || fallback.runId,
+      evidenceRecords: [
+        ...(fallback.evidenceRecords || []),
+        ...(primary.evidenceRecords || []),
+      ],
       fallbackUsed: true,
       providerAttempts: attempts,
     };

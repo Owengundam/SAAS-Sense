@@ -130,6 +130,66 @@ test("rejected AI evidence is persisted as a safety-gate decision", async () => 
   db.close();
 });
 
+test("multi-model attempts and evidence provenance are persisted for audit", async () => {
+  const text = "SKU AFL-220. Only a few copies remain.";
+  const quote = "Only a few copies remain.";
+  const offsetStart = text.indexOf(quote);
+  const evidenceReference = {
+    id: "P002",
+    origin: "PAGE_TEXT",
+    path: null,
+    snapshotId: "snapshot-1",
+    sourceUrl: "https://supplier.test/arc",
+    offsetStart,
+    offsetEnd: offsetStart + quote.length,
+    text: quote,
+  };
+  const evidenceReader = { provider: "cascade", async analyze() { return {
+    ok: true,
+    provider: "siliconflow",
+    readerMode: "JEV_PRIMARY",
+    fallbackReason: "INCONCLUSIVE_INTERPRETATION",
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: quote,
+    evidenceReference,
+    confidence: 0.95,
+    configuredModel: "deepseek-ai/DeepSeek-V4-Flash",
+    returnedModel: "deepseek-ai/DeepSeek-V4-Flash",
+    aiAttempts: [
+      { provider: "typesafe", role: "evidence-select", outcome: "SUCCEEDED", model: "jev-1.13.0", inputTokens: 90, outputTokens: 10 },
+      { provider: "siliconflow", role: "fallback", outcome: "SUCCEEDED", model: "deepseek-ai/DeepSeek-V4-Flash", inputTokens: 60, outputTokens: 20 },
+    ],
+    modelEvaluations: [
+      { provider: "typesafe", role: "primary", shadow: false, status: "REJECTED", reason: "INCONCLUSIVE_INTERPRETATION", selectedState: "IN_STOCK", selectedProbability: 0.72, nativeConfidence: 0.4 },
+      { provider: "siliconflow", role: "fallback", shadow: false, status: "COMPLETED", reason: "Explicit remaining quantity", selectedState: "IN_STOCK", productMatch: "MATCH" },
+    ],
+  }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [{
+    ok: true,
+    runId: "multi-model-run",
+    url: source.url,
+    title: "Arc Floor Lamp",
+    text,
+    rawPageText: text,
+    evidenceRecords: [{ origin: "PAGE_TEXT", text, snapshotId: "snapshot-1", sourceUrl: source.url }],
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.IN_STOCK);
+  assert.equal(db.listProviderAttempts("a.myshopify.com").length, 3);
+  const evaluations = db.listModelEvaluations("a.myshopify.com");
+  assert.equal(evaluations.length, 2);
+  assert.deepEqual(evaluations.map((item) => item.provider).sort(), ["siliconflow", "typesafe"]);
+  const decision = db.listDecisionRecords("a.myshopify.com")[0];
+  assert.equal(decision.reader_mode, "JEV_PRIMARY");
+  assert.equal(decision.fallback_reason, "INCONCLUSIVE_INTERPRETATION");
+  assert.equal(decision.evidence_origin, "PAGE_TEXT");
+  assert.equal(decision.evidence_snapshot_id, "snapshot-1");
+  db.close();
+});
+
 test("source records are tenant-isolated", () => {
   const { db, service } = setup();
   const record = add(service);

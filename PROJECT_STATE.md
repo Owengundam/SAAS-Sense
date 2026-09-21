@@ -14,6 +14,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Sell the finished confidence workflow, not “scraping” or Actor access.
 - Read-only pilot; no Shopify product, price, or inventory mutation.
 - Deterministic matching remains the base layer; SiliconFlow DeepSeek reviews captured evidence only when Apify omits structured availability, and AI failure falls back to the deterministic result.
+- JEV is implemented behind explicit shadow and primary modes. DeepSeek remains the default and becomes a reason-specific backup only after JEV is deliberately enabled.
 - Two consecutive high-confidence observations are required to confirm a change.
 - A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
@@ -41,6 +42,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Configured the live Apify provider and completed one $0.01 controlled run; missing availability remained uncertain as designed.
 - Added inspectable evidence, corrected availability vocabulary, source editing/deletion, and fast-confirmation scheduling logic.
 - Added a constrained `deepseek-ai/DeepSeek-V4-Flash` evidence reader through SiliconFlow, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
+- Added a two-stage JEV reader, exact evidence-candidate selection, structured/page-text provenance, provider-specific probability gates, shadow evaluation, reason-specific DeepSeek fallback, and multi-model audit records.
 
 ## Tested locally
 
@@ -63,6 +65,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Partner API subscription query or app-plan selection.
 - Apify accuracy, timeout behavior, and cost across multiple real supplier domains.
 - Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
+- Live TypeSafe request compatibility, JEV accuracy/calibration, latency, token usage, and fallback rate on saved and real supplier captures.
 - Scheduling, email delivery, or production observability.
 - App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
 

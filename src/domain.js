@@ -1,3 +1,5 @@
+import { verifyEvidenceReference } from "./evidence.js";
+
 const DEFAULT_IN_STOCK_TERMS = ["in stock", "available now", "ready to ship"];
 const DEFAULT_OUT_OF_STOCK_TERMS = ["out of stock", "sold out", "unavailable"];
 const DEFAULT_PREORDER_TERMS = ["preorder", "pre order", "pre-order"];
@@ -66,6 +68,25 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     }, accepted: false, rejectionReason: `Product match was ${aiResult.productMatch}`, influencedDecision: true };
   }
 
+  const hardSafetyReasons = new Set([
+    "HARD_EVIDENCE_CONFLICT",
+    "NO_EVIDENCE",
+    "NO_FACTUAL_EVIDENCE",
+    "CANDIDATE_RETRIEVAL_TRUNCATED",
+  ]);
+  if (aiResult.provider === "typesafe" && hardSafetyReasons.has(aiResult.reasonCode)) return {
+    observation: {
+      state: STATES.UNCERTAIN,
+      confidence: Math.min(Number(aiResult.confidence) || 0, 0.6),
+      reason: aiResult.reason || "JEV safety policy blocked factual acceptance",
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    },
+    accepted: false,
+    rejectionReason: aiResult.reason || aiResult.reasonCode,
+    influencedDecision: true,
+  };
+
   if (aiResult.availability === "UNKNOWN") return {
     observation: deterministic,
     accepted: false,
@@ -73,7 +94,23 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     influencedDecision: false,
   };
 
-  if (!FACTUAL_STATES.has(aiResult.availability) || !evidenceIncludesQuote(providerResult?.text, aiResult.evidenceQuote)) {
+  if (aiResult.provider === "typesafe" && aiResult.acceptedByPolicy !== true) return {
+    observation: {
+      state: STATES.UNCERTAIN,
+      confidence: Math.min(Number(aiResult.confidence) || 0, 0.6),
+      reason: `JEV decision rejected by ${aiResult.acceptancePolicyVersion || aiResult.promptVersion || "acceptance policy"}`,
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    },
+    accepted: false,
+    rejectionReason: aiResult.reason || "JEV decision did not meet its provider-specific acceptance policy",
+    influencedDecision: true,
+  };
+
+  const evidenceVerified = aiResult.evidenceReference
+    ? verifyEvidenceReference(providerResult, aiResult.evidenceReference, aiResult.evidenceQuote)
+    : evidenceIncludesQuote(providerResult?.text, aiResult.evidenceQuote);
+  if (!FACTUAL_STATES.has(aiResult.availability) || !evidenceVerified) {
     return { observation: {
       state: STATES.UNCERTAIN,
       confidence: 0.4,

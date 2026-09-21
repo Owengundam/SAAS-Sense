@@ -83,11 +83,20 @@ export function createDatabase(path = ":memory:") {
       returned_model TEXT,
       trace_id TEXT,
       prompt_version TEXT,
+      ai_provider TEXT,
+      reader_mode TEXT,
+      fallback_reason TEXT,
       input_tokens INTEGER,
       output_tokens INTEGER,
       latency_ms REAL,
       evidence_quote TEXT,
       evidence_context TEXT,
+      evidence_origin TEXT,
+      evidence_path TEXT,
+      evidence_snapshot_id TEXT,
+      evidence_offset_start INTEGER,
+      evidence_offset_end INTEGER,
+      decision_details TEXT,
       final_state TEXT NOT NULL,
       final_confidence REAL NOT NULL,
       created_at TEXT NOT NULL
@@ -128,10 +137,37 @@ export function createDatabase(path = ":memory:") {
       model TEXT,
       input_tokens INTEGER,
       output_tokens INTEGER,
+      latency_ms REAL,
       attempted_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS provider_attempts_operation
       ON provider_attempts(operation_id);
+    CREATE TABLE IF NOT EXISTS model_evaluations (
+      id TEXT PRIMARY KEY,
+      observation_id TEXT NOT NULL REFERENCES observations(id) ON DELETE CASCADE,
+      operation_id TEXT NOT NULL REFERENCES usage_ledger(operation_id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      role TEXT NOT NULL,
+      shadow INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      reason TEXT,
+      configured_model TEXT,
+      returned_model TEXT,
+      selected_state TEXT,
+      selected_probability REAL,
+      native_confidence REAL,
+      product_match TEXT,
+      prompt_version TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      evidence_reference TEXT,
+      decision_signals TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS model_evaluations_observation
+      ON model_evaluations(observation_id, created_at);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -154,6 +190,18 @@ export function createDatabase(path = ":memory:") {
   if (!sourceColumns.has("supplier_variant_id")) db.exec("ALTER TABLE sources ADD COLUMN supplier_variant_id TEXT");
   if (!sourceColumns.has("supplier_sku")) db.exec("ALTER TABLE sources ADD COLUMN supplier_sku TEXT");
   if (!sourceColumns.has("match_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN match_confirmed_at TEXT");
+  const decisionColumns = new Set(db.prepare("PRAGMA table_info(decision_records)").all().map((column) => column.name));
+  if (!decisionColumns.has("ai_provider")) db.exec("ALTER TABLE decision_records ADD COLUMN ai_provider TEXT");
+  if (!decisionColumns.has("reader_mode")) db.exec("ALTER TABLE decision_records ADD COLUMN reader_mode TEXT");
+  if (!decisionColumns.has("fallback_reason")) db.exec("ALTER TABLE decision_records ADD COLUMN fallback_reason TEXT");
+  if (!decisionColumns.has("evidence_origin")) db.exec("ALTER TABLE decision_records ADD COLUMN evidence_origin TEXT");
+  if (!decisionColumns.has("evidence_path")) db.exec("ALTER TABLE decision_records ADD COLUMN evidence_path TEXT");
+  if (!decisionColumns.has("evidence_snapshot_id")) db.exec("ALTER TABLE decision_records ADD COLUMN evidence_snapshot_id TEXT");
+  if (!decisionColumns.has("evidence_offset_start")) db.exec("ALTER TABLE decision_records ADD COLUMN evidence_offset_start INTEGER");
+  if (!decisionColumns.has("evidence_offset_end")) db.exec("ALTER TABLE decision_records ADD COLUMN evidence_offset_end INTEGER");
+  if (!decisionColumns.has("decision_details")) db.exec("ALTER TABLE decision_records ADD COLUMN decision_details TEXT");
+  const attemptColumns = new Set(db.prepare("PRAGMA table_info(provider_attempts)").all().map((column) => column.name));
+  if (!attemptColumns.has("latency_ms")) db.exec("ALTER TABLE provider_attempts ADD COLUMN latency_ms REAL");
   db.exec(`
     UPDATE sources
       SET last_attempt_at = last_checked_at
@@ -294,8 +342,8 @@ export function createDatabase(path = ":memory:") {
       const id = randomUUID();
       db.prepare(`INSERT INTO provider_attempts
         (id, operation_id, shop, provider, role, provider_run_id, outcome, trace_id, model,
-         input_tokens, output_tokens, attempted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+         input_tokens, output_tokens, latency_ms, attempted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         id,
         operationId,
         shop,
@@ -307,6 +355,7 @@ export function createDatabase(path = ":memory:") {
         attempt.model || null,
         Number.isInteger(attempt.inputTokens) ? attempt.inputTokens : null,
         Number.isInteger(attempt.outputTokens) ? attempt.outputTokens : null,
+        Number.isFinite(attempt.latencyMs) ? attempt.latencyMs : null,
         now.toISOString(),
       );
       return id;
@@ -403,22 +452,60 @@ export function createDatabase(path = ":memory:") {
       const result = db.prepare(`INSERT OR IGNORE INTO decision_records
         (id, observation_id, operation_id, source_id, shop, decision_source,
          rules_state, rules_confidence, ai_status, ai_reason, configured_model, returned_model,
-         trace_id, prompt_version, input_tokens, output_tokens, latency_ms, evidence_quote,
-         evidence_context, final_state, final_confidence, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+         trace_id, prompt_version, ai_provider, reader_mode, fallback_reason,
+         input_tokens, output_tokens, latency_ms, evidence_quote, evidence_context,
+         evidence_origin, evidence_path, evidence_snapshot_id, evidence_offset_start,
+         evidence_offset_end, decision_details, final_state, final_confidence, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         id, observationId, operationId, sourceId, shop, decision.decisionSource,
         decision.rulesState, decision.rulesConfidence, decision.aiStatus,
         decision.aiReason || null, decision.configuredModel || null,
         decision.returnedModel || null, decision.traceId || null,
         decision.promptVersion || null,
+        decision.aiProvider || null, decision.readerMode || null, decision.fallbackReason || null,
         Number.isInteger(decision.inputTokens) ? decision.inputTokens : null,
         Number.isInteger(decision.outputTokens) ? decision.outputTokens : null,
         Number.isFinite(decision.latencyMs) ? decision.latencyMs : null,
         decision.evidenceQuote || null, decision.evidenceContext || null,
+        decision.evidenceReference?.origin || null,
+        decision.evidenceReference?.path || null,
+        decision.evidenceReference?.snapshotId || null,
+        Number.isInteger(decision.evidenceReference?.offsetStart) ? decision.evidenceReference.offsetStart : null,
+        Number.isInteger(decision.evidenceReference?.offsetEnd) ? decision.evidenceReference.offsetEnd : null,
+        decision.decisionDetails ? JSON.stringify(decision.decisionDetails) : null,
         decision.finalState, decision.finalConfidence, now.toISOString(),
       );
       return result.changes ? id : db.prepare("SELECT id FROM decision_records WHERE observation_id = ?")
         .get(observationId)?.id || null;
+    },
+    insertModelEvaluations(shop, sourceId, observationId, operationId, evaluations, now = new Date()) {
+      const statement = db.prepare(`INSERT INTO model_evaluations
+        (id, observation_id, operation_id, source_id, shop, provider, role, shadow, status,
+         reason, configured_model, returned_model, selected_state, selected_probability,
+         native_confidence, product_match, prompt_version, input_tokens, output_tokens,
+         evidence_reference, decision_signals, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const ids = [];
+      for (const item of evaluations || []) {
+        const id = randomUUID();
+        statement.run(
+          id, observationId, operationId, sourceId, shop,
+          item.provider || "unknown", item.role || "primary", item.shadow ? 1 : 0,
+          item.status || "UNKNOWN", item.reason || null,
+          item.configuredModel || null, item.returnedModel || null,
+          item.selectedState || null,
+          Number.isFinite(item.selectedProbability) ? item.selectedProbability : null,
+          Number.isFinite(item.nativeConfidence) ? item.nativeConfidence : null,
+          item.productMatch || null, item.promptVersion || null,
+          Number.isInteger(item.usage?.inputTokens) ? item.usage.inputTokens : null,
+          Number.isInteger(item.usage?.outputTokens) ? item.usage.outputTokens : null,
+          item.evidenceReference ? JSON.stringify(item.evidenceReference) : null,
+          item.decisionSignals ? JSON.stringify(item.decisionSignals) : null,
+          now.toISOString(),
+        );
+        ids.push(id);
+      }
+      return ids;
     },
     insertAlert(shop, sourceId, alert, now = new Date()) {
       const id = randomUUID();
@@ -438,6 +525,13 @@ export function createDatabase(path = ":memory:") {
         JOIN observations o ON o.id=d.observation_id
         JOIN sources s ON s.id=d.source_id
         WHERE d.shop=? ORDER BY d.created_at DESC LIMIT ?`).all(shop, limit);
+    },
+    listModelEvaluations(shop, limit = 100) {
+      return db.prepare(`SELECT m.*, o.checked_at, s.sku, s.product_title
+        FROM model_evaluations m
+        JOIN observations o ON o.id=m.observation_id
+        JOIN sources s ON s.id=m.source_id
+        WHERE m.shop=? ORDER BY m.created_at DESC, m.id LIMIT ?`).all(shop, limit);
     },
     listAlerts(shop, limit = 20) {
       return db.prepare(`SELECT a.*, s.sku, s.product_title FROM alerts a

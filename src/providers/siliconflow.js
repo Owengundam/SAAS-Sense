@@ -61,11 +61,13 @@ export class SiliconFlowEvidenceReader {
     this.timeoutMs = timeoutMs;
     this.maxEvidenceChars = maxEvidenceChars;
     this.promptVersion = promptVersion;
+    this.provider = "siliconflow";
   }
 
   async analyze(source, providerResult) {
     if (!this.token) return {
       ok: false,
+      provider: "siliconflow",
       error: "SILICONFLOW_API_KEY is not configured",
       model: this.model,
       configuredModel: this.model,
@@ -75,6 +77,7 @@ export class SiliconFlowEvidenceReader {
     const evidence = compact(providerResult?.text, this.maxEvidenceChars);
     if (!evidence) return {
       ok: false,
+      provider: "siliconflow",
       error: "No evidence text for AI review",
       model: this.model,
       configuredModel: this.model,
@@ -138,6 +141,7 @@ export class SiliconFlowEvidenceReader {
         const detail = compact(await response.text(), 300);
         return {
           ok: false,
+          provider: "siliconflow",
           error: `SiliconFlow HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
           traceId,
           model: this.model,
@@ -155,6 +159,7 @@ export class SiliconFlowEvidenceReader {
         outputTokens: Number.isInteger(payload.usage.completion_tokens) ? payload.usage.completion_tokens : null,
       } : null;
       const metadata = {
+        provider: "siliconflow",
         traceId,
         model,
         configuredModel: this.model,
@@ -174,6 +179,7 @@ export class SiliconFlowEvidenceReader {
 
       return {
         ok: true,
+        provider: "siliconflow",
         ...metadata,
         productMatch: parsed.productMatch,
         availability: parsed.availability,
@@ -184,6 +190,7 @@ export class SiliconFlowEvidenceReader {
     } catch (error) {
       return {
         ok: false,
+        provider: "siliconflow",
         error: error.name === "AbortError" ? "SiliconFlow timeout" : compact(error.message, 300),
         model: this.model,
         configuredModel: this.model,
