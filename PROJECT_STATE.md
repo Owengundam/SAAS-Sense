@@ -13,13 +13,15 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Start with public, merchant-authorized supplier product pages only.
 - Sell the finished confidence workflow, not “scraping” or Actor access.
 - Read-only pilot; no Shopify product, price, or inventory mutation.
-- Deterministic matching and state extraction. No LLM dependency in v0.1.
+- Deterministic matching remains the base layer; SiliconFlow DeepSeek reviews captured evidence only when Apify omits structured availability, and AI failure falls back to the deterministic result.
 - Two consecutive high-confidence observations are required to confirm a change.
+- A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
+- Preorder, backordered, discontinued, and lead-time-only results are never labeled in stock.
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
 - Node 22.12+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
-- Apify E-commerce Scraping Tool is the primary production adapter; the generic Website Content Crawler is an explicit fallback and mock remains the default.
+- Apify E-commerce Scraping Tool is the primary production adapter; missing structured availability automatically triggers one bounded Website Content Crawler pass, and mock remains the default.
 
 ## Completed
 
@@ -33,12 +35,17 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Published `codex/supplier-signal-pilot` and opened GitHub PR #1; its initial CI run passed.
 - Added the official Shopify React Router shell, authenticated embedded routes, Prisma sessions, and production webhook handlers.
 - Added a Docker/Railway build; tests, typecheck, and production build pass locally.
-- Deployed Railway commit `06133f5` at `https://suppliersignal-production.up.railway.app` in safe mock mode, with persistent `/data` storage and an external `200` health check.
+- Deployed the initial Railway shell at `https://suppliersignal-production.up.railway.app`, with persistent `/data` storage and an external `200` health check; the provider was subsequently switched from mock to Apify.
 - Linked the repository configuration to the owner's Shopify app client ID; the secret remains only in Railway.
+- Installed and opened the authenticated embedded app on `suppliersignal-test.myshopify.com`.
+- Configured the live Apify provider and completed one $0.01 controlled run; missing availability remained uncertain as designed.
+- Added inspectable evidence, corrected availability vocabulary, source editing/deletion, and fast-confirmation scheduling logic.
+- Added a constrained `deepseek-ai/DeepSeek-V4-Flash` evidence reader through SiliconFlow, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
 
 ## Tested locally
 
 - Correct in-stock and sold-out classification.
+- Preorder, backorder, discontinued, lead-time, and word-boundary classification.
 - Wrong product and ambiguous matching.
 - Missing fields and conflicting availability terms.
 - Source unavailable versus genuine out of stock.
@@ -49,26 +56,26 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Stale state calculation.
 - Webhook HMAC, duplicate delivery, uninstall, customer request acknowledgement, and shop deletion.
 - Hosted Shopify pricing URL and inactive subscription gate.
+- AI extraction of explicit but nonstandard availability wording, hallucinated-quote rejection, rules-versus-AI conflict handling, invalid JSON handling, timeout/failure fallback, and no-tool prompt isolation.
 
 ## Not verified
 
-- Real Shopify install/session tokens, Partner API subscription query, or app-plan selection.
-- Real Apify Actor execution, exact runtime cost, timeout behavior, and source-specific extraction accuracy.
+- Partner API subscription query or app-plan selection.
+- Apify accuracy, timeout behavior, and cost across multiple real supplier domains.
+- Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
 - Scheduling, email delivery, or production observability.
-- Authenticated Shopify installation, App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
+- App Store review, legal review, merchant interviews, willingness to pay, or repeated use.
 
 ## Production blockers
 
-1. Owner must create/link the Shopify Partner app and securely configure its client secret in Railway.
-2. Owner must securely configure the Apify token in Railway; the existing $5 credit is the hard test cap.
-3. Initial supplier domains must be chosen with merchants who confirm authorization to monitor them.
-4. Company/legal identity, support email, governing law, and business address are needed before public policies or listing submission.
-5. App Store submission and paid outreach each require separate explicit owner authorization.
+1. Initial supplier domains must be chosen with merchants who confirm authorization to monitor them.
+2. Company/legal identity, support email, governing law, and business address are needed before public policies or listing submission.
+3. Automatic scheduling, App Store submission, and paid outreach each require separate explicit owner authorization.
 
 ## Minimum next owner action
 
-Create or link the Shopify app after the Railway URL exists, then add Shopify and Apify secrets directly in Railway Variables. Do not paste credentials into chat.
+Recruit one design-partner merchant and obtain 3–5 supplier product URLs they are authorized to monitor.
 
 ## Next execution step
 
-Link the live Railway URL to the Shopify Partner app, install it on a Shopify development store, verify sessions and webhooks end to end, then run capped checks against 3–5 merchant-authorized supplier pages and measure false/uncertain rates.
+Run capped checks against 3–5 merchant-authorized supplier pages, measure false/uncertain rates, and only then decide whether to enable automatic scheduling.
