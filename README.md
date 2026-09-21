@@ -81,6 +81,7 @@ Configure these only through the deployment host's secret interface:
 ```text
 SILICONFLOW_API_KEY=...
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 ```
 
 ### TypeSafe JEV — implemented behind evaluation modes; live verification pending
@@ -114,6 +115,7 @@ PORT=3000
 PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
 GLOBAL_MONTHLY_CHECK_LIMIT=5000

@@ -9,6 +9,14 @@ test("DeepSeek remains the default evidence reader", () => {
   assert.ok(reader instanceof SiliconFlowEvidenceReader);
 });
 
+test("SiliconFlow endpoint can target the account region", () => {
+  const reader = createEvidenceReader({
+    SILICONFLOW_API_KEY: "deepseek-key",
+    SILICONFLOW_ENDPOINT: "https://api.siliconflow.com/v1/chat/completions",
+  });
+  assert.equal(reader.endpoint, "https://api.siliconflow.com/v1/chat/completions");
+});
+
 test("JEV modes require explicit configuration and preserve DeepSeek as backup", () => {
   const shadow = createEvidenceReader({
     AI_READER_MODE: "jev-shadow",

@@ -9,6 +9,7 @@ export function createEvidenceReader(env = process.env) {
     ? new SiliconFlowEvidenceReader({
       token: env.SILICONFLOW_API_KEY,
       model: env.SILICONFLOW_MODEL,
+      endpoint: env.SILICONFLOW_ENDPOINT,
     })
     : null;
 

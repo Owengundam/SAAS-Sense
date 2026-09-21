@@ -51,6 +51,7 @@ JEV_API_KEY=
 TYPESAFE_MODEL=jev-1.13.0
 SILICONFLOW_API_KEY=
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 ```
 
 - `deepseek`: existing behavior and safe default.
