@@ -5,7 +5,7 @@
   "description": "Evidence-backed supplier availability monitoring for Shopify merchants",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "react-router build",

@@ -24,7 +24,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 
 ## Run locally
 
-Requirements: Node.js 22.12 or newer.
+Requirements: Node.js 22.13 or newer (`node:sqlite` is used without an experimental flag).
 
 ```bash
 npm install

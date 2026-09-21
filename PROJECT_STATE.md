@@ -20,7 +20,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Provider errors and ambiguous pages stay non-factual.
 - Preorder, backordered, discontinued, and lead-time-only results are never labeled in stock.
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
-- Node 22.12+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
+- Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
 - Apify E-commerce Scraping Tool is the primary production adapter; missing structured availability automatically triggers one bounded Website Content Crawler pass, and mock remains the default.
 
