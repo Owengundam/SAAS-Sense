@@ -47,7 +47,7 @@ Initial thresholds are deliberately provisional and must not be loosened without
 
 ```text
 AI_READER_MODE=deepseek
-TYPESAFE_API_KEY=
+JEV_API_KEY=
 TYPESAFE_MODEL=jev-1.13.0
 SILICONFLOW_API_KEY=
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
@@ -56,6 +56,8 @@ SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 - `deepseek`: existing behavior and safe default.
 - `jev-shadow`: DeepSeek remains authoritative; JEV results are stored for comparison.
 - `jev-primary`: accepted JEV decisions are authoritative; DeepSeek is a bounded backup for recoverable failures.
+- `TYPESAFE_API_KEY` remains supported as a compatibility alias for `JEV_API_KEY`.
+- When `JEV_API_KEY` is present and `AI_READER_MODE` is omitted, the service selects `jev-shadow`; an explicit mode always wins.
 
 ## Promotion gate
 

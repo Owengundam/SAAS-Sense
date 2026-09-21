@@ -202,7 +202,7 @@ export class JevEvidenceReader {
   async analyze(source, providerResult) {
     if (!this.token) return this.result({
       ok: false,
-      error: "TYPESAFE_API_KEY is not configured",
+      error: "JEV_API_KEY is not configured",
       returnedModel: null,
       reasonCode: "SERVICE_ERROR",
       allowFallback: true,

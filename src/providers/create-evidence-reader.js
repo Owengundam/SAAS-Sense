@@ -3,7 +3,8 @@ import { JevEvidenceReader } from "./jev.js";
 import { SiliconFlowEvidenceReader } from "./siliconflow.js";
 
 export function createEvidenceReader(env = process.env) {
-  const mode = String(env.AI_READER_MODE || "deepseek").trim().toLowerCase();
+  const jevToken = env.JEV_API_KEY || env.TYPESAFE_API_KEY;
+  const mode = String(env.AI_READER_MODE || (jevToken ? "jev-shadow" : "deepseek")).trim().toLowerCase();
   const deepseek = env.SILICONFLOW_API_KEY
     ? new SiliconFlowEvidenceReader({
       token: env.SILICONFLOW_API_KEY,
@@ -13,9 +14,9 @@ export function createEvidenceReader(env = process.env) {
 
   if (mode === "deepseek") return deepseek;
   if (!["jev-shadow", "jev-primary"].includes(mode)) throw new Error("INVALID_AI_READER_MODE");
-  if (!env.TYPESAFE_API_KEY) throw new Error("TYPESAFE_API_KEY_REQUIRED");
+  if (!jevToken) throw new Error("JEV_API_KEY_REQUIRED");
   const jev = new JevEvidenceReader({
-    token: env.TYPESAFE_API_KEY,
+    token: jevToken,
     model: env.TYPESAFE_MODEL,
   });
   if (mode === "jev-shadow") {

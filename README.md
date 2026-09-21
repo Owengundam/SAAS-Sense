@@ -93,9 +93,11 @@ DeepSeek remains authoritative by default. Available modes are:
 AI_READER_MODE=deepseek     # current behavior; no JEV calls
 AI_READER_MODE=jev-shadow   # DeepSeek decides; JEV is measured only
 AI_READER_MODE=jev-primary  # accepted JEV decisions first; bounded DeepSeek fallback
-TYPESAFE_API_KEY=...
+JEV_API_KEY=...
 TYPESAFE_MODEL=jev-1.13.0
 ```
+
+Providing `JEV_API_KEY` without `AI_READER_MODE` safely selects `jev-shadow`. Set `AI_READER_MODE=deepseek` to explicitly disable JEV calls, or use `jev-primary` only after the shadow evaluation.
 
 Fallback is reason-specific. Service errors and inconclusive interpretations may reach DeepSeek. Missing evidence, strong product/variant mismatch, contradictory evidence, and truncated candidate retrieval remain uncertain instead of asking another model for a more convenient answer. Shadow evaluations never change observations, transitions, or alerts.
 
@@ -120,7 +122,7 @@ SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `TYPESAFE_API_KEY` only when intentionally enabling a JEV evaluation mode. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
 
 ## Security boundaries
 
