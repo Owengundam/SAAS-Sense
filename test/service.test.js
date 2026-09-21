@@ -25,7 +25,9 @@ function setup(overrides = {}) {
 function add(service, shop = "a.myshopify.com") {
   return service.addSource(shop, {
     sku: "AFL-220", productTitle: "Arc Floor Lamp", url: "https://supplier.test/arc",
+    supplierSku: "SUP-AFL-220",
     matchTerms: ["AFL-220", "Arc Floor Lamp"],
+    matchConfirmed: true,
   });
 }
 
@@ -45,6 +47,11 @@ test("AI evidence reader participates before transition decisions", async () => 
         availability: "IN_STOCK",
         evidenceQuote: "Only a few copies remain",
         confidence: 0.95,
+        configuredModel: "deepseek-ai/DeepSeek-V4-Flash",
+        returnedModel: "deepseek-ai/DeepSeek-V4-Flash",
+        traceId: "trace-ai-run",
+        promptVersion: "availability-evidence-v1",
+        usage: { inputTokens: 120, outputTokens: 35 },
       };
     },
   };
@@ -65,6 +72,12 @@ test("AI evidence reader participates before transition decisions", async () => 
   const attempts = db.listProviderAttempts("a.myshopify.com");
   assert.equal(attempts.length, 2);
   assert.deepEqual(attempts.map((attempt) => attempt.role).sort(), ["evidence", "primary"]);
+  const decision = db.listDecisionRecords("a.myshopify.com")[0];
+  assert.equal(decision.decision_source, "AI");
+  assert.equal(decision.ai_status, "ACCEPTED");
+  assert.equal(decision.trace_id, "trace-ai-run");
+  assert.equal(decision.input_tokens, 120);
+  assert.equal(decision.evidence_quote, "Only a few copies remain");
   db.close();
 });
 
@@ -76,12 +89,52 @@ test("AI outage falls back to deterministic classification", async () => {
   const result = await service.checkSource("a.myshopify.com", source.id);
   assert.equal(result.observation.state, STATES.IN_STOCK);
   assert.match(result.observation.reason, /Matched/);
+  const decision = db.listDecisionRecords("a.myshopify.com")[0];
+  assert.equal(decision.decision_source, "RULES");
+  assert.equal(decision.ai_status, "FAILED");
+  assert.match(decision.ai_reason, /rate limited/);
+  db.close();
+});
+
+test("rejected AI evidence is persisted as a safety-gate decision", async () => {
+  const evidenceReader = { async analyze() {
+    return {
+      ok: true,
+      productMatch: "MATCH",
+      availability: "IN_STOCK",
+      evidenceQuote: "In stock",
+      confidence: 0.97,
+      reason: "Claimed availability",
+      configuredModel: "deepseek-ai/DeepSeek-V4-Flash",
+      returnedModel: "deepseek-ai/DeepSeek-V4-Flash",
+      traceId: "trace-rejected",
+      promptVersion: "availability-evidence-v1",
+    };
+  } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [{
+    ok: true,
+    runId: "ai-rejected",
+    url: source.url,
+    title: "Arc Floor Lamp",
+    text: "SKU AFL-220. Contact us for availability.",
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.UNCERTAIN);
+  const decision = db.listDecisionRecords("a.myshopify.com")[0];
+  assert.equal(decision.decision_source, "SAFETY_GATE");
+  assert.equal(decision.ai_status, "REJECTED");
+  assert.match(decision.ai_reason, /quote/i);
+  assert.equal(decision.trace_id, "trace-rejected");
   db.close();
 });
 
 test("source records are tenant-isolated", () => {
   const { db, service } = setup();
   const record = add(service);
+  assert.equal(record.supplierSku, "SUP-AFL-220");
+  assert.equal(record.matchConfirmedAt, "2026-09-15T12:00:00.000Z");
   assert.equal(db.getSource("b.myshopify.com", record.id), null);
   assert.equal(service.dashboard("b.myshopify.com").sources.length, 0);
   db.close();
@@ -146,6 +199,8 @@ test("duplicate provider deliveries are idempotent", async () => {
   const second = await service.checkSource("a.myshopify.com", source.id);
   assert.equal(second.duplicate, true);
   assert.equal(service.dashboard("a.myshopify.com").observations.length, 1);
+  assert.equal(db.listDecisionRecords("a.myshopify.com").length, 1);
+  assert.equal(db.listUsageLedger("a.myshopify.com").length, 2);
   db.close();
 });
 
@@ -237,10 +292,50 @@ test("source edits are tenant-isolated and reset the baseline", async () => {
   }), /SOURCE_NOT_FOUND/);
   const updated = service.updateSource("a.myshopify.com", source.id, {
     sku: "AFL-221", productTitle: "Updated Lamp", url: "https://supplier.test/updated",
+    supplierSku: "SUP-AFL-221", matchConfirmed: true,
   });
   assert.equal(updated.sku, "AFL-221");
   assert.equal(updated.lastState, null);
   assert.equal(updated.lastCheckedAt, null);
+  db.close();
+});
+
+test("new sources require a declared domain, supplier identity, and explicit match confirmation", () => {
+  const { db, service } = setup();
+  assert.throws(() => service.addSource("a.myshopify.com", {
+    sku: "X", productTitle: "Unknown", url: "https://unsupported.example/product",
+    supplierSku: "SUP-X", matchConfirmed: true,
+  }), /UNSUPPORTED_SUPPLIER_DOMAIN/);
+  assert.throws(() => service.addSource("a.myshopify.com", {
+    sku: "X", productTitle: "Unknown", url: "https://supplier.test/product",
+    matchConfirmed: true,
+  }), /SUPPLIER_IDENTITY_REQUIRED/);
+  assert.throws(() => service.addSource("a.myshopify.com", {
+    sku: "X", productTitle: "Unknown", url: "https://supplier.test/product",
+    supplierSku: "SUP-X",
+  }), /PRODUCT_MATCH_CONFIRMATION_REQUIRED/);
+  db.close();
+});
+
+test("an unapproved redirect becomes a source error and skips AI", async () => {
+  let aiCalls = 0;
+  const evidenceReader = { async analyze() { aiCalls += 1; return { ok: false }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [{
+    ok: true,
+    runId: "redirected",
+    url: "https://cdn.supplier.test/arc",
+    title: "Arc Floor Lamp",
+    text: "SKU AFL-220. In stock",
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.SOURCE_ERROR);
+  assert.match(result.observation.reason, /UNAPPROVED_SUPPLIER_REDIRECT/);
+  assert.equal(aiCalls, 0);
+  const decision = db.listDecisionRecords("a.myshopify.com")[0];
+  assert.equal(decision.decision_source, "PROVIDER_ERROR");
+  assert.equal(decision.ai_status, "SKIPPED");
   db.close();
 });
 
@@ -256,6 +351,7 @@ test("source deletion is tenant-isolated and cascades its history", async () => 
   assert.equal(service.dashboard("a.myshopify.com").tenant.monthlyCheckUsage, 1);
   assert.equal(db.listUsageLedger("a.myshopify.com").length, 1);
   assert.equal(db.listProviderAttempts("a.myshopify.com").length, 1);
+  assert.equal(db.listDecisionRecords("a.myshopify.com").length, 0);
   db.close();
 });
 

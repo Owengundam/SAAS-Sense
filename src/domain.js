@@ -48,58 +48,77 @@ function evidenceIncludesQuote(evidence, quote) {
   return normalizedQuote.length >= 3 && normalizedEvidence.includes(normalizedQuote);
 }
 
-export function incorporateAiObservation(deterministic, providerResult, aiResult) {
-  if (!aiResult?.ok) return deterministic;
+export function evaluateAiObservation(deterministic, providerResult, aiResult) {
+  if (!aiResult?.ok) return {
+    observation: deterministic,
+    accepted: false,
+    rejectionReason: aiResult?.error || "AI request failed",
+    influencedDecision: false,
+  };
 
   if (aiResult.productMatch !== "MATCH") {
-    return {
+    return { observation: {
       state: STATES.UNCERTAIN,
       confidence: Math.min(Number(aiResult.confidence) || 0, 0.6),
       reason: `AI product match ${String(aiResult.productMatch).toLowerCase()}`,
       checkedAt: deterministic.checkedAt,
       factual: false,
-    };
+    }, accepted: false, rejectionReason: `Product match was ${aiResult.productMatch}`, influencedDecision: true };
   }
 
-  if (aiResult.availability === "UNKNOWN") return deterministic;
+  if (aiResult.availability === "UNKNOWN") return {
+    observation: deterministic,
+    accepted: false,
+    rejectionReason: "AI returned UNKNOWN",
+    influencedDecision: false,
+  };
 
   if (!FACTUAL_STATES.has(aiResult.availability) || !evidenceIncludesQuote(providerResult?.text, aiResult.evidenceQuote)) {
-    return {
+    return { observation: {
       state: STATES.UNCERTAIN,
       confidence: 0.4,
       reason: "AI availability evidence could not be verified in the captured page text",
       checkedAt: deterministic.checkedAt,
       factual: false,
-    };
+    }, accepted: false, rejectionReason: "Evidence quote was missing or could not be verified", influencedDecision: true };
   }
 
   const confidence = Math.min(Number(aiResult.confidence) || 0, 0.97);
   if (confidence < 0.8) {
-    return {
+    return { observation: {
       state: STATES.UNCERTAIN,
       confidence,
       reason: "AI availability reading was below the confidence threshold",
       checkedAt: deterministic.checkedAt,
       factual: false,
-    };
+    }, accepted: false, rejectionReason: "AI confidence was below 0.8", influencedDecision: true };
   }
 
   if (deterministic.factual && deterministic.state !== aiResult.availability) {
-    return {
+    return { observation: {
       state: STATES.UNCERTAIN,
       confidence: Math.min(confidence, deterministic.confidence, 0.6),
       reason: `Rules and AI conflict (${deterministic.state} / ${aiResult.availability})`,
       checkedAt: deterministic.checkedAt,
       factual: false,
-    };
+    }, accepted: false, rejectionReason: "Rules and AI returned conflicting factual states", influencedDecision: true };
   }
 
-  return result(
-    aiResult.availability,
-    `AI verified “${aiResult.evidenceQuote}”`,
-    deterministic.checkedAt,
-    confidence,
-  );
+  return {
+    observation: result(
+      aiResult.availability,
+      `AI verified “${aiResult.evidenceQuote}”`,
+      deterministic.checkedAt,
+      confidence,
+    ),
+    accepted: true,
+    rejectionReason: null,
+    influencedDecision: true,
+  };
+}
+
+export function incorporateAiObservation(deterministic, providerResult, aiResult) {
+  return evaluateAiObservation(deterministic, providerResult, aiResult).observation;
 }
 
 export function classifyObservation(source, providerResult, now = new Date()) {

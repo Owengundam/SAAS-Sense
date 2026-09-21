@@ -1,5 +1,6 @@
 const DEFAULT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
+const DEFAULT_PROMPT_VERSION = "availability-evidence-v1";
 const AVAILABILITY_STATES = [
   "IN_STOCK",
   "PREORDER",
@@ -51,6 +52,7 @@ export class SiliconFlowEvidenceReader {
     fetchImpl = fetch,
     timeoutMs = 10_000,
     maxEvidenceChars = 12_000,
+    promptVersion = DEFAULT_PROMPT_VERSION,
   } = {}) {
     this.token = token;
     this.model = model;
@@ -58,12 +60,27 @@ export class SiliconFlowEvidenceReader {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.maxEvidenceChars = maxEvidenceChars;
+    this.promptVersion = promptVersion;
   }
 
   async analyze(source, providerResult) {
-    if (!this.token) return { ok: false, error: "SILICONFLOW_API_KEY is not configured", model: this.model };
+    if (!this.token) return {
+      ok: false,
+      error: "SILICONFLOW_API_KEY is not configured",
+      model: this.model,
+      configuredModel: this.model,
+      returnedModel: null,
+      promptVersion: this.promptVersion,
+    };
     const evidence = compact(providerResult?.text, this.maxEvidenceChars);
-    if (!evidence) return { ok: false, error: "No evidence text for AI review", model: this.model };
+    if (!evidence) return {
+      ok: false,
+      error: "No evidence text for AI review",
+      model: this.model,
+      configuredModel: this.model,
+      returnedModel: null,
+      promptVersion: this.promptVersion,
+    };
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -97,8 +114,13 @@ export class SiliconFlowEvidenceReader {
               role: "user",
               content: JSON.stringify({
                 expectedProduct: {
-                  sku: compact(source?.sku, 200),
+                  merchantSku: compact(source?.sku, 200),
                   title: compact(source?.productTitle, 300),
+                  shopifyProductId: compact(source?.shopifyProductId, 200),
+                  shopifyVariantId: compact(source?.shopifyVariantId, 200),
+                  supplierSku: compact(source?.supplierSku, 200),
+                  supplierProductId: compact(source?.supplierProductId, 200),
+                  supplierVariantId: compact(source?.supplierVariantId, 200),
                   matchTerms: Array.isArray(source?.matchTerms)
                     ? source.matchTerms.slice(0, 20).map((term) => compact(term, 200))
                     : [],
@@ -114,7 +136,15 @@ export class SiliconFlowEvidenceReader {
       const traceId = response.headers.get("x-siliconcloud-trace-id") || null;
       if (!response.ok) {
         const detail = compact(await response.text(), 300);
-        return { ok: false, error: `SiliconFlow HTTP ${response.status}${detail ? `: ${detail}` : ""}`, traceId, model: this.model };
+        return {
+          ok: false,
+          error: `SiliconFlow HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
+          traceId,
+          model: this.model,
+          configuredModel: this.model,
+          returnedModel: null,
+          promptVersion: this.promptVersion,
+        };
       }
 
       const payload = await response.json();
@@ -124,21 +154,27 @@ export class SiliconFlowEvidenceReader {
         inputTokens: Number.isInteger(payload.usage.prompt_tokens) ? payload.usage.prompt_tokens : null,
         outputTokens: Number.isInteger(payload.usage.completion_tokens) ? payload.usage.completion_tokens : null,
       } : null;
-      if (typeof content !== "string") return { ok: false, error: "SiliconFlow returned no message content", traceId, model, usage };
+      const metadata = {
+        traceId,
+        model,
+        configuredModel: this.model,
+        returnedModel: payload?.model || null,
+        promptVersion: this.promptVersion,
+        usage,
+      };
+      if (typeof content !== "string") return { ok: false, error: "SiliconFlow returned no message content", ...metadata };
 
       let parsed;
       try {
         parsed = JSON.parse(content);
       } catch {
-        return { ok: false, error: "SiliconFlow returned malformed JSON", traceId, model, usage };
+        return { ok: false, error: "SiliconFlow returned malformed JSON", ...metadata };
       }
-      if (!validResult(parsed)) return { ok: false, error: "SiliconFlow returned an invalid evidence shape", traceId, model, usage };
+      if (!validResult(parsed)) return { ok: false, error: "SiliconFlow returned an invalid evidence shape", ...metadata };
 
       return {
         ok: true,
-        traceId,
-        model,
-        usage,
+        ...metadata,
         productMatch: parsed.productMatch,
         availability: parsed.availability,
         evidenceQuote: compact(parsed.evidenceQuote, 500),
@@ -150,6 +186,9 @@ export class SiliconFlowEvidenceReader {
         ok: false,
         error: error.name === "AbortError" ? "SiliconFlow timeout" : compact(error.message, 300),
         model: this.model,
+        configuredModel: this.model,
+        returnedModel: null,
+        promptVersion: this.promptVersion,
       };
     } finally {
       clearTimeout(timeout);

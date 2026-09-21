@@ -31,6 +31,10 @@ function createCore(): Core {
     })
     : null;
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
+  const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
+    ?.split(",")
+    .map((domain) => domain.trim())
+    .filter(Boolean);
   const service = new SupplierSignalService({
     db,
     provider,
@@ -38,6 +42,7 @@ function createCore(): Core {
     globalMonthlyCheckLimit: Number.isInteger(configuredGlobalLimit) && configuredGlobalLimit >= 0
       ? configuredGlobalLimit
       : 5000,
+    ...(supportedDomains?.length ? { supportedDomains } : {}),
     simulated: !liveProvider,
   });
   return { db, service, liveProvider };

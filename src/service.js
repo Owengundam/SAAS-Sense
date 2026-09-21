@@ -1,13 +1,74 @@
-import { classifyObservation, decideTransition, incorporateAiObservation, isStale } from "./domain.js";
+import { classifyObservation, decideTransition, evaluateAiObservation, isStale } from "./domain.js";
+import {
+  DEFAULT_SUPPORTED_DOMAINS,
+  normalizeSupportedDomains,
+  validateSupplierRedirect,
+  validateSupplierUrl,
+} from "./source-policy.js";
+
+function uniqueTerms(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function sourceInput(input, url, now) {
+  const explicitTerms = Array.isArray(input.matchTerms) ? input.matchTerms : [];
+  const supplierIdentity = [input.supplierSku, input.supplierProductId, input.supplierVariantId];
+  if (!uniqueTerms([...supplierIdentity, ...explicitTerms]).length) {
+    throw new Error("SUPPLIER_IDENTITY_REQUIRED");
+  }
+  if (input.matchConfirmed !== true && !input.matchConfirmedAt) {
+    throw new Error("PRODUCT_MATCH_CONFIRMATION_REQUIRED");
+  }
+  return {
+    ...input,
+    url: url.toString(),
+    matchTerms: uniqueTerms(explicitTerms.length
+      ? explicitTerms
+      : [input.supplierVariantId || input.supplierSku || input.supplierProductId]),
+    matchConfirmedAt: input.matchConfirmedAt || now.toISOString(),
+  };
+}
+
+function evidenceContext(text, quote, maxLength = 700) {
+  const evidence = String(text || "").replace(/\s+/g, " ").trim();
+  if (!evidence) return "";
+  const needle = String(quote || "").replace(/\s+/g, " ").trim();
+  if (!needle) return evidence.slice(0, maxLength);
+  const index = evidence.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return evidence.slice(0, maxLength);
+  const start = Math.max(0, index - Math.floor((maxLength - needle.length) / 2));
+  return evidence.slice(start, start + maxLength);
+}
+
+function deterministicSource(providerResult, observation) {
+  if (providerResult?.availabilityState) return "STRUCTURED";
+  if (observation.state === "SOURCE_ERROR") return "PROVIDER_ERROR";
+  return "RULES";
+}
+
+function matchedQuote(reason) {
+  return String(reason || "").match(/Matched [“\"]([^”\"]+)[”\"]/)?.[1] || "";
+}
 
 export class SupplierSignalService {
-  constructor({ db, provider, evidenceReader = null, confirmationCount = 2, recheckDelayMinutes = 20, globalMonthlyCheckLimit = 5000, now = () => new Date(), simulated = true }) {
+  constructor({
+    db,
+    provider,
+    evidenceReader = null,
+    confirmationCount = 2,
+    recheckDelayMinutes = 20,
+    globalMonthlyCheckLimit = 5000,
+    supportedDomains = DEFAULT_SUPPORTED_DOMAINS,
+    now = () => new Date(),
+    simulated = true,
+  }) {
     this.db = db;
     this.provider = provider;
     this.evidenceReader = evidenceReader;
     this.confirmationCount = confirmationCount;
     this.recheckDelayMinutes = recheckDelayMinutes;
     this.globalMonthlyCheckLimit = globalMonthlyCheckLimit;
+    this.supportedDomains = normalizeSupportedDomains(supportedDomains);
     this.now = now;
     this.simulated = simulated;
   }
@@ -17,13 +78,8 @@ export class SupplierSignalService {
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
     if (this.db.countSources(shop) >= tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
     if (!input.sku || !input.productTitle || !input.url) throw new Error("INVALID_SOURCE");
-    const url = new URL(input.url);
-    if (url.protocol !== "https:") throw new Error("HTTPS_REQUIRED");
-    return this.db.addSource(shop, {
-      ...input,
-      url: url.toString(),
-      matchTerms: input.matchTerms?.length ? input.matchTerms : [input.sku, input.productTitle],
-    });
+    const url = validateSupplierUrl(input.url, this.supportedDomains);
+    return this.db.addSource(shop, sourceInput(input, url, this.now()));
   }
 
   updateSource(shop, sourceId, input) {
@@ -31,13 +87,8 @@ export class SupplierSignalService {
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
     if (!this.db.getSource(shop, sourceId)) throw new Error("SOURCE_NOT_FOUND");
     if (!input.sku || !input.productTitle || !input.url) throw new Error("INVALID_SOURCE");
-    const url = new URL(input.url);
-    if (url.protocol !== "https:") throw new Error("HTTPS_REQUIRED");
-    return this.db.updateSource(shop, sourceId, {
-      ...input,
-      url: url.toString(),
-      matchTerms: input.matchTerms?.length ? input.matchTerms : [input.sku, input.productTitle],
-    });
+    const url = validateSupplierUrl(input.url, this.supportedDomains);
+    return this.db.updateSource(shop, sourceId, sourceInput(input, url, this.now()));
   }
 
   deleteSource(shop, sourceId) {
@@ -52,6 +103,7 @@ export class SupplierSignalService {
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
     const source = this.db.getSource(shop, sourceId);
     if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
+    validateSupplierUrl(source.url, this.supportedDomains);
     const usage = this.db.reserveCheckUsage(
       shop,
       source.id,
@@ -62,7 +114,7 @@ export class SupplierSignalService {
     let providerAttemptsRecorded = false;
 
     try {
-      const providerResult = await this.provider.fetchPage(source);
+      let providerResult = await this.provider.fetchPage(source);
       const providerAttempts = providerResult?.providerAttempts?.length
         ? providerResult.providerAttempts
         : [{
@@ -76,29 +128,91 @@ export class SupplierSignalService {
       }
       providerAttemptsRecorded = true;
 
+      if (providerResult?.ok !== false) {
+        try {
+          const resolved = validateSupplierRedirect(source.url, providerResult?.url, this.supportedDomains);
+          providerResult = { ...providerResult, url: resolved.toString() };
+        } catch (error) {
+          providerResult = {
+            ...providerResult,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
       const checkedAt = this.now();
-      let observation = classifyObservation(source, providerResult, checkedAt);
+      const rulesObservation = classifyObservation(source, providerResult, checkedAt);
+      let observation = rulesObservation;
+      let aiResult = null;
+      let aiStatus = "SKIPPED";
+      let aiReason = !this.evidenceReader
+        ? "AI_NOT_CONFIGURED"
+        : providerResult?.availabilityState
+          ? "STRUCTURED_AVAILABILITY_PRESENT"
+          : providerResult?.ok === false
+            ? "PROVIDER_RESULT_UNUSABLE"
+            : !providerResult?.text
+              ? "NO_EVIDENCE_TEXT"
+              : "NOT_ATTEMPTED";
+      let decisionSource = deterministicSource(providerResult, rulesObservation);
+      let aiLatencyMs = null;
       if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState) {
-        let aiResult;
+        const aiStartedAt = performance.now();
         try {
           aiResult = await this.evidenceReader.analyze(source, providerResult);
         } catch (error) {
-          aiResult = { ok: false, error: error.message };
+          aiResult = { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
+        aiLatencyMs = performance.now() - aiStartedAt;
         this.db.recordProviderAttempt(shop, usage.operationId, {
           provider: "siliconflow",
           role: "evidence",
           providerRunId: aiResult.traceId,
           traceId: aiResult.traceId,
-          model: aiResult.model,
+          model: aiResult.returnedModel || aiResult.configuredModel || aiResult.model,
           inputTokens: aiResult.usage?.inputTokens,
           outputTokens: aiResult.usage?.outputTokens,
           outcome: aiResult.ok ? "SUCCEEDED" : "FAILED",
         }, this.now());
-        observation = incorporateAiObservation(observation, providerResult, aiResult);
+        const evaluation = evaluateAiObservation(rulesObservation, providerResult, aiResult);
+        observation = evaluation.observation;
+        aiStatus = aiResult.ok ? (evaluation.accepted ? "ACCEPTED" : "REJECTED") : "FAILED";
+        aiReason = evaluation.accepted ? (aiResult.reason || "AI evidence accepted") : evaluation.rejectionReason;
+        if (evaluation.accepted) decisionSource = "AI";
+        else if (evaluation.influencedDecision) decisionSource = "SAFETY_GATE";
       }
       const providerRunId = providerResult.runId || `${source.id}-${observation.checkedAt}`;
+      const evidenceQuote = aiResult?.evidenceQuote || matchedQuote(observation.reason);
+      const decision = {
+        decisionSource,
+        rulesState: rulesObservation.state,
+        rulesConfidence: rulesObservation.confidence,
+        aiStatus,
+        aiReason,
+        configuredModel: aiResult?.configuredModel || this.evidenceReader?.model,
+        returnedModel: aiResult?.returnedModel,
+        traceId: aiResult?.traceId,
+        promptVersion: aiResult?.promptVersion || this.evidenceReader?.promptVersion,
+        inputTokens: aiResult?.usage?.inputTokens,
+        outputTokens: aiResult?.usage?.outputTokens,
+        latencyMs: aiLatencyMs,
+        evidenceQuote,
+        evidenceContext: evidenceContext(providerResult?.text, evidenceQuote),
+        finalState: observation.state,
+        finalConfidence: observation.confidence,
+      };
       const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
+      if (inserted.id) {
+        this.db.insertDecisionRecord(
+          shop,
+          source.id,
+          inserted.id,
+          usage.operationId,
+          decision,
+          this.now(),
+        );
+      }
       if (!inserted.inserted) {
         this.db.completeCheckUsage(shop, usage.operationId, {
           outcome: "DUPLICATE_DELIVERY",
@@ -194,6 +308,7 @@ export class SupplierSignalService {
       },
       sources,
       observations: this.db.listObservations(shop),
+      decisions: this.db.listDecisionRecords(shop),
       alerts: this.db.listAlerts(shop),
       generatedAt: now.toISOString(),
     };

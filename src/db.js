@@ -32,6 +32,12 @@ export function createDatabase(path = ":memory:") {
       shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
       sku TEXT NOT NULL,
       product_title TEXT NOT NULL,
+      shopify_product_id TEXT,
+      shopify_variant_id TEXT,
+      supplier_product_id TEXT,
+      supplier_variant_id TEXT,
+      supplier_sku TEXT,
+      match_confirmed_at TEXT,
       url TEXT NOT NULL,
       match_terms TEXT NOT NULL,
       in_stock_terms TEXT NOT NULL,
@@ -62,6 +68,32 @@ export function createDatabase(path = ":memory:") {
       raw_excerpt TEXT,
       UNIQUE(shop, provider_run_id)
     );
+    CREATE TABLE IF NOT EXISTS decision_records (
+      id TEXT PRIMARY KEY,
+      observation_id TEXT NOT NULL UNIQUE REFERENCES observations(id) ON DELETE CASCADE,
+      operation_id TEXT NOT NULL REFERENCES usage_ledger(operation_id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      decision_source TEXT NOT NULL,
+      rules_state TEXT NOT NULL,
+      rules_confidence REAL NOT NULL,
+      ai_status TEXT NOT NULL,
+      ai_reason TEXT,
+      configured_model TEXT,
+      returned_model TEXT,
+      trace_id TEXT,
+      prompt_version TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      latency_ms REAL,
+      evidence_quote TEXT,
+      evidence_context TEXT,
+      final_state TEXT NOT NULL,
+      final_confidence REAL NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS decision_records_shop_created
+      ON decision_records(shop, created_at);
     CREATE TABLE IF NOT EXISTS alerts (
       id TEXT PRIMARY KEY,
       source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -116,6 +148,12 @@ export function createDatabase(path = ":memory:") {
   if (!sourceColumns.has("last_attempt_at")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_at TEXT");
   if (!sourceColumns.has("last_attempt_status")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_status TEXT");
   if (!sourceColumns.has("last_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN last_confirmed_at TEXT");
+  if (!sourceColumns.has("shopify_product_id")) db.exec("ALTER TABLE sources ADD COLUMN shopify_product_id TEXT");
+  if (!sourceColumns.has("shopify_variant_id")) db.exec("ALTER TABLE sources ADD COLUMN shopify_variant_id TEXT");
+  if (!sourceColumns.has("supplier_product_id")) db.exec("ALTER TABLE sources ADD COLUMN supplier_product_id TEXT");
+  if (!sourceColumns.has("supplier_variant_id")) db.exec("ALTER TABLE sources ADD COLUMN supplier_variant_id TEXT");
+  if (!sourceColumns.has("supplier_sku")) db.exec("ALTER TABLE sources ADD COLUMN supplier_sku TEXT");
+  if (!sourceColumns.has("match_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN match_confirmed_at TEXT");
   db.exec(`
     UPDATE sources
       SET last_attempt_at = last_checked_at
@@ -142,6 +180,12 @@ export function createDatabase(path = ":memory:") {
     shop: row.shop,
     sku: row.sku,
     productTitle: row.product_title,
+    shopifyProductId: row.shopify_product_id,
+    shopifyVariantId: row.shopify_variant_id,
+    supplierProductId: row.supplier_product_id,
+    supplierVariantId: row.supplier_variant_id,
+    supplierSku: row.supplier_sku,
+    matchConfirmedAt: row.match_confirmed_at,
     url: row.url,
     matchTerms: row.match_terms,
     inStockTerms: row.in_stock_terms,
@@ -281,10 +325,14 @@ export function createDatabase(path = ":memory:") {
       const id = input.id || randomUUID();
       const createdAt = input.createdAt || new Date().toISOString();
       db.prepare(`INSERT INTO sources
-        (id, shop, sku, product_title, url, match_terms, in_stock_terms, out_of_stock_terms,
-         stale_after_hours, enabled, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        id, shop, input.sku, input.productTitle, input.url,
+        (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
+         supplier_product_id, supplier_variant_id, supplier_sku, match_confirmed_at,
+         url, match_terms, in_stock_terms, out_of_stock_terms, stale_after_hours, enabled, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, shop, input.sku, input.productTitle,
+        input.shopifyProductId || null, input.shopifyVariantId || null,
+        input.supplierProductId || null, input.supplierVariantId || null,
+        input.supplierSku || null, input.matchConfirmedAt || null, input.url,
         JSON.stringify(input.matchTerms || []), JSON.stringify(input.inStockTerms || []),
         JSON.stringify(input.outOfStockTerms || []), input.staleAfterHours ?? 36,
         input.enabled === false ? 0 : 1, createdAt,
@@ -303,11 +351,17 @@ export function createDatabase(path = ":memory:") {
         .all(shop, now.toISOString(), limit).map(mapSource);
     },
     updateSource(shop, id, input) {
-      const result = db.prepare(`UPDATE sources SET sku=?, product_title=?, url=?, match_terms=?,
+      const result = db.prepare(`UPDATE sources SET sku=?, product_title=?,
+        shopify_product_id=?, shopify_variant_id=?, supplier_product_id=?, supplier_variant_id=?,
+        supplier_sku=?, match_confirmed_at=?, url=?, match_terms=?,
         last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL,
         last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL
         WHERE shop=? AND id=?`).run(
-        input.sku, input.productTitle, input.url, JSON.stringify(input.matchTerms || []), shop, id,
+        input.sku, input.productTitle,
+        input.shopifyProductId || null, input.shopifyVariantId || null,
+        input.supplierProductId || null, input.supplierVariantId || null,
+        input.supplierSku || null, input.matchConfirmedAt || null,
+        input.url, JSON.stringify(input.matchTerms || []), shop, id,
       );
       return result.changes ? this.getSource(shop, id) : null;
     },
@@ -336,9 +390,35 @@ export function createDatabase(path = ":memory:") {
         );
         return { inserted: true, id };
       } catch (error) {
-        if (String(error.message).includes("UNIQUE constraint failed")) return { inserted: false, duplicate: true };
+        if (String(error.message).includes("UNIQUE constraint failed")) {
+          const existing = db.prepare("SELECT id FROM observations WHERE shop = ? AND provider_run_id = ?")
+            .get(shop, providerRunId);
+          return { inserted: false, duplicate: true, id: existing?.id || null };
+        }
         throw error;
       }
+    },
+    insertDecisionRecord(shop, sourceId, observationId, operationId, decision, now = new Date()) {
+      const id = randomUUID();
+      const result = db.prepare(`INSERT OR IGNORE INTO decision_records
+        (id, observation_id, operation_id, source_id, shop, decision_source,
+         rules_state, rules_confidence, ai_status, ai_reason, configured_model, returned_model,
+         trace_id, prompt_version, input_tokens, output_tokens, latency_ms, evidence_quote,
+         evidence_context, final_state, final_confidence, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, observationId, operationId, sourceId, shop, decision.decisionSource,
+        decision.rulesState, decision.rulesConfidence, decision.aiStatus,
+        decision.aiReason || null, decision.configuredModel || null,
+        decision.returnedModel || null, decision.traceId || null,
+        decision.promptVersion || null,
+        Number.isInteger(decision.inputTokens) ? decision.inputTokens : null,
+        Number.isInteger(decision.outputTokens) ? decision.outputTokens : null,
+        Number.isFinite(decision.latencyMs) ? decision.latencyMs : null,
+        decision.evidenceQuote || null, decision.evidenceContext || null,
+        decision.finalState, decision.finalConfidence, now.toISOString(),
+      );
+      return result.changes ? id : db.prepare("SELECT id FROM decision_records WHERE observation_id = ?")
+        .get(observationId)?.id || null;
     },
     insertAlert(shop, sourceId, alert, now = new Date()) {
       const id = randomUUID();
@@ -351,6 +431,13 @@ export function createDatabase(path = ":memory:") {
     listObservations(shop, limit = 30) {
       return db.prepare(`SELECT o.*, s.sku, s.product_title FROM observations o
         JOIN sources s ON s.id=o.source_id WHERE o.shop=? ORDER BY o.checked_at DESC LIMIT ?`).all(shop, limit);
+    },
+    listDecisionRecords(shop, limit = 30) {
+      return db.prepare(`SELECT d.*, o.checked_at, s.sku, s.product_title
+        FROM decision_records d
+        JOIN observations o ON o.id=d.observation_id
+        JOIN sources s ON s.id=d.source_id
+        WHERE d.shop=? ORDER BY d.created_at DESC LIMIT ?`).all(shop, limit);
     },
     listAlerts(shop, limit = 20) {
       return db.prepare(`SELECT a.*, s.sku, s.product_title FROM alerts a

@@ -23,8 +23,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       service.addSource(session.shop, {
         sku: String(form.get("sku") || "").trim(),
         productTitle: String(form.get("productTitle") || "").trim(),
+        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
+        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+        supplierProductId: String(form.get("supplierProductId") || "").trim(),
+        supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
+        supplierSku: String(form.get("supplierSku") || "").trim(),
         url: String(form.get("url") || "").trim(),
         matchTerms: String(form.get("matchTerms") || "").split(",").map((value) => value.trim()).filter(Boolean),
+        matchConfirmed: form.get("matchConfirmed") === "on",
       });
       return { ok: true, message: "Supplier source added." };
     }
@@ -42,8 +48,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       service.updateSource(session.shop, String(form.get("sourceId") || ""), {
         sku: String(form.get("sku") || "").trim(),
         productTitle: String(form.get("productTitle") || "").trim(),
+        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
+        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+        supplierProductId: String(form.get("supplierProductId") || "").trim(),
+        supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
+        supplierSku: String(form.get("supplierSku") || "").trim(),
         url: String(form.get("url") || "").trim(),
         matchTerms: String(form.get("matchTerms") || "").split(",").map((value) => value.trim()).filter(Boolean),
+        matchConfirmed: form.get("matchConfirmed") === "on",
       });
       return { ok: true, message: "Supplier source updated. Run a check to set its new baseline." };
     }
@@ -83,6 +95,16 @@ function formatTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function decisionLabel(decision: any) {
+  if (!decision) return "No audit record";
+  if (decision.ai_status === "ACCEPTED") return "AI accepted";
+  if (decision.ai_status === "REJECTED") return "AI rejected";
+  if (decision.ai_status === "FAILED") return "AI failed · fallback used";
+  if (decision.decision_source === "STRUCTURED") return "Structured supplier data";
+  if (decision.decision_source === "PROVIDER_ERROR") return "Provider failure";
+  return "Rules only";
+}
+
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
@@ -97,6 +119,8 @@ export default function Index() {
   for (const item of data.observations as any[]) {
     if (!latest.has(item.source_id)) latest.set(item.source_id, item);
   }
+  const decisions = new Map<string, any>();
+  for (const item of data.decisions as any[]) decisions.set(item.observation_id, item);
   const confirmed = data.sources.filter((item: any) => item.lastState).length;
   const activeLatest = data.sources.map((source: any) => {
     const observation = latest.get(source.id);
@@ -136,6 +160,7 @@ export default function Index() {
                 {data.sources.map((source: any) => {
                   const candidateObservation: any = latest.get(source.id);
                   const observation = candidateObservation?.checked_at === source.lastAttemptAt ? candidateObservation : null;
+                  const decision = observation ? decisions.get(observation.id) : null;
                   const latestUnverified = source.lastAttemptStatus === "SOURCE_ERROR" || source.lastAttemptStatus === "UNCERTAIN";
                   const modalId = `delete-source-${source.id}`;
                   return <tr key={source.id}>
@@ -153,6 +178,21 @@ export default function Index() {
                         <span className={styles.muted}>Latest attempt {formatTime(source.lastAttemptAt)}</span>
                         <a href={source.url} target="_blank" rel="noreferrer">Open supplier page</a>
                         {observation.raw_excerpt && <details><summary>View captured evidence</summary><p>{observation.raw_excerpt}</p></details>}
+                        {decision && <details className={styles.audit}>
+                          <summary>Decision audit · {decisionLabel(decision)}</summary>
+                          <dl className={styles.auditGrid}>
+                            <dt>Final source</dt><dd>{decision.decision_source}</dd>
+                            <dt>Rules</dt><dd>{stateLabel(decision.rules_state, false)} · {Math.round(decision.rules_confidence * 100)}%</dd>
+                            <dt>AI</dt><dd>{decision.ai_status}{decision.ai_reason ? ` · ${decision.ai_reason}` : ""}</dd>
+                            {decision.configured_model && <><dt>Model</dt><dd>{decision.returned_model || decision.configured_model}</dd></>}
+                            {decision.trace_id && <><dt>Trace</dt><dd><code>{decision.trace_id}</code></dd></>}
+                            {decision.prompt_version && <><dt>Prompt</dt><dd>{decision.prompt_version}</dd></>}
+                            {(decision.input_tokens != null || decision.output_tokens != null) && <><dt>Tokens</dt><dd>{decision.input_tokens ?? "?"} in / {decision.output_tokens ?? "?"} out</dd></>}
+                            {decision.latency_ms != null && <><dt>AI latency</dt><dd>{Math.round(decision.latency_ms)} ms</dd></>}
+                            {decision.evidence_quote && <><dt>Quote</dt><dd>“{decision.evidence_quote}”</dd></>}
+                            {decision.evidence_context && <><dt>Context</dt><dd>{decision.evidence_context}</dd></>}
+                          </dl>
+                        </details>}
                       </>}
                     </td>
                     <td>
@@ -165,8 +205,14 @@ export default function Index() {
                             <input type="hidden" name="sourceId" value={source.id} />
                             <label>SKU<input name="sku" required defaultValue={source.sku} /></label>
                             <label>Title<input name="productTitle" required defaultValue={source.productTitle} /></label>
+                            <label>Shopify product ID<input name="shopifyProductId" defaultValue={source.shopifyProductId || ""} /></label>
+                            <label>Shopify variant ID<input name="shopifyVariantId" defaultValue={source.shopifyVariantId || ""} /></label>
+                            <label>Supplier SKU<input name="supplierSku" defaultValue={source.supplierSku || ""} /></label>
+                            <label>Supplier product ID<input name="supplierProductId" defaultValue={source.supplierProductId || ""} /></label>
+                            <label>Supplier variant ID<input name="supplierVariantId" defaultValue={source.supplierVariantId || ""} /></label>
                             <label>URL<input name="url" type="url" required defaultValue={source.url} /></label>
                             <label>Match terms<input name="matchTerms" defaultValue={source.matchTerms.join(", ")} /></label>
+                            <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this exact supplier product/variant.</label>
                             <button className={styles.button} disabled={busy}>Save changes</button>
                           </Form>
                         </details>
@@ -190,8 +236,15 @@ export default function Index() {
             <input type="hidden" name="intent" value="add-source" />
             <label>Shopify SKU<input name="sku" required maxLength={120} /></label>
             <label>Product title<input name="productTitle" required maxLength={200} /></label>
+            <label>Shopify product ID<input name="shopifyProductId" placeholder="gid://shopify/Product/..." /></label>
+            <label>Shopify variant ID<input name="shopifyVariantId" placeholder="gid://shopify/ProductVariant/..." /></label>
+            <label>Supplier SKU<input name="supplierSku" placeholder="Supplier's SKU or model number" /></label>
+            <label>Supplier product ID<input name="supplierProductId" placeholder="Supplier catalog ID" /></label>
+            <label>Supplier variant ID<input name="supplierVariantId" placeholder="Color/size variant ID" /></label>
             <label>Supplier product URL<input name="url" required type="url" placeholder="https://supplier.example/product" /></label>
             <label>Extra match terms<input name="matchTerms" placeholder="model number, brand" /></label>
+            <span className={styles.formHelp}>Provide at least one supplier identifier or an exact extra match term.</span>
+            <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this page is the exact supplier product and variant.</label>
             <button className={styles.button} disabled={busy}>Add source</button>
           </Form>
           <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>

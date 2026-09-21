@@ -95,6 +95,7 @@ PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
+SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
@@ -107,6 +108,8 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 - Every source, observation, and alert query includes the shop tenant key.
 - Check quota is reserved atomically before external work. Account usage survives source deletion, and a configurable global monthly cap bounds pilot-wide execution.
 - Latest attempt health is stored separately from the last confirmed availability, so a failed or uncertain attempt cannot make an old fact look newly verified.
+- New sources must use an explicitly supported HTTPS domain, contain supplier-side identity, and be manually confirmed as the exact product/variant before monitoring.
+- Every observation has a decision audit recording structured/rules/AI provenance, AI acceptance or rejection, model and trace metadata, prompt version, token usage, timing, quote, and bounded context.
 - Only HTTPS source URLs are accepted.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.

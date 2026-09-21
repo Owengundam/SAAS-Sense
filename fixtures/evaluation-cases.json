@@ -1,0 +1,222 @@
+[
+  {
+    "id": "alpha-in-stock",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light model AL-100. In stock." },
+    "expected": { "state": "IN_STOCK", "factual": true }
+  },
+  {
+    "id": "alpha-sold-out",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light model AL-100. Sold out." },
+    "expected": { "state": "OUT_OF_STOCK", "factual": true }
+  },
+  {
+    "id": "alpha-preorder",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light AL-100 is available for preorder." },
+    "expected": { "state": "PREORDER", "factual": true }
+  },
+  {
+    "id": "alpha-backorder",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light AL-100 is backordered." },
+    "expected": { "state": "BACKORDERED", "factual": true }
+  },
+  {
+    "id": "alpha-discontinued",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light AL-100 has been discontinued." },
+    "expected": { "state": "DISCONTINUED", "factual": true }
+  },
+  {
+    "id": "alpha-lead-time",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light AL-100 ships in four weeks." },
+    "expected": { "state": "LEAD_TIME", "factual": true }
+  },
+  {
+    "id": "alpha-conflicting-copy",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light AL-100. In stock. Sold out." },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "alpha-missing-content",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "alpha-wrong-product",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Pendant Light AL-900", "text": "Pendant Light AL-900. In stock." },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "alpha-structured-stock",
+    "domain": "alpha-lighting.test",
+    "source": { "url": "https://alpha-lighting.test/al-100", "matchTerms": ["AL-100"] },
+    "providerResult": { "ok": true, "url": "https://alpha-lighting.test/al-100", "title": "Arc Light AL-100", "text": "Arc Light model AL-100.", "availabilityState": "IN_STOCK" },
+    "expected": { "state": "IN_STOCK", "factual": true }
+  },
+  {
+    "id": "beta-available-now",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200. Available now." },
+    "expected": { "state": "IN_STOCK", "factual": true }
+  },
+  {
+    "id": "beta-unavailable",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 is unavailable." },
+    "expected": { "state": "OUT_OF_STOCK", "factual": true }
+  },
+  {
+    "id": "beta-pre-order",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200. Pre-order today." },
+    "expected": { "state": "PREORDER", "factual": true }
+  },
+  {
+    "id": "beta-back-order",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 is on back order." },
+    "expected": { "state": "BACKORDERED", "factual": true }
+  },
+  {
+    "id": "beta-end-of-life",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 has reached end of life." },
+    "expected": { "state": "DISCONTINUED", "factual": true }
+  },
+  {
+    "id": "beta-dispatch-lead-time",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 dispatches in eight weeks." },
+    "expected": { "state": "LEAD_TIME", "factual": true }
+  },
+  {
+    "id": "beta-related-product-conflict",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 is sold out. Related chair BF-201 is in stock." },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "beta-variant-conflict",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "BF-200 blue variant sold out. BF-200 red variant in stock." },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "beta-provider-error",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": false, "runId": "beta-error", "error": "rate limited" },
+    "expected": { "state": "SOURCE_ERROR", "factual": false }
+  },
+  {
+    "id": "beta-structured-out",
+    "domain": "beta-furniture.test",
+    "source": { "url": "https://beta-furniture.test/bf-200", "matchTerms": ["BF-200"] },
+    "providerResult": { "ok": true, "url": "https://beta-furniture.test/bf-200", "title": "Bench BF-200", "text": "Bench BF-200 product page.", "availabilityState": "OUT_OF_STOCK" },
+    "expected": { "state": "OUT_OF_STOCK", "factual": true }
+  },
+  {
+    "id": "gamma-ai-in-stock",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Only a few copies remain." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "IN_STOCK", "evidenceQuote": "Only a few copies remain", "confidence": 0.96, "reason": "Explicit remaining quantity" },
+    "expected": { "state": "IN_STOCK", "factual": true }
+  },
+  {
+    "id": "gamma-ai-mismatch",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Only a few copies remain." },
+    "aiResult": { "ok": true, "productMatch": "MISMATCH", "availability": "IN_STOCK", "evidenceQuote": "Only a few copies remain", "confidence": 0.94, "reason": "Different product" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "gamma-ai-fabricated-quote",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Contact us for details." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "IN_STOCK", "evidenceQuote": "In stock", "confidence": 0.97, "reason": "Claimed availability" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "gamma-ai-unknown",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Contact us for details." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "UNKNOWN", "evidenceQuote": "", "confidence": 0.8, "reason": "No availability evidence" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "gamma-rules-ai-conflict",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. In stock. Inventory depleted for online orders." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "OUT_OF_STOCK", "evidenceQuote": "Inventory depleted for online orders", "confidence": 0.94, "reason": "Online inventory is depleted" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "gamma-ai-low-confidence",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Only three left maybe." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "IN_STOCK", "evidenceQuote": "Only three left maybe", "confidence": 0.62, "reason": "Ambiguous wording" },
+    "expected": { "state": "UNCERTAIN", "factual": false }
+  },
+  {
+    "id": "gamma-ai-backorder",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Fulfillment delayed until restock." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "BACKORDERED", "evidenceQuote": "Fulfillment delayed until restock", "confidence": 0.91, "reason": "Restock-dependent fulfillment" },
+    "expected": { "state": "BACKORDERED", "factual": true }
+  },
+  {
+    "id": "gamma-ai-preorder",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. Reserve yours for the October release." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "PREORDER", "evidenceQuote": "Reserve yours for the October release", "confidence": 0.93, "reason": "Reservation before release" },
+    "expected": { "state": "PREORDER", "factual": true }
+  },
+  {
+    "id": "gamma-ai-discontinued",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. This model has reached end of production." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "DISCONTINUED", "evidenceQuote": "This model has reached end of production", "confidence": 0.95, "reason": "Production ended" },
+    "expected": { "state": "DISCONTINUED", "factual": true }
+  },
+  {
+    "id": "gamma-ai-case-insensitive-quote",
+    "domain": "gamma-home.test",
+    "source": { "url": "https://gamma-home.test/gh-300", "matchTerms": ["GH-300"] },
+    "providerResult": { "ok": true, "url": "https://gamma-home.test/gh-300", "title": "Vase GH-300", "text": "Vase GH-300. READY FOR IMMEDIATE SHIPMENT." },
+    "aiResult": { "ok": true, "productMatch": "MATCH", "availability": "IN_STOCK", "evidenceQuote": "ready for immediate shipment", "confidence": 0.92, "reason": "Immediate shipment availability" },
+    "expected": { "state": "IN_STOCK", "factual": true }
+  }
+]

@@ -52,6 +52,9 @@ test("SiliconFlow request uses constrained non-thinking structured output", asyn
   assert.equal(result.availability, "IN_STOCK");
   assert.equal(result.traceId, "trace-123");
   assert.equal(result.model, "deepseek-ai/DeepSeek-V4-Flash");
+  assert.equal(result.configuredModel, "deepseek-ai/DeepSeek-V4-Flash");
+  assert.equal(result.returnedModel, "deepseek-ai/DeepSeek-V4-Flash");
+  assert.equal(result.promptVersion, "availability-evidence-v1");
   assert.deepEqual(result.usage, { inputTokens: 123, outputTokens: 45 });
 });
 

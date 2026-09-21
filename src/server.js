@@ -27,7 +27,16 @@ const evidenceReader = process.env.SILICONFLOW_API_KEY
     model: process.env.SILICONFLOW_MODEL,
   })
   : null;
-const service = new SupplierSignalService({ db, provider, evidenceReader });
+const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
+  ?.split(",")
+  .map((domain) => domain.trim())
+  .filter(Boolean);
+const service = new SupplierSignalService({
+  db,
+  provider,
+  evidenceReader,
+  ...(supportedDomains?.length ? { supportedDomains } : {}),
+});
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -101,8 +110,21 @@ export function createAppServer(overrides = {}) {
       response.writeHead(200, { "content-type": mime[extname(filePath)] || "application/octet-stream" });
       response.end(content);
     } catch (error) {
-      const quota = ["SOURCE_QUOTA_EXCEEDED", "CHECK_QUOTA_EXCEEDED"].includes(error.message);
-      const invalid = ["INVALID_SOURCE", "HTTPS_REQUIRED", "BODY_TOO_LARGE", "SyntaxError"].includes(error.message) || error instanceof SyntaxError;
+      const quota = ["SOURCE_QUOTA_EXCEEDED", "CHECK_QUOTA_EXCEEDED", "GLOBAL_CHECK_BUDGET_EXCEEDED"].includes(error.message);
+      const invalid = [
+        "INVALID_SOURCE",
+        "INVALID_SOURCE_URL",
+        "HTTPS_REQUIRED",
+        "SOURCE_URL_CREDENTIALS_FORBIDDEN",
+        "UNSUPPORTED_SUPPLIER_PORT",
+        "PRIVATE_SOURCE_FORBIDDEN",
+        "UNSUPPORTED_SUPPLIER_DOMAIN",
+        "UNAPPROVED_SUPPLIER_REDIRECT",
+        "SUPPLIER_IDENTITY_REQUIRED",
+        "PRODUCT_MATCH_CONFIRMATION_REQUIRED",
+        "BODY_TOO_LARGE",
+        "SyntaxError",
+      ].includes(error.message) || error instanceof SyntaxError;
       json(response, quota ? 429 : invalid ? 400 : 500, { error: error.message || "INTERNAL_ERROR" });
     }
   });
