@@ -92,6 +92,8 @@ test("missing structured availability automatically falls back to full page text
   assert.equal(result.ok, true);
   assert.equal(result.fallbackUsed, true);
   assert.equal(result.runId, "ecom-1+content-1");
+  assert.equal(result.providerAttempts.length, 2);
+  assert.deepEqual(result.providerAttempts.map((attempt) => attempt.role), ["primary", "fallback"]);
   assert.equal(result.title, "A Light in the Attic");
   assert.match(result.text, /In stock \(22 available\)/);
   assert.match(result.text, /A poetry collection/);

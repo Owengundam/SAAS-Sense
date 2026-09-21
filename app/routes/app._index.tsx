@@ -49,7 +49,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     if (intent === "delete-source") {
       service.deleteSource(session.shop, String(form.get("sourceId") || ""));
-      return { ok: true, message: "Supplier source and its history deleted." };
+      return { ok: true, message: "Supplier source deleted. Incurred monthly usage remains counted." };
     }
     return { ok: false, message: "Unknown action." };
   } catch (error) {
@@ -100,7 +100,7 @@ export default function Index() {
   const confirmed = data.sources.filter((item: any) => item.lastState).length;
   const activeLatest = data.sources.map((source: any) => {
     const observation = latest.get(source.id);
-    return observation?.checked_at === source.lastCheckedAt ? observation : null;
+    return observation?.checked_at === source.lastAttemptAt ? observation : null;
   }).filter(Boolean);
   const review = activeLatest.filter((item: any) => !item.factual).slice(0, 5);
 
@@ -135,18 +135,22 @@ export default function Index() {
                 {data.sources.length === 0 && <tr><td colSpan={4} className={styles.muted}>Add your first authorized supplier product page.</td></tr>}
                 {data.sources.map((source: any) => {
                   const candidateObservation: any = latest.get(source.id);
-                  const observation = candidateObservation?.checked_at === source.lastCheckedAt ? candidateObservation : null;
+                  const observation = candidateObservation?.checked_at === source.lastAttemptAt ? candidateObservation : null;
+                  const latestUnverified = source.lastAttemptStatus === "SOURCE_ERROR" || source.lastAttemptStatus === "UNCERTAIN";
                   const modalId = `delete-source-${source.id}`;
                   return <tr key={source.id}>
                     <td><span className={styles.product}>{source.productTitle}</span><span className={styles.sku}>{source.sku}</span></td>
                     <td>
-                      <span className={stateClass(source.lastState, source.stale)}>{stateLabel(source.lastState, source.stale)}</span>
+                      <span className={latestUnverified ? `${styles.state} ${styles.warn}` : stateClass(source.lastState, source.stale)}>
+                        {latestUnverified ? "Unable to verify" : stateLabel(source.lastState, source.stale)}
+                      </span>
+                      {source.lastState && <span className={styles.muted}>Last confirmed {stateLabel(source.lastState, false).toLowerCase()} {formatTime(source.lastConfirmedAt)}{source.stale ? " · stale" : ""}</span>}
                       {source.candidateState && <span className={styles.pending}>Possible change to {stateLabel(source.candidateState, false)}. Confirmation due {formatTime(source.nextRecheckAt)}.</span>}
                     </td>
                     <td className={styles.evidence}>
                       <strong>{observation?.reason || "Run a check to establish a baseline"}</strong>
                       {observation && <>
-                        <span className={styles.muted}>Checked {formatTime(observation.checked_at)}</span>
+                        <span className={styles.muted}>Latest attempt {formatTime(source.lastAttemptAt)}</span>
                         <a href={source.url} target="_blank" rel="noreferrer">Open supplier page</a>
                         {observation.raw_excerpt && <details><summary>View captured evidence</summary><p>{observation.raw_excerpt}</p></details>}
                       </>}
@@ -168,7 +172,7 @@ export default function Index() {
                         </details>
                         <s-button tone="critical" commandFor={modalId} command="--show">Delete</s-button>
                         <s-modal id={modalId} heading={`Delete ${source.productTitle}?`}>
-                          <s-paragraph>This permanently deletes this source, its check evidence, and alerts.</s-paragraph>
+                          <s-paragraph>This permanently deletes this source, its captured evidence, and alerts. Already-incurred monthly usage remains counted.</s-paragraph>
                           <s-button slot="secondary-actions" commandFor={modalId} command="--hide">Cancel</s-button>
                           <s-button slot="primary-action" variant="primary" tone="critical" commandFor={modalId} command="--hide" onClick={() => fetcher.submit({ intent: "delete-source", sourceId: source.id }, { method: "post" })}>Delete source</s-button>
                         </s-modal>

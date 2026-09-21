@@ -61,9 +61,9 @@ export class SiliconFlowEvidenceReader {
   }
 
   async analyze(source, providerResult) {
-    if (!this.token) return { ok: false, error: "SILICONFLOW_API_KEY is not configured" };
+    if (!this.token) return { ok: false, error: "SILICONFLOW_API_KEY is not configured", model: this.model };
     const evidence = compact(providerResult?.text, this.maxEvidenceChars);
-    if (!evidence) return { ok: false, error: "No evidence text for AI review" };
+    if (!evidence) return { ok: false, error: "No evidence text for AI review", model: this.model };
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -114,24 +114,31 @@ export class SiliconFlowEvidenceReader {
       const traceId = response.headers.get("x-siliconcloud-trace-id") || null;
       if (!response.ok) {
         const detail = compact(await response.text(), 300);
-        return { ok: false, error: `SiliconFlow HTTP ${response.status}${detail ? `: ${detail}` : ""}`, traceId };
+        return { ok: false, error: `SiliconFlow HTTP ${response.status}${detail ? `: ${detail}` : ""}`, traceId, model: this.model };
       }
 
       const payload = await response.json();
       const content = payload?.choices?.[0]?.message?.content;
-      if (typeof content !== "string") return { ok: false, error: "SiliconFlow returned no message content", traceId };
+      const model = payload?.model || this.model;
+      const usage = payload?.usage ? {
+        inputTokens: Number.isInteger(payload.usage.prompt_tokens) ? payload.usage.prompt_tokens : null,
+        outputTokens: Number.isInteger(payload.usage.completion_tokens) ? payload.usage.completion_tokens : null,
+      } : null;
+      if (typeof content !== "string") return { ok: false, error: "SiliconFlow returned no message content", traceId, model, usage };
 
       let parsed;
       try {
         parsed = JSON.parse(content);
       } catch {
-        return { ok: false, error: "SiliconFlow returned malformed JSON", traceId };
+        return { ok: false, error: "SiliconFlow returned malformed JSON", traceId, model, usage };
       }
-      if (!validResult(parsed)) return { ok: false, error: "SiliconFlow returned an invalid evidence shape", traceId };
+      if (!validResult(parsed)) return { ok: false, error: "SiliconFlow returned an invalid evidence shape", traceId, model, usage };
 
       return {
         ok: true,
         traceId,
+        model,
+        usage,
         productMatch: parsed.productMatch,
         availability: parsed.availability,
         evidenceQuote: compact(parsed.evidenceQuote, 500),
@@ -142,6 +149,7 @@ export class SiliconFlowEvidenceReader {
       return {
         ok: false,
         error: error.name === "AbortError" ? "SiliconFlow timeout" : compact(error.message, 300),
+        model: this.model,
       };
     } finally {
       clearTimeout(timeout);

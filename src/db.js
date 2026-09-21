@@ -16,7 +16,7 @@ function decodeSource(row) {
 export function createDatabase(path = ":memory:") {
   if (path !== ":memory:") mkdirSync(dirname(resolve(path)), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS tenants (
       shop TEXT PRIMARY KEY,
@@ -40,6 +40,9 @@ export function createDatabase(path = ":memory:") {
       candidate_state TEXT,
       candidate_count INTEGER NOT NULL DEFAULT 0,
       last_checked_at TEXT,
+      last_attempt_at TEXT,
+      last_attempt_status TEXT,
+      last_confirmed_at TEXT,
       next_recheck_at TEXT,
       stale_after_hours INTEGER NOT NULL DEFAULT 36,
       enabled INTEGER NOT NULL DEFAULT 1,
@@ -69,6 +72,34 @@ export function createDatabase(path = ":memory:") {
       created_at TEXT NOT NULL,
       acknowledged_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS usage_ledger (
+      operation_id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      reserved_at TEXT NOT NULL,
+      completed_at TEXT,
+      outcome TEXT,
+      provider_run_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS usage_ledger_shop_reserved_at
+      ON usage_ledger(shop, reserved_at);
+    CREATE TABLE IF NOT EXISTS provider_attempts (
+      id TEXT PRIMARY KEY,
+      operation_id TEXT NOT NULL REFERENCES usage_ledger(operation_id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      role TEXT NOT NULL,
+      provider_run_id TEXT,
+      outcome TEXT NOT NULL,
+      trace_id TEXT,
+      model TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      attempted_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS provider_attempts_operation
+      ON provider_attempts(operation_id);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -82,6 +113,29 @@ export function createDatabase(path = ":memory:") {
   `);
   const sourceColumns = new Set(db.prepare("PRAGMA table_info(sources)").all().map((column) => column.name));
   if (!sourceColumns.has("next_recheck_at")) db.exec("ALTER TABLE sources ADD COLUMN next_recheck_at TEXT");
+  if (!sourceColumns.has("last_attempt_at")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_at TEXT");
+  if (!sourceColumns.has("last_attempt_status")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_status TEXT");
+  if (!sourceColumns.has("last_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN last_confirmed_at TEXT");
+  db.exec(`
+    UPDATE sources
+      SET last_attempt_at = last_checked_at
+      WHERE last_attempt_at IS NULL AND last_checked_at IS NOT NULL;
+    UPDATE sources
+      SET last_attempt_status = (
+        SELECT state FROM observations
+        WHERE observations.source_id = sources.id
+        ORDER BY checked_at DESC LIMIT 1
+      )
+      WHERE last_attempt_status IS NULL AND last_checked_at IS NOT NULL;
+    UPDATE sources
+      SET last_confirmed_at = last_checked_at
+      WHERE last_confirmed_at IS NULL AND last_state IS NOT NULL AND last_checked_at IS NOT NULL;
+    INSERT OR IGNORE INTO usage_ledger
+      (operation_id, shop, source_id, status, reserved_at, completed_at, outcome, provider_run_id)
+      SELECT 'legacy-observation-' || id, shop, source_id, 'COMPLETED', checked_at, checked_at,
+        state, provider_run_id
+      FROM observations;
+  `);
 
   const mapSource = (row) => row ? decodeSource({
     id: row.id,
@@ -95,7 +149,10 @@ export function createDatabase(path = ":memory:") {
     lastState: row.last_state,
     candidateState: row.candidate_state,
     candidateCount: row.candidate_count,
-    lastCheckedAt: row.last_checked_at,
+    lastCheckedAt: row.last_attempt_at || row.last_checked_at,
+    lastAttemptAt: row.last_attempt_at || row.last_checked_at,
+    lastAttemptStatus: row.last_attempt_status,
+    lastConfirmedAt: row.last_confirmed_at || (row.last_state ? row.last_checked_at : null),
     nextRecheckAt: row.next_recheck_at,
     staleAfterHours: row.stale_after_hours,
     enabled: row.enabled,
@@ -120,6 +177,20 @@ export function createDatabase(path = ":memory:") {
         tenant.createdAt || new Date().toISOString(),
       );
     },
+    ensureTenant(tenant) {
+      db.prepare(`INSERT OR IGNORE INTO tenants
+        (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        tenant.shop,
+        tenant.demoToken || null,
+        tenant.plan || "pilot",
+        tenant.active === false ? 0 : 1,
+        tenant.sourceLimit ?? 25,
+        tenant.monthlyCheckLimit ?? 1500,
+        tenant.createdAt || new Date().toISOString(),
+      );
+      return this.getTenant(tenant.shop);
+    },
     getTenant(shop) {
       return db.prepare("SELECT * FROM tenants WHERE shop = ?").get(shop);
     },
@@ -137,8 +208,74 @@ export function createDatabase(path = ":memory:") {
     },
     countChecksThisMonth(shop, now = new Date()) {
       const month = now.toISOString().slice(0, 7);
-      return db.prepare("SELECT COUNT(*) AS count FROM observations WHERE shop = ? AND substr(checked_at, 1, 7) = ?")
+      return db.prepare("SELECT COUNT(*) AS count FROM usage_ledger WHERE shop = ? AND substr(reserved_at, 1, 7) = ?")
         .get(shop, month).count;
+    },
+    reserveCheckUsage(shop, sourceId, now = new Date(), operationId = randomUUID(), globalMonthlyLimit = null) {
+      const reservedAt = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active, monthly_check_limit FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const month = reservedAt.slice(0, 7);
+        const usage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
+          WHERE shop = ? AND substr(reserved_at, 1, 7) = ?`).get(shop, month).count;
+        if (usage >= tenant.monthly_check_limit) throw new Error("CHECK_QUOTA_EXCEEDED");
+        if (Number.isInteger(globalMonthlyLimit) && globalMonthlyLimit >= 0) {
+          const globalUsage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
+            WHERE substr(reserved_at, 1, 7) = ?`).get(month).count;
+          if (globalUsage >= globalMonthlyLimit) throw new Error("GLOBAL_CHECK_BUDGET_EXCEEDED");
+        }
+        db.prepare(`INSERT INTO usage_ledger
+          (operation_id, shop, source_id, status, reserved_at)
+          VALUES (?, ?, ?, 'RESERVED', ?)`).run(operationId, shop, sourceId, reservedAt);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return { operationId, reservedAt };
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    completeCheckUsage(shop, operationId, { status = "COMPLETED", outcome = null, providerRunId = null, completedAt = new Date() } = {}) {
+      return db.prepare(`UPDATE usage_ledger
+        SET status = ?, outcome = ?, provider_run_id = ?, completed_at = ?
+        WHERE shop = ? AND operation_id = ?`).run(
+        status, outcome, providerRunId, completedAt.toISOString(), shop, operationId,
+      ).changes > 0;
+    },
+    recordProviderAttempt(shop, operationId, attempt, now = new Date()) {
+      const id = randomUUID();
+      db.prepare(`INSERT INTO provider_attempts
+        (id, operation_id, shop, provider, role, provider_run_id, outcome, trace_id, model,
+         input_tokens, output_tokens, attempted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id,
+        operationId,
+        shop,
+        attempt.provider,
+        attempt.role || "primary",
+        attempt.providerRunId || null,
+        attempt.outcome,
+        attempt.traceId || null,
+        attempt.model || null,
+        Number.isInteger(attempt.inputTokens) ? attempt.inputTokens : null,
+        Number.isInteger(attempt.outputTokens) ? attempt.outputTokens : null,
+        now.toISOString(),
+      );
+      return id;
+    },
+    listUsageLedger(shop) {
+      return db.prepare("SELECT * FROM usage_ledger WHERE shop = ? ORDER BY reserved_at, operation_id").all(shop);
+    },
+    listProviderAttempts(shop, operationId = null) {
+      if (operationId) {
+        return db.prepare(`SELECT * FROM provider_attempts WHERE shop = ? AND operation_id = ?
+          ORDER BY attempted_at, id`).all(shop, operationId);
+      }
+      return db.prepare("SELECT * FROM provider_attempts WHERE shop = ? ORDER BY attempted_at, id").all(shop);
     },
     addSource(shop, input) {
       const id = input.id || randomUUID();
@@ -167,7 +304,8 @@ export function createDatabase(path = ":memory:") {
     },
     updateSource(shop, id, input) {
       const result = db.prepare(`UPDATE sources SET sku=?, product_title=?, url=?, match_terms=?,
-        last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL, next_recheck_at=NULL
+        last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL,
+        last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL
         WHERE shop=? AND id=?`).run(
         input.sku, input.productTitle, input.url, JSON.stringify(input.matchTerms || []), shop, id,
       );
@@ -176,11 +314,14 @@ export function createDatabase(path = ":memory:") {
     deleteSource(shop, id) {
       return db.prepare("DELETE FROM sources WHERE shop = ? AND id = ?").run(shop, id).changes > 0;
     },
-    updateTransition(shop, id, transition, checkedAt, nextRecheckAt = null) {
-      db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?, last_checked_at=?, next_recheck_at=?
+    updateTransition(shop, id, transition, observation, nextRecheckAt = null, confirmedAt = null) {
+      db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?,
+        last_checked_at=?, last_attempt_at=?, last_attempt_status=?,
+        last_confirmed_at=COALESCE(?, last_confirmed_at), next_recheck_at=?
         WHERE shop=? AND id=?`).run(
         transition.confirmedState || null, transition.candidateState || null,
-        transition.candidateCount || 0, checkedAt, nextRecheckAt, shop, id,
+        transition.candidateCount || 0, observation.checkedAt, observation.checkedAt,
+        observation.state, confirmedAt, nextRecheckAt, shop, id,
       );
     },
     insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "") {

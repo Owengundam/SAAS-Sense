@@ -18,6 +18,7 @@
     "config:link": "shopify app config link",
     "test": "node --test",
     "test:coverage": "node --experimental-test-coverage --test",
+    "smoke": "node scripts/smoke.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {

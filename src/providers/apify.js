@@ -107,6 +107,16 @@ function buildInput(actorId, source) {
   };
 }
 
+function providerAttempt(result, actorId, role) {
+  return {
+    provider: "apify",
+    role,
+    providerRunId: result?.runId || null,
+    outcome: result?.ok === false ? "FAILED" : "SUCCEEDED",
+    model: actorId,
+  };
+}
+
 export class ApifyProvider {
   constructor({ token, actorId = ECOMMERCE_ACTOR_ID, fetchImpl = fetch } = {}) {
     this.token = token;
@@ -156,13 +166,15 @@ export class ApifyProvider {
     if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
 
     const primary = await this.fetchFromActor(this.actorId, source);
+    const attempts = [providerAttempt(primary, this.actorId, "primary")];
     const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
       (!primary.ok || !primary.availabilityState);
-    if (!shouldFallback) return primary;
+    if (!shouldFallback) return { ...primary, providerAttempts: attempts };
 
     const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
-    if (!fallback.ok) return { ...primary, fallbackError: fallback.error };
-    if (!primary.ok) return { ...fallback, fallbackUsed: true, primaryError: primary.error };
+    attempts.push(providerAttempt(fallback, CONTENT_CRAWLER_ACTOR_ID, "fallback"));
+    if (!fallback.ok) return { ...primary, fallbackError: fallback.error, providerAttempts: attempts };
+    if (!primary.ok) return { ...fallback, fallbackUsed: true, primaryError: primary.error, providerAttempts: attempts };
 
     return {
       ...primary,
@@ -171,6 +183,7 @@ export class ApifyProvider {
       title: primary.title || fallback.title,
       text: [fallback.text, primary.text].filter(Boolean).join("\n\n"),
       fallbackUsed: true,
+      providerAttempts: attempts,
     };
   }
 }

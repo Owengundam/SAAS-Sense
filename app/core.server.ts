@@ -30,7 +30,16 @@ function createCore(): Core {
       model: process.env.SILICONFLOW_MODEL,
     })
     : null;
-  const service = new SupplierSignalService({ db, provider, evidenceReader, simulated: !liveProvider });
+  const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
+  const service = new SupplierSignalService({
+    db,
+    provider,
+    evidenceReader,
+    globalMonthlyCheckLimit: Number.isInteger(configuredGlobalLimit) && configuredGlobalLimit >= 0
+      ? configuredGlobalLimit
+      : 5000,
+    simulated: !liveProvider,
+  });
   return { db, service, liveProvider };
 }
 
@@ -61,13 +70,11 @@ export function getSupplierSignal(): Core {
 
 export function ensureTenant(shop: string) {
   const { db } = getSupplierSignal();
-  const existing = db.getTenant(shop);
-  db.upsertTenant({
+  db.ensureTenant({
     shop,
-    plan: existing?.plan || "pilot",
+    plan: "pilot",
     active: true,
-    sourceLimit: existing?.source_limit ?? 25,
-    monthlyCheckLimit: existing?.monthly_check_limit ?? 1500,
-    createdAt: existing?.created_at,
+    sourceLimit: 25,
+    monthlyCheckLimit: 1500,
   });
 }

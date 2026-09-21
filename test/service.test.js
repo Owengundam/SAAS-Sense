@@ -15,6 +15,7 @@ function setup(overrides = {}) {
     db,
     provider,
     evidenceReader: overrides.evidenceReader,
+    globalMonthlyCheckLimit: overrides.globalCheckLimit ?? 5000,
     now: () => clock.value,
     recheckDelayMinutes: 20,
   });
@@ -61,6 +62,9 @@ test("AI evidence reader participates before transition decisions", async () => 
   assert.equal(result.observation.state, STATES.IN_STOCK);
   assert.match(result.observation.reason, /AI verified/);
   assert.equal(result.source.lastState, STATES.IN_STOCK);
+  const attempts = db.listProviderAttempts("a.myshopify.com");
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts.map((attempt) => attempt.role).sort(), ["evidence", "primary"]);
   db.close();
 });
 
@@ -101,6 +105,39 @@ test("monthly check quota is enforced", async () => {
   db.close();
 });
 
+test("parallel requests cannot overspend an atomically reserved quota", async () => {
+  const { db, provider, service } = setup({ checkLimit: 1 });
+  const source = add(service);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  provider.fetchPage = async () => {
+    await gate;
+    return page("reserved-run", "In stock");
+  };
+
+  const first = service.checkSource("a.myshopify.com", source.id);
+  await Promise.resolve();
+  await assert.rejects(service.checkSource("a.myshopify.com", source.id), /CHECK_QUOTA_EXCEEDED/);
+  assert.equal(db.countChecksThisMonth("a.myshopify.com"), 1);
+  release();
+  await first;
+  assert.equal(db.listUsageLedger("a.myshopify.com")[0].status, "COMPLETED");
+  db.close();
+});
+
+test("global monthly budget blocks spending across otherwise eligible tenants", async () => {
+  const { db, provider, service } = setup({ globalCheckLimit: 1 });
+  const first = add(service, "a.myshopify.com");
+  const second = add(service, "b.myshopify.com");
+  provider.queue(first.url, [page("global-1", "In stock")]);
+  await service.checkSource("a.myshopify.com", first.id);
+  await assert.rejects(
+    service.checkSource("b.myshopify.com", second.id),
+    /GLOBAL_CHECK_BUDGET_EXCEEDED/,
+  );
+  db.close();
+});
+
 test("duplicate provider deliveries are idempotent", async () => {
   const { db, provider, service } = setup();
   const source = add(service);
@@ -112,15 +149,48 @@ test("duplicate provider deliveries are idempotent", async () => {
   db.close();
 });
 
-test("failed extraction cannot create a factual alert", async () => {
-  const { db, provider, service } = setup();
+test("failed extraction cannot create a factual alert or refresh confirmed availability", async () => {
+  const { db, provider, service, clock } = setup();
   const source = add(service);
   provider.queue(source.url, [page("base", "In stock"), { ok: false, runId: "failure", error: "rate limited" }]);
   await service.checkSource("a.myshopify.com", source.id);
+  const confirmedAt = db.getSource("a.myshopify.com", source.id).lastConfirmedAt;
+  clock.value = new Date("2026-09-17T12:00:00Z");
   const failure = await service.checkSource("a.myshopify.com", source.id);
   assert.equal(failure.observation.state, STATES.SOURCE_ERROR);
   assert.equal(failure.source.lastState, STATES.IN_STOCK);
+  assert.equal(failure.source.lastConfirmedAt, confirmedAt);
+  assert.equal(failure.source.lastAttemptAt, "2026-09-17T12:00:00.000Z");
+  assert.equal(failure.source.lastAttemptStatus, STATES.SOURCE_ERROR);
+  assert.equal(service.dashboard("a.myshopify.com").sources[0].stale, true);
   assert.equal(service.dashboard("a.myshopify.com").alerts.length, 0);
+  db.close();
+});
+
+test("uncertain evidence records the attempt without refreshing the confirmed fact", async () => {
+  const { db, provider, service, clock } = setup();
+  const source = add(service);
+  provider.queue(source.url, [page("base", "In stock"), page("uncertain", "Availability on request")]);
+  await service.checkSource("a.myshopify.com", source.id);
+  const confirmedAt = db.getSource("a.myshopify.com", source.id).lastConfirmedAt;
+  clock.value = new Date("2026-09-16T12:00:00Z");
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.UNCERTAIN);
+  assert.equal(result.source.lastConfirmedAt, confirmedAt);
+  assert.equal(result.source.lastAttemptAt, "2026-09-16T12:00:00.000Z");
+  assert.equal(result.source.lastAttemptStatus, STATES.UNCERTAIN);
+  db.close();
+});
+
+test("a successful matching check refreshes the confirmed availability time", async () => {
+  const { db, provider, service, clock } = setup();
+  const source = add(service);
+  provider.queue(source.url, [page("base", "In stock"), page("refresh", "In stock")]);
+  await service.checkSource("a.myshopify.com", source.id);
+  clock.value = new Date("2026-09-16T12:00:00Z");
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.source.lastConfirmedAt, "2026-09-16T12:00:00.000Z");
+  assert.equal(result.source.lastAttemptAt, result.source.lastConfirmedAt);
   db.close();
 });
 
@@ -183,6 +253,17 @@ test("source deletion is tenant-isolated and cascades its history", async () => 
   service.deleteSource("a.myshopify.com", source.id);
   assert.equal(service.dashboard("a.myshopify.com").sources.length, 0);
   assert.equal(service.dashboard("a.myshopify.com").observations.length, 0);
+  assert.equal(service.dashboard("a.myshopify.com").tenant.monthlyCheckUsage, 1);
+  assert.equal(db.listUsageLedger("a.myshopify.com").length, 1);
+  assert.equal(db.listProviderAttempts("a.myshopify.com").length, 1);
+  db.close();
+});
+
+test("page visits cannot reactivate a disabled tenant", () => {
+  const { db } = setup();
+  db.disableTenant("a.myshopify.com");
+  db.ensureTenant({ shop: "a.myshopify.com", active: true });
+  assert.equal(db.getTenant("a.myshopify.com").active, 0);
   db.close();
 });
 

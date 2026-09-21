@@ -1,12 +1,13 @@
 import { classifyObservation, decideTransition, incorporateAiObservation, isStale } from "./domain.js";
 
 export class SupplierSignalService {
-  constructor({ db, provider, evidenceReader = null, confirmationCount = 2, recheckDelayMinutes = 20, now = () => new Date(), simulated = true }) {
+  constructor({ db, provider, evidenceReader = null, confirmationCount = 2, recheckDelayMinutes = 20, globalMonthlyCheckLimit = 5000, now = () => new Date(), simulated = true }) {
     this.db = db;
     this.provider = provider;
     this.evidenceReader = evidenceReader;
     this.confirmationCount = confirmationCount;
     this.recheckDelayMinutes = recheckDelayMinutes;
+    this.globalMonthlyCheckLimit = globalMonthlyCheckLimit;
     this.now = now;
     this.simulated = simulated;
   }
@@ -49,41 +50,102 @@ export class SupplierSignalService {
   async checkSource(shop, sourceId) {
     const tenant = this.db.getTenant(shop);
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
-    if (this.db.countChecksThisMonth(shop, this.now()) >= tenant.monthly_check_limit) {
-      throw new Error("CHECK_QUOTA_EXCEEDED");
-    }
     const source = this.db.getSource(shop, sourceId);
     if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
+    const usage = this.db.reserveCheckUsage(
+      shop,
+      source.id,
+      this.now(),
+      undefined,
+      this.globalMonthlyCheckLimit,
+    );
+    let providerAttemptsRecorded = false;
 
-    const providerResult = await this.provider.fetchPage(source);
-    const checkedAt = this.now();
-    let observation = classifyObservation(source, providerResult, checkedAt);
-    if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState) {
-      let aiResult;
-      try {
-        aiResult = await this.evidenceReader.analyze(source, providerResult);
-      } catch (error) {
-        aiResult = { ok: false, error: error.message };
+    try {
+      const providerResult = await this.provider.fetchPage(source);
+      const providerAttempts = providerResult?.providerAttempts?.length
+        ? providerResult.providerAttempts
+        : [{
+          provider: this.provider.constructor?.name || "provider",
+          role: "primary",
+          providerRunId: providerResult?.runId,
+          outcome: providerResult?.ok === false ? "FAILED" : "SUCCEEDED",
+        }];
+      for (const attempt of providerAttempts) {
+        this.db.recordProviderAttempt(shop, usage.operationId, attempt, this.now());
       }
-      observation = incorporateAiObservation(observation, providerResult, aiResult);
+      providerAttemptsRecorded = true;
+
+      const checkedAt = this.now();
+      let observation = classifyObservation(source, providerResult, checkedAt);
+      if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState) {
+        let aiResult;
+        try {
+          aiResult = await this.evidenceReader.analyze(source, providerResult);
+        } catch (error) {
+          aiResult = { ok: false, error: error.message };
+        }
+        this.db.recordProviderAttempt(shop, usage.operationId, {
+          provider: "siliconflow",
+          role: "evidence",
+          providerRunId: aiResult.traceId,
+          traceId: aiResult.traceId,
+          model: aiResult.model,
+          inputTokens: aiResult.usage?.inputTokens,
+          outputTokens: aiResult.usage?.outputTokens,
+          outcome: aiResult.ok ? "SUCCEEDED" : "FAILED",
+        }, this.now());
+        observation = incorporateAiObservation(observation, providerResult, aiResult);
+      }
+      const providerRunId = providerResult.runId || `${source.id}-${observation.checkedAt}`;
+      const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
+      if (!inserted.inserted) {
+        this.db.completeCheckUsage(shop, usage.operationId, {
+          outcome: "DUPLICATE_DELIVERY",
+          providerRunId,
+          completedAt: this.now(),
+        });
+        return { duplicate: true, source: this.db.getSource(shop, source.id), observation };
+      }
+
+      const transition = decideTransition(source, observation, this.confirmationCount);
+      const nextRecheckAt = transition.candidateState
+        ? new Date(new Date(observation.checkedAt).getTime() + this.recheckDelayMinutes * 60 * 1000).toISOString()
+        : null;
+      const confirmedAt = observation.factual && observation.confidence >= 0.8 &&
+        transition.confirmedState === observation.state && !transition.candidateState
+        ? observation.checkedAt
+        : null;
+      this.db.updateTransition(shop, source.id, transition, observation, nextRecheckAt, confirmedAt);
+      if (transition.alert) this.db.insertAlert(shop, source.id, transition.alert, this.now());
+      this.db.completeCheckUsage(shop, usage.operationId, {
+        outcome: observation.state,
+        providerRunId,
+        completedAt: this.now(),
+      });
+
+      return {
+        duplicate: false,
+        observation,
+        transition,
+        source: this.db.getSource(shop, source.id),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!providerAttemptsRecorded) {
+        this.db.recordProviderAttempt(shop, usage.operationId, {
+          provider: this.provider.constructor?.name || "provider",
+          role: "primary",
+          outcome: "FAILED",
+        }, this.now());
+      }
+      this.db.completeCheckUsage(shop, usage.operationId, {
+        status: "FAILED",
+        outcome: message || "CHECK_FAILED",
+        completedAt: this.now(),
+      });
+      throw error;
     }
-    const providerRunId = providerResult.runId || `${source.id}-${observation.checkedAt}`;
-    const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
-    if (!inserted.inserted) return { duplicate: true, source: this.db.getSource(shop, source.id), observation };
-
-    const transition = decideTransition(source, observation, this.confirmationCount);
-    const nextRecheckAt = transition.candidateState
-      ? new Date(new Date(observation.checkedAt).getTime() + this.recheckDelayMinutes * 60 * 1000).toISOString()
-      : null;
-    this.db.updateTransition(shop, source.id, transition, observation.checkedAt, nextRecheckAt);
-    if (transition.alert) this.db.insertAlert(shop, source.id, transition.alert, this.now());
-
-    return {
-      duplicate: false,
-      observation,
-      transition,
-      source: this.db.getSource(shop, source.id),
-    };
   }
 
   async checkAll(shop) {
@@ -93,7 +155,7 @@ export class SupplierSignalService {
         results.push(await this.checkSource(shop, source.id));
       } catch (error) {
         results.push({ sourceId: source.id, error: error.message });
-        if (error.message === "CHECK_QUOTA_EXCEEDED") break;
+        if (["CHECK_QUOTA_EXCEEDED", "GLOBAL_CHECK_BUDGET_EXCEEDED"].includes(error.message)) break;
       }
     }
     return results;
@@ -106,7 +168,7 @@ export class SupplierSignalService {
         results.push(await this.checkSource(shop, source.id));
       } catch (error) {
         results.push({ sourceId: source.id, error: error.message });
-        if (error.message === "CHECK_QUOTA_EXCEEDED") break;
+        if (["CHECK_QUOTA_EXCEEDED", "GLOBAL_CHECK_BUDGET_EXCEEDED"].includes(error.message)) break;
       }
     }
     return results;
@@ -117,7 +179,7 @@ export class SupplierSignalService {
     const tenant = this.db.getTenant(shop);
     const sources = this.db.listSources(shop).map((source) => ({
       ...source,
-      stale: isStale(source.lastCheckedAt, source.staleAfterHours, now),
+      stale: isStale(source.lastConfirmedAt, source.staleAfterHours, now),
     }));
     return {
       simulated: this.simulated,

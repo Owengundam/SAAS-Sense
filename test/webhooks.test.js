@@ -46,8 +46,10 @@ test("app uninstall disables the tenant", () => {
 test("shop redact deletes tenant data", () => {
   const db = createDatabase();
   db.upsertTenant({ shop: "a.myshopify.com" });
+  db.reserveCheckUsage("a.myshopify.com", "deleted-source", new Date("2026-09-15T12:00:00Z"));
   const body = Buffer.from("{}");
   handleShopifyWebhook({ db, rawBody: body, headers: headers(body, "shop/redact", "redact-1"), secret });
   assert.equal(db.getTenant("a.myshopify.com"), undefined);
+  assert.equal(db.listUsageLedger("a.myshopify.com").length, 0);
   db.close();
 });

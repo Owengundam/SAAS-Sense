@@ -94,6 +94,7 @@ PORT=3000
 PROVIDER=mock
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
+GLOBAL_MONTHLY_CHECK_LIMIT=5000
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
@@ -104,7 +105,8 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 
 - Provider and Shopify credentials stay on the server.
 - Every source, observation, and alert query includes the shop tenant key.
-- Source and monthly-check limits are enforced in the service layer.
+- Check quota is reserved atomically before external work. Account usage survives source deletion, and a configurable global monthly cap bounds pilot-wide execution.
+- Latest attempt health is stored separately from the last confirmed availability, so a failed or uncertain attempt cannot make an old fact look newly verified.
 - Only HTTPS source URLs are accepted.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.

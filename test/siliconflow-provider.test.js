@@ -26,6 +26,8 @@ test("SiliconFlow request uses constrained non-thinking structured output", asyn
     fetchImpl: async (url, options) => {
       captured = { url, options };
       return new Response(JSON.stringify({
+        model: "deepseek-ai/DeepSeek-V4-Flash",
+        usage: { prompt_tokens: 123, completion_tokens: 45 },
         choices: [{ message: { content: JSON.stringify({
           productMatch: "MATCH",
           availability: "IN_STOCK",
@@ -49,6 +51,8 @@ test("SiliconFlow request uses constrained non-thinking structured output", asyn
   assert.equal(result.ok, true);
   assert.equal(result.availability, "IN_STOCK");
   assert.equal(result.traceId, "trace-123");
+  assert.equal(result.model, "deepseek-ai/DeepSeek-V4-Flash");
+  assert.deepEqual(result.usage, { inputTokens: 123, outputTokens: 45 });
 });
 
 test("page prompt injection remains quoted untrusted evidence without tools", async () => {
