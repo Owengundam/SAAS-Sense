@@ -40,7 +40,7 @@ test("SiliconFlow request uses constrained non-thinking structured output", asyn
   });
   const result = await reader.analyze(source, providerResult);
   const body = JSON.parse(captured.options.body);
-  assert.equal(captured.url, "https://api.siliconflow.cn/v1/chat/completions");
+  assert.equal(captured.url, "https://api.siliconflow.com/v1/chat/completions");
   assert.equal(body.model, "deepseek-ai/DeepSeek-V4-Flash");
   assert.equal(body.enable_thinking, false);
   assert.equal(body.temperature, 0);

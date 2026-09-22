@@ -99,3 +99,22 @@ test("unscored captures do not create misleading model accuracy", () => {
   assert.equal(report.models.jev.safetyGatePass, false);
   assert.equal(report.gates.evaluationPass, false);
 });
+
+test("a dead model service cannot pass by returning no false facts", () => {
+  const failed = {
+    ok: false,
+    accepted: false,
+    effectiveState: "UNKNOWN",
+    reason: "SiliconFlow HTTP 401: Token is invalid",
+    latencyMs: 20,
+    usage: null,
+  };
+  const report = summarizeModelBenchmark([
+    row({ deepseek: failed }),
+  ], { minimumScorableCases: 1, minimumDomains: 1 });
+
+  assert.equal(report.models.deepseek.falseAccepted, 0);
+  assert.equal(report.models.deepseek.failures, 1);
+  assert.equal(report.gates.modelServicePass, false);
+  assert.equal(report.gates.evaluationPass, false);
+});

@@ -1,4 +1,4 @@
-const DEFAULT_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions";
+const DEFAULT_ENDPOINT = "https://api.siliconflow.com/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 const DEFAULT_PROMPT_VERSION = "availability-evidence-v1";
 const AVAILABILITY_STATES = [
