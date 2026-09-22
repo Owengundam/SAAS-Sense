@@ -29,10 +29,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Build production image
-        run: docker build --tag supplier-signal-browser-smoke .
+      - name: Build browser-worker image
+        run: docker build --target browser --tag supplier-signal-browser-smoke .
+      - name: Report browser-worker image size
+        run: docker image inspect --format '{{.Size}}' supplier-signal-browser-smoke
       - name: Verify sandboxed Chromium runtime
         run: >-
           docker run --rm --init --ipc=host
           --security-opt seccomp=.github/playwright-seccomp.json
           supplier-signal-browser-smoke npm run smoke:browser -- --live
+
+  railway-image-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build lean Railway image
+        run: docker build --tag supplier-signal-railway-smoke .
+      - name: Report Railway image size
+        run: docker image inspect --format '{{.Size}}' supplier-signal-railway-smoke
+      - name: Verify application runtime
+        run: docker run --rm supplier-signal-railway-smoke npm run smoke
+      - name: Verify Chromium is not bundled
+        run: >-
+          docker run --rm --entrypoint sh supplier-signal-railway-smoke
+          -c 'test ! -d /ms-playwright && test ! -d /root/.cache/ms-playwright'
