@@ -138,6 +138,7 @@ export function summarizeModelBenchmark(rows, {
       minimumFactualCoverage,
     },
     corpusPass: summary.scorableCases >= minimumScorableCases && summary.domainCount >= minimumDomains,
+    modelServicePass: summary.models.jev.failures === 0 && summary.models.deepseek.failures === 0,
     jevSafetyPass: summary.models.jev.safetyGatePass,
     cascadeSafetyPass: summary.policies.jevCascade.safetyGatePass,
     exactHostPromotionCandidates: Object.fromEntries(domains.map((domain) => {
@@ -149,7 +150,7 @@ export function summarizeModelBenchmark(rows, {
       return [domain, eligible];
     })),
   };
-  summary.gates.evaluationPass = summary.gates.corpusPass &&
+  summary.gates.evaluationPass = summary.gates.corpusPass && summary.gates.modelServicePass &&
     summary.gates.jevSafetyPass && summary.gates.cascadeSafetyPass;
   return summary;
 }

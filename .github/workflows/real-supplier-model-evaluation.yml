@@ -32,6 +32,7 @@ jobs:
       SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
       TYPESAFE_MODEL: jev-1.13.0
       SILICONFLOW_MODEL: deepseek-ai/DeepSeek-V4-Flash
+      SILICONFLOW_ENDPOINT: https://api.siliconflow.com/v1/chat/completions
       REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-validation-25.json
       REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-model-evaluation.json
     steps:
@@ -45,6 +46,9 @@ jobs:
         run: |
           test -n "${JEV_API_KEY:-${TYPESAFE_API_KEY:-}}"
           test -n "${SILICONFLOW_API_KEY:-}"
+          curl --fail --silent --show-error --output /dev/null \
+            --header "Authorization: Bearer ${SILICONFLOW_API_KEY}" \
+            https://api.siliconflow.com/v1/models
       - name: Evaluate JEV and DeepSeek on shared captures
         run: npm run evaluate:real-suppliers -- --live
       - name: Enforce corpus and unsafe-acceptance gates
@@ -53,6 +57,8 @@ jobs:
           jq -e '
             .summary.scorableCases >= 20 and
             .summary.domainCount >= 3 and
+            .summary.models.jev.failures == 0 and
+            .summary.models.deepseek.failures == 0 and
             .summary.models.jev.falseAccepted == 0 and
             .summary.policies.jevCascade.falseFactual == 0 and
             .summary.gates.evaluationPass == true
