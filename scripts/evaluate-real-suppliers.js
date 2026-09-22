@@ -1,13 +1,16 @@
 // Explicit opt-in: invokes paid TypeSafe and SiliconFlow calls.
-// It performs one free direct capture per fixture case, gives that exact capture
-// to both models, and never accesses the app database.
+// The production evaluation executes the real sequential cascade with the same
+// reader timeouts used by the app. Optional parallel comparison runs legacy and
+// shared DeepSeek inputs against the exact same capture.
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyObservation, evaluateAiObservation } from "../src/domain.js";
+import { evaluateLabelEvidenceBinding } from "../src/evidence.js";
 import { summarizeModelBenchmark } from "../src/model-benchmark.js";
 import { DirectHttpProvider } from "../src/providers/direct-http.js";
+import { CascadingEvidenceReader } from "../src/providers/evidence-readers.js";
 import { JevEvidenceReader } from "../src/providers/jev.js";
 import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
 import { SiliconFlowEvidenceReader } from "../src/providers/siliconflow.js";
@@ -28,36 +31,82 @@ const cases = requestedCaseId
 if (cases.length > 25) throw new Error("REAL_SUPPLIER_CASE_LIMIT_EXCEEDED");
 if (!cases.length) throw new Error("REAL_SUPPLIER_CASE_NOT_FOUND");
 const outputPath = resolve(process.env.REAL_SUPPLIER_EVAL_OUTPUT || "/tmp/real-supplier-model-evaluation.json");
+const evaluationMode = String(process.env.REAL_SUPPLIER_EVAL_MODE || "production").trim().toLowerCase();
+if (!["production", "both"].includes(evaluationMode)) throw new Error("INVALID_REAL_SUPPLIER_EVAL_MODE");
+const includeParallelComparison = evaluationMode === "both";
+const datasetRole = String(process.env.REAL_SUPPLIER_DATASET_ROLE || "development").trim().toLowerCase();
+if (!["development", "holdout"].includes(datasetRole)) throw new Error("INVALID_REAL_SUPPLIER_DATASET_ROLE");
 
 const supportedDomains = [...new Set(cases.map((testCase) => new URL(testCase.source.url).hostname))];
 const provider = new DirectHttpProvider({ supportedDomains });
-const jev = new JevEvidenceReader({ token: jevToken, model: process.env.TYPESAFE_MODEL, timeoutMs: 20_000 });
-const deepseek = new SiliconFlowEvidenceReader({
+const productionJev = new JevEvidenceReader({ token: jevToken, model: process.env.TYPESAFE_MODEL });
+const productionDeepseek = new SiliconFlowEvidenceReader({
   token: deepSeekToken,
   model: process.env.SILICONFLOW_MODEL,
   endpoint: process.env.SILICONFLOW_ENDPOINT,
-  timeoutMs: 30_000,
 });
+const legacyDeepseek = includeParallelComparison ? new SiliconFlowEvidenceReader({
+  token: deepSeekToken,
+  model: process.env.SILICONFLOW_MODEL,
+  endpoint: process.env.SILICONFLOW_ENDPOINT,
+  evidenceFormat: "legacy-prefix",
+}) : null;
+const comparisonSharedDeepseek = includeParallelComparison ? new SiliconFlowEvidenceReader({
+  token: deepSeekToken,
+  model: process.env.SILICONFLOW_MODEL,
+  endpoint: process.env.SILICONFLOW_ENDPOINT,
+  evidenceFormat: "shared-v2",
+}) : null;
+
+const captureInputPath = process.env.REAL_SUPPLIER_CAPTURE_INPUT
+  ? resolve(process.env.REAL_SUPPLIER_CAPTURE_INPUT)
+  : null;
+const savedRows = captureInputPath
+  ? new Map(JSON.parse(await readFile(pathToFileURL(captureInputPath), "utf8")).rows.map((row) => [row.id, row]))
+  : null;
+
+function savedPage(testCase) {
+  const row = savedRows?.get(testCase.id);
+  if (!row?.capture?.evidence) throw new Error(`SAVED_CAPTURE_NOT_FOUND:${testCase.id}`);
+  return {
+    ok: row.capture.ok,
+    error: row.capture.error,
+    title: row.capture.title,
+    url: row.capture.resolvedUrl,
+    runId: row.capture.runId,
+    availabilityState: row.capture.structuredState,
+    fallbackUsed: row.capture.fallbackUsed,
+    primaryError: row.capture.primaryError,
+    fallbackError: row.capture.fallbackError,
+    providerAttempts: row.capture.attempts || [],
+    ...row.capture.evidence,
+  };
+}
 
 function score(result, deterministic, page) {
   const evaluated = evaluateAiObservation(deterministic, page, result);
   return {
     ok: Boolean(result?.ok),
+    skipped: Boolean(result?.skipped),
     accepted: evaluated.accepted,
     state: result?.availability || "UNKNOWN",
     effectiveState: evaluated.accepted ? evaluated.observation.state : "UNKNOWN",
     productMatch: result?.productMatch || null,
     confidence: result?.confidence ?? null,
-    reason: result?.reasonCode || result?.error || evaluated.rejectionReason || null,
+    reason: result?.reasonCode || result?.error || result?.skipReason || evaluated.rejectionReason || null,
     allowFallback: result?.allowFallback !== false,
+    fallbackUsed: Boolean(result?.fallbackUsed),
+    fallbackReason: result?.fallbackReason || null,
     evidenceQuote: result?.evidenceQuote || "",
     evidenceReference: result?.evidenceReference || null,
+    evidenceFormat: result?.evidenceFormat || null,
     usage: result?.usage || null,
     traceId: result?.traceId || null,
     configuredModel: result?.configuredModel || result?.model || null,
     returnedModel: result?.returnedModel || null,
     promptVersion: result?.promptVersion || null,
     aiAttempts: result?.aiAttempts || [],
+    modelEvaluations: result?.modelEvaluations || [],
     latencyMs: result?.latencyMs ?? null,
     costUsd: null,
   };
@@ -77,35 +126,88 @@ async function timedAnalyze(reader, source, page) {
   }
 }
 
+function recordingReader(reader, recorded) {
+  return {
+    model: reader.model,
+    promptVersion: reader.promptVersion,
+    provider: reader.provider,
+    async analyze(source, page) {
+      const result = await timedAnalyze(reader, source, page);
+      recorded.push(result);
+      return result;
+    },
+  };
+}
+
+function policyState(observation) {
+  return observation?.factual ? observation.state : "UNKNOWN";
+}
+
+function emptyModelResult(error) {
+  return { ok: false, error, availability: "UNKNOWN", latencyMs: null };
+}
+
 const rows = [];
 for (const [index, testCase] of cases.entries()) {
   const started = performance.now();
-  const page = await provider.fetchPage(testCase.source);
-  const captureLatencyMs = Math.round(performance.now() - started);
+  const captureStarted = performance.now();
+  const page = savedRows ? savedPage(testCase) : await provider.fetchPage(testCase.source);
+  const captureLatencyMs = savedRows ? 0 : Math.round(performance.now() - captureStarted);
   const deterministic = classifyObservation(testCase.source, page);
   const usable = hasUsefulAvailabilityEvidence(testCase.source, page);
-  const labelEvidencePresent = testCase.labelEvidence
-    ? String(page.text || "").toLowerCase().includes(String(testCase.labelEvidence).toLowerCase())
-    : null;
-  const scorable = Boolean(page.ok && usable && labelEvidencePresent !== false);
-  let jevResult = { ok: false, error: "Capture failed" };
-  let deepSeekResult = { ok: false, error: "Capture failed" };
-  if (scorable) {
-    [jevResult, deepSeekResult] = await Promise.all([
-      timedAnalyze(jev, testCase.source, page),
-      timedAnalyze(deepseek, testCase.source, page),
-    ]);
-  } else if (page.ok) {
-    jevResult = { ok: false, error: "Capture is not scorable" };
-    deepSeekResult = { ok: false, error: "Capture is not scorable" };
+  const labelBinding = evaluateLabelEvidenceBinding(testCase, page);
+  const scorable = Boolean(page.ok && usable && labelBinding.present !== false && labelBinding.bound !== false);
+
+  let cascadeResult = emptyModelResult(page.ok ? "Capture is not scorable" : "Capture failed");
+  let jevResult = emptyModelResult(cascadeResult.error);
+  let legacyResult = emptyModelResult(cascadeResult.error);
+  let sharedResult = emptyModelResult(cascadeResult.error);
+  let aiInvoked = false;
+
+  if (scorable && !page.availabilityState) {
+    aiInvoked = true;
+    const recordedPrimary = [];
+    const recordedFallback = [];
+    const cascade = new CascadingEvidenceReader({
+      primary: recordingReader(productionJev, recordedPrimary),
+      fallback: recordingReader(productionDeepseek, recordedFallback),
+    });
+    cascadeResult = await timedAnalyze(cascade, testCase.source, page);
+    jevResult = recordedPrimary[0] || emptyModelResult("Production cascade did not call JEV");
+  } else if (scorable) {
+    cascadeResult = {
+      ok: true,
+      skipped: true,
+      skipReason: "STRUCTURED_AVAILABILITY_PRESENT",
+      availability: "UNKNOWN",
+      fallbackUsed: false,
+      latencyMs: 0,
+    };
   }
+
+  if (scorable && includeParallelComparison) {
+    const comparisonResults = await Promise.all([
+      aiInvoked ? Promise.resolve(jevResult) : timedAnalyze(productionJev, testCase.source, page),
+      timedAnalyze(legacyDeepseek, testCase.source, page),
+      timedAnalyze(comparisonSharedDeepseek, testCase.source, page),
+    ]);
+    [jevResult, legacyResult, sharedResult] = comparisonResults;
+  }
+
+  const cascadeEvaluation = aiInvoked
+    ? evaluateAiObservation(deterministic, page, cascadeResult)
+    : { observation: deterministic, accepted: false, rejectionReason: cascadeResult.skipReason, influencedDecision: false };
+  const productionFinalState = policyState(cascadeEvaluation.observation);
+  const c = score(cascadeResult, deterministic, page);
   const j = score(jevResult, deterministic, page);
-  const d = score(deepSeekResult, deterministic, page);
-  const cascadeState = j.accepted
+  const legacy = score(legacyResult, deterministic, page);
+  const shared = score(sharedResult, deterministic, page);
+  const simulatedParallelState = j.accepted
     ? j.effectiveState
-    : j.allowFallback && d.accepted
-      ? d.effectiveState
+    : j.allowFallback && shared.accepted
+      ? shared.effectiveState
       : "UNKNOWN";
+
   const row = {
     id: testCase.id,
     domain: new URL(testCase.source.url).hostname,
@@ -119,7 +221,9 @@ for (const [index, testCase] of cases.entries()) {
     capture: {
       ok: Boolean(page.ok),
       usable,
-      labelEvidencePresent,
+      labelEvidencePresent: labelBinding.present,
+      labelEvidenceBound: labelBinding.bound,
+      labelEvidenceId: labelBinding.evidenceId,
       error: page.error || null,
       title: page.title || "",
       resolvedUrl: page.url || null,
@@ -132,6 +236,7 @@ for (const [index, testCase] of cases.entries()) {
         structuredData: page.structuredData || [],
       } : null,
       latencyMs: captureLatencyMs,
+      source: savedRows ? "saved-report" : "live-direct",
       runId: page.runId || null,
       structuredState: page.availabilityState || null,
       fallbackUsed: Boolean(page.fallbackUsed),
@@ -143,29 +248,71 @@ for (const [index, testCase] of cases.entries()) {
       state: deterministic.state,
       confidence: deterministic.confidence,
       reason: deterministic.reason,
+      factual: deterministic.factual,
+    },
+    productionCascade: c,
+    productionFinal: {
+      state: cascadeEvaluation.observation.state,
+      effectiveState: productionFinalState,
+      factual: cascadeEvaluation.observation.factual,
+      acceptedAi: cascadeEvaluation.accepted,
+      influencedBySafetyGate: cascadeEvaluation.influencedDecision,
+      reason: cascadeEvaluation.observation.reason,
+      rejectionReason: cascadeEvaluation.rejectionReason,
     },
     jev: j,
-    deepseek: d,
+    ...(includeParallelComparison ? {
+      deepseek: shared,
+      deepseekLegacy: legacy,
+      deepseekShared: shared,
+    } : {}),
     policies: {
-      deepseekAuthoritative: d.effectiveState,
-      jevCascade: cascadeState,
-      strictAgreement: j.accepted && d.accepted && j.effectiveState === d.effectiveState
-        ? j.effectiveState
-        : "UNKNOWN",
+      productionCascade: c.effectiveState,
+      productionFinal: productionFinalState,
+      ...(includeParallelComparison ? {
+        legacyDeepseek: legacy.effectiveState,
+        sharedDeepseek: shared.effectiveState,
+        parallelSimulatedJevCascade: simulatedParallelState,
+        // Backward-compatible alias; reports label this as simulated/parallel.
+        jevCascade: simulatedParallelState,
+        deepseekAuthoritative: shared.effectiveState,
+        strictAgreement: j.accepted && shared.accepted && j.effectiveState === shared.effectiveState
+          ? j.effectiveState
+          : "UNKNOWN",
+      } : {}),
     },
   };
   rows.push(row);
-  console.log(`PROGRESS ${index + 1}/${cases.length} ${testCase.id} scorable=${scorable} jev=${j.effectiveState} deepseek=${d.effectiveState} cascade=${cascadeState}`);
+  console.log([
+    `PROGRESS ${index + 1}/${cases.length} ${testCase.id}`,
+    `scorable=${scorable}`,
+    `labelBound=${labelBinding.bound}`,
+    `productionCascade=${c.effectiveState}`,
+    `productionFinal=${productionFinalState}`,
+    `fallback=${c.fallbackUsed}`,
+    includeParallelComparison ? `legacy=${legacy.effectiveState} shared=${shared.effectiveState}` : null,
+  ].filter(Boolean).join(" "));
 }
 
-const summary = summarizeModelBenchmark(rows);
+const summary = summarizeModelBenchmark(rows, { datasetRole });
 await writeFile(outputPath, `${JSON.stringify({
   generatedAt: new Date().toISOString(),
   fixturePath,
-  capturePolicy: "one-direct-capture-shared-by-both-models",
+  captureInputPath,
+  evaluationMode,
+  datasetRole,
+  capturePolicy: savedRows
+    ? "saved-capture-replay"
+    : "one-direct-capture-shared-by-production-and-comparison-readers",
+  readerSettings: {
+    jevTimeoutMs: productionJev.timeoutMs,
+    deepseekTimeoutMs: productionDeepseek.timeoutMs,
+    deepseekEvidenceFormat: productionDeepseek.evidenceFormat,
+  },
   paidEvaluationCap: {
-    modelAnalyses: cases.length * 2,
-    providerRequests: cases.length * 3,
+    logicalCases: cases.length,
+    modelAnalysesUpperBound: cases.length * (includeParallelComparison ? 4 : 2),
+    providerRequestsUpperBound: cases.length * (includeParallelComparison ? 5 : 3),
   },
   rows,
   summary,

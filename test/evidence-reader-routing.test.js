@@ -11,6 +11,7 @@ const providerResult = { text: "A-1. Only two remain." };
 
 test("cascade uses DeepSeek for a recoverable JEV failure", async () => {
   let fallbackCalls = 0;
+  let fallbackPage;
   const primary = { async analyze() { return {
     ok: false,
     provider: "typesafe",
@@ -19,15 +20,47 @@ test("cascade uses DeepSeek for a recoverable JEV failure", async () => {
     allowFallback: true,
     aiAttempts: [{ provider: "typesafe", role: "evidence-select", outcome: "FAILED" }],
   }; } };
-  const fallback = { async analyze() {
+  const fallback = { async analyze(_source, page) {
     fallbackCalls += 1;
+    fallbackPage = page;
     return { ok: true, provider: "siliconflow", productMatch: "MATCH", availability: "IN_STOCK", evidenceQuote: "Only two remain", confidence: 0.95 };
   } };
   const result = await new CascadingEvidenceReader({ primary, fallback }).analyze(source, providerResult);
   assert.equal(fallbackCalls, 1);
   assert.equal(result.provider, "siliconflow");
   assert.equal(result.fallbackReason, "SERVICE_ERROR");
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(fallbackPage.text, providerResult.text);
   assert.equal(result.modelEvaluations.length, 2);
+});
+
+test("cascade prioritizes selected source evidence without replacing the complete capture", async () => {
+  let fallbackPage;
+  const reference = {
+    origin: "PAGE_TEXT",
+    snapshotId: "capture-1",
+    offsetStart: 5,
+    offsetEnd: 23,
+    text: "Only two remain.",
+  };
+  const reader = new CascadingEvidenceReader({
+    primary: { async analyze() { return {
+      ok: true,
+      provider: "typesafe",
+      acceptedByPolicy: false,
+      allowFallback: true,
+      reasonCode: "INCONCLUSIVE_INTERPRETATION",
+      evidenceReference: reference,
+      fallbackEvidenceText: "Only two remain.",
+    }; } },
+    fallback: { async analyze(_source, page) {
+      fallbackPage = page;
+      return { ok: true, provider: "siliconflow", availability: "UNKNOWN" };
+    } },
+  });
+  await reader.analyze(source, { ...providerResult, rawPageText: providerResult.text });
+  assert.equal(fallbackPage.text, providerResult.text);
+  assert.deepEqual(fallbackPage.preferredEvidenceReferences, [reference]);
 });
 
 test("cascade cannot use DeepSeek to override missing evidence or a hard mismatch", async () => {

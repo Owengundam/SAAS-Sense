@@ -54,8 +54,37 @@ test("SiliconFlow request uses constrained non-thinking structured output", asyn
   assert.equal(result.model, "deepseek-ai/DeepSeek-V4-Flash");
   assert.equal(result.configuredModel, "deepseek-ai/DeepSeek-V4-Flash");
   assert.equal(result.returnedModel, "deepseek-ai/DeepSeek-V4-Flash");
-  assert.equal(result.promptVersion, "availability-evidence-v1");
+  assert.equal(result.promptVersion, "availability-evidence-v2");
+  const prompt = JSON.parse(body.messages[1].content);
+  assert.equal(prompt.schemaVersion, "supplier-evidence-v2");
+  assert.equal(prompt.expectedProduct.title, source.productTitle);
+  assert.equal(prompt.observedPage.title, null);
+  assert.match(prompt.evidence[0].text, /In stock/);
+  assert.equal(prompt.extraction.omittedCandidateCount, 0);
   assert.deepEqual(result.usage, { inputTokens: 123, outputTokens: 45 });
+});
+
+test("legacy comparison mode retains the bounded page-prefix input", async () => {
+  let body;
+  const reader = new SiliconFlowEvidenceReader({
+    token: "token",
+    evidenceFormat: "legacy-prefix",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        productMatch: "UNCERTAIN",
+        availability: "UNKNOWN",
+        evidenceQuote: "",
+        confidence: 0.2,
+        reason: "No bound evidence",
+      }) } }] }), { status: 200 });
+    },
+  });
+  const result = await reader.analyze(source, providerResult);
+  const prompt = JSON.parse(body.messages[1].content);
+  assert.equal(prompt.untrustedPageEvidence, providerResult.text);
+  assert.equal(prompt.schemaVersion, undefined);
+  assert.equal(result.promptVersion, "availability-evidence-v1");
 });
 
 test("page prompt injection remains quoted untrusted evidence without tools", async () => {

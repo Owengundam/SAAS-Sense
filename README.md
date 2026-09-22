@@ -97,7 +97,7 @@ Use `npm run benchmark:fetchers -- --live` to compare fresh direct HTTP, self-ho
 
 ### SiliconFlow DeepSeek — implemented; live verification pending
 
-When Apify does not return a structured availability state, SupplierSignal can send a bounded evidence excerpt to `deepseek-ai/DeepSeek-V4-Flash` through SiliconFlow. The request disables thinking, exposes no tools, and requires a strict JSON-schema response. A factual AI result is accepted only when the model matches the expected product, confidence is at least 0.8, and its verbatim evidence quote exists in the captured page text. Rules-versus-AI conflicts remain uncertain, model failures fall back to deterministic classification, and the two-check transition rule still applies.
+When Apify does not return a structured availability state, SupplierSignal can send a bounded, provider-independent evidence package to `deepseek-ai/DeepSeek-V4-Flash` through SiliconFlow. Expected product identity is kept separate from the observed title, resolved URL, snapshot provenance, complete selected spans, nearby context, potential conflicts, and truncation metadata. The request disables thinking, exposes no tools, and requires a strict JSON-schema response. A factual AI result is accepted only when the model matches the expected product, confidence is at least 0.8, and its verbatim evidence quote exists in the captured page text. Rules-versus-AI conflicts remain uncertain, model failures fall back to deterministic classification, and the two-check transition rule still applies.
 
 Configure these only through the deployment host's secret interface:
 

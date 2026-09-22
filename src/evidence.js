@@ -1,5 +1,7 @@
 const DEFAULT_MAX_CANDIDATES = 120;
 const DEFAULT_MAX_CANDIDATE_CHARS = 600;
+const DEFAULT_SHARED_PACKAGE_CANDIDATES = 12;
+const DEFAULT_SHARED_CONTEXT_CHARS = 900;
 const AVAILABILITY_PATTERN = /\b(?:in\s*stock|out\s*of\s*stock|sold\s*out|unavailable|available\s+now|ready\s*to\s*ship|pre[ -]?order(?:ed)?|back[ -]?order(?:ed)?|discontinued|end\s+of\s+life|ships?\s+(?:in|within|by)|dispatches?\s+(?:in|within|by)|lead\s+time|within\s+\d+\s+(?:business\s+)?(?:day|week|month)s?)\b/iu;
 
 function clean(value) {
@@ -182,12 +184,167 @@ export function evidenceContextForReference(providerResult, reference, maxLength
       (!reference.snapshotId || item.snapshotId === reference.snapshotId));
     const source = String(record?.text ?? providerResult?.rawPageText ?? providerResult?.text ?? "");
     if (!source) return "";
-    const start = Number.isInteger(reference.offsetStart)
-      ? Math.max(0, reference.offsetStart - Math.floor(maxLength / 3))
-      : Math.max(0, source.toLowerCase().indexOf(String(reference.text || "").toLowerCase()) - Math.floor(maxLength / 3));
-    return clean(source.slice(start, start + maxLength));
+    const matchedStart = Number.isInteger(reference.offsetStart)
+      ? reference.offsetStart
+      : source.toLowerCase().indexOf(String(reference.text || "").toLowerCase());
+    if (matchedStart < 0) return clean(reference.text);
+    const matchedEnd = Number.isInteger(reference.offsetEnd)
+      ? Math.max(matchedStart, reference.offsetEnd)
+      : matchedStart + String(reference.text || "").length;
+    // The selected evidence is the non-negotiable part of the window. The old
+    // fixed-length slice could drop the end of a long selection (including the
+    // actual stock statement) after adding leading context.
+    const contextBudget = Math.max(0, maxLength - (matchedEnd - matchedStart));
+    let start = Math.max(0, matchedStart - Math.floor(contextBudget / 3));
+    let end = Math.min(source.length, matchedEnd + (contextBudget - (matchedStart - start)));
+    if (end - start < maxLength && start > 0) start = Math.max(0, end - maxLength);
+    if (end < matchedEnd) end = matchedEnd;
+    return clean(source.slice(start, end));
   }
-  return clean(reference.text).slice(0, maxLength);
+  // Structured fields are already bounded during candidate preparation. Never
+  // crop a selected value merely to satisfy a smaller context preference.
+  return clean(reference.text);
+}
+
+function expectedProduct(source) {
+  return {
+    merchantSku: clean(source?.sku) || null,
+    title: clean(source?.productTitle) || null,
+    shopifyProductId: clean(source?.shopifyProductId) || null,
+    shopifyVariantId: clean(source?.shopifyVariantId) || null,
+    supplierSku: clean(source?.supplierSku) || null,
+    supplierProductId: clean(source?.supplierProductId) || null,
+    supplierVariantId: clean(source?.supplierVariantId) || null,
+    matchTerms: [...new Set((source?.matchTerms || []).map(clean).filter(Boolean))].slice(0, 20),
+  };
+}
+
+function expectedIdentityTerms(source) {
+  const product = expectedProduct(source);
+  return [
+    product.supplierSku,
+    product.supplierProductId,
+    product.supplierVariantId,
+    product.merchantSku,
+    product.title,
+    ...product.matchTerms,
+  ].filter(Boolean);
+}
+
+function availabilitySignals(text) {
+  const value = String(text || "");
+  const signals = [];
+  if (/\b(?:in\s*stock|available\s+now|ready\s*to\s*ship)\b/iu.test(value)) signals.push("IN_STOCK");
+  if (/\b(?:pre[ -]?order(?:ed)?)\b/iu.test(value)) signals.push("PREORDER");
+  if (/\b(?:back[ -]?order(?:ed)?)\b/iu.test(value)) signals.push("BACKORDERED");
+  if (/\b(?:out\s*of\s*stock|sold\s*out|unavailable)\b/iu.test(value)) signals.push("OUT_OF_STOCK");
+  if (/\b(?:discontinued|end\s+of\s+life|no\s+longer\s+available)\b/iu.test(value)) signals.push("DISCONTINUED");
+  if (/\b(?:ships?|dispatches?)\s+(?:in|within|by)|\blead\s+time\b/iu.test(value)) signals.push("LEAD_TIME");
+  return [...new Set(signals)];
+}
+
+function sameReference(left, right) {
+  if (!left || !right || left.origin !== right.origin) return false;
+  if (left.origin === "STRUCTURED_FIELD") return left.path && left.path === right.path;
+  return (!left.snapshotId || !right.snapshotId || left.snapshotId === right.snapshotId) &&
+    Number.isInteger(left.offsetStart) && Number.isInteger(right.offsetStart) &&
+    left.offsetStart === right.offsetStart && left.offsetEnd === right.offsetEnd;
+}
+
+// One provider-independent representation is used by fallback readers and the
+// evaluation harness. Expected identity stays separate from observed source
+// material, and no upstream model decision or confidence enters this package.
+export function buildSharedEvidencePackage(source, providerResult, {
+  maxCandidates = DEFAULT_SHARED_PACKAGE_CANDIDATES,
+  maxCandidateChars = DEFAULT_MAX_CANDIDATE_CHARS,
+  maxContextChars = DEFAULT_SHARED_CONTEXT_CHARS,
+  preferredReferences = providerResult?.preferredEvidenceReferences || [],
+} = {}) {
+  const identityTerms = expectedIdentityTerms(source);
+  const bundle = prepareEvidenceBundle(providerResult, {
+    maxCandidates: Math.max(maxCandidates, DEFAULT_SHARED_PACKAGE_CANDIDATES),
+    maxCandidateChars,
+    groupAdjacent: true,
+    identityTerms,
+  });
+  const preferred = preferredReferences.filter(Boolean);
+  const ordered = [
+    ...preferred.map((reference) => bundle.candidates.find((item) => sameReference(item, reference)) || reference),
+    ...bundle.candidates,
+  ];
+  const unique = [];
+  for (const candidate of ordered) {
+    if (!candidate?.text || unique.some((item) => sameReference(item, candidate) ||
+      (item.origin === candidate.origin && item.path === candidate.path && item.text === candidate.text))) continue;
+    unique.push(candidate);
+  }
+  const selected = unique.slice(0, maxCandidates);
+  const evidence = selected.map((candidate, index) => {
+    const context = evidenceContextForReference(providerResult, candidate, maxContextChars);
+    return {
+      id: candidate.id || `E${String(index + 1).padStart(3, "0")}`,
+      origin: candidate.origin,
+      path: candidate.path || null,
+      snapshotId: candidate.snapshotId || providerResult?.pageSnapshotId || providerResult?.runId || null,
+      sourceUrl: candidate.sourceUrl || providerResult?.url || null,
+      offsetStart: Number.isInteger(candidate.offsetStart) ? candidate.offsetStart : null,
+      offsetEnd: Number.isInteger(candidate.offsetEnd) ? candidate.offsetEnd : null,
+      text: candidate.text,
+      surroundingContext: clean(context) !== clean(candidate.text) ? context : null,
+      availabilitySignals: availabilitySignals(`${candidate.text} ${context}`),
+    };
+  });
+  const signalGroups = new Map();
+  for (const item of evidence) {
+    for (const state of item.availabilitySignals) {
+      if (!signalGroups.has(state)) signalGroups.set(state, []);
+      signalGroups.get(state).push(item.id);
+    }
+  }
+  const potentialConflicts = signalGroups.size > 1
+    ? [...signalGroups].map(([state, evidenceIds]) => ({ state, evidenceIds }))
+    : [];
+  const totalCandidates = Math.max(bundle.totalCandidates, unique.length);
+  return {
+    schemaVersion: "supplier-evidence-v2",
+    expectedProduct: expectedProduct(source),
+    observedPage: {
+      title: clean(providerResult?.title) || null,
+      resolvedUrl: providerResult?.url || null,
+      snapshotId: providerResult?.pageSnapshotId || providerResult?.runId ||
+        evidence.find((item) => item.snapshotId)?.snapshotId || null,
+    },
+    evidence,
+    potentialConflicts,
+    extraction: {
+      truncated: bundle.truncated || unique.length > selected.length,
+      totalCandidateCount: totalCandidates,
+      includedCandidateCount: selected.length,
+      omittedCandidateCount: Math.max(0, totalCandidates - selected.length),
+    },
+  };
+}
+
+export function evaluateLabelEvidenceBinding(testCase, providerResult, { maxContextChars = 900 } = {}) {
+  const label = clean(testCase?.labelEvidence);
+  if (!label) return { present: null, bound: null, evidenceId: null };
+  const raw = String(providerResult?.rawPageText || providerResult?.text || "");
+  const present = raw.toLowerCase().includes(label.toLowerCase());
+  if (!present) return { present: false, bound: false, evidenceId: null };
+  const terms = expectedIdentityTerms(testCase?.source).map(searchable).filter((term) => term.length >= 3);
+  const evidencePackage = buildSharedEvidencePackage(testCase?.source, providerResult, { maxContextChars });
+  const boundEvidence = evidencePackage.evidence.find((item) => {
+    // Binding is intentionally paragraph/window-local. Surrounding context can
+    // cross product-card boundaries and must not turn a generic label into a
+    // monitored-variant label.
+    const normalized = searchable(item.text);
+    return item.text.toLowerCase().includes(label.toLowerCase()) && terms.some((term) => normalized.includes(term));
+  });
+  return {
+    present: true,
+    bound: Boolean(boundEvidence),
+    evidenceId: boundEvidence?.id || null,
+  };
 }
 
 export function verifyEvidenceReference(providerResult, reference, quote) {
