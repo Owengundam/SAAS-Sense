@@ -34,7 +34,7 @@ The extractor now retains the JSON-LD value as auditable evidence but removes it
 
 ## Browser status
 
-The Chromium adapter passes unit tests with a controlled browser implementation. A real Chromium and headless-shell launch were attempted in this workspace, but the host blocks the Unix socket Chromium requires before any page opens. Docker is unavailable here, so the Railway image could not be built locally. The deployment Dockerfile now uses Debian Bookworm and installs the browser build matching the pinned Playwright version. A forced smoke command is included for the final image; the browser tier must remain disabled until that command passes on Railway.
+The Chromium adapter passes unit tests with a controlled browser implementation. GitHub Actions builds the Debian Bookworm image and runs a forced browser smoke using Playwright's official user-namespace seccomp profile. Railway does not currently document a way to supply that runtime policy, so the browser tier must remain disabled there. This is an orchestrator constraint, not a reason to run Chromium with its sandbox disabled; Railway should use direct HTTP with Apify as the managed fallback.
 
 After DNS destination validation was added, this workspace could no longer repeat the live supplier run because its local resolver returned `EAI_AGAIN` for the public supplier domain. The fetcher failed closed. This does not establish that Railway DNS will succeed; the staging smoke must verify both DNS validation and browser launch in the deployed runtime.
 

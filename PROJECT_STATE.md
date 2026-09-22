@@ -65,7 +65,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 ## Not verified
 
 - Partner API subscription query or app-plan selection.
-- Cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains.
+- Cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains. Railway does not currently document the seccomp/user-namespace control required for sandboxed Chromium, so its browser tier remains disabled there.
 - Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
 - Live TypeSafe request compatibility, JEV accuracy/calibration, latency, token usage, and fallback rate on saved and real supplier captures.
 - Scheduling, email delivery, or production observability.

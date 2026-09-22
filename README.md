@@ -70,7 +70,7 @@ With `SELF_HOSTED_BROWSER_ENABLED=true`, the second tier renders the same URL in
 PROVIDER=cascade
 DIRECT_HTTP_TIMEOUT_MS=15000
 DIRECT_HTTP_MAX_BYTES=2000000
-SELF_HOSTED_BROWSER_ENABLED=true
+SELF_HOSTED_BROWSER_ENABLED=false
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
 BROWSER_TIMEOUT_MS=40000
 BROWSER_CONTENT_WAIT_MS=5000
@@ -140,7 +140,7 @@ PORT=3000
 PROVIDER=cascade
 DIRECT_HTTP_TIMEOUT_MS=15000
 DIRECT_HTTP_MAX_BYTES=2000000
-SELF_HOSTED_BROWSER_ENABLED=true
+SELF_HOSTED_BROWSER_ENABLED=false
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
 BROWSER_TIMEOUT_MS=40000
 BROWSER_CONTENT_WAIT_MS=5000
@@ -161,7 +161,7 @@ SCOPES=read_products
 
 Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
 
-The deployment image uses Debian Bookworm and installs the Chromium build matching the pinned `playwright-core` version during image construction. Runtime checks execute as an unprivileged user with the Chromium sandbox requested. Run `npm run smoke:browser -- --live` in the final image before enabling the browser tier; it must launch Chromium, execute JavaScript, extract the expected evidence, and close cleanly.
+The deployment image uses Debian Bookworm and installs the Chromium build matching the pinned `playwright-core` version during image construction. Runtime checks execute as an unprivileged user with the Chromium sandbox requested. Run `npm run smoke:browser -- --live` in the final image before enabling the browser tier; it must launch Chromium, execute JavaScript, extract the expected evidence, and close cleanly. Playwright requires a container runtime that permits its user-namespace seccomp policy for sandboxed crawling. Railway does not currently document a way to supply that policy, so keep `SELF_HOSTED_BROWSER_ENABLED=false` there and use direct HTTP with Apify as the managed fallback. Never solve this by disabling Chromium's sandbox inside the application service.
 
 ## Security boundaries
 
