@@ -1,9 +1,9 @@
 name: cross-domain-direct-benchmark
 
 on:
-  push:
-    branches: [eval/cross-domain-direct-ci]
-    paths: [.github/workflows/cross-domain-direct-benchmark.yml]
+  pull_request:
+    paths:
+      - .github/workflows/cross-domain-direct-benchmark.yml
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
       FETCH_BENCHMARK_FIXTURE: fixtures/real-supplier-cross-domain-5.json
       FETCH_BENCHMARK_METHODS: direct
       FETCH_BENCHMARK_RUNS: "1"
-      FETCH_BENCHMARK_OUTPUT: ${{ runner.temp }}/cross-domain-direct.json
+      FETCH_BENCHMARK_OUTPUT: /tmp/cross-domain-direct.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
