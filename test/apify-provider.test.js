@@ -109,6 +109,9 @@ test("missing structured availability automatically falls back to full page text
   assert.deepEqual(fallbackBody.startUrls, [{ url: source.url }]);
   assert.equal(fallbackBody.maxCrawlPages, 1);
   assert.equal(fallbackBody.respectRobotsTxtFile, true);
+  assert.equal(fallbackBody.crawlerType, "playwright:firefox");
+  assert.equal(fallbackBody.htmlTransformer, "none");
+  assert.equal(fallbackBody.dynamicContentWaitSecs, 10);
 });
 
 test("structured availability skips the content crawler fallback", async () => {

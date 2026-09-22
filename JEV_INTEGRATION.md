@@ -2,7 +2,7 @@
 
 ## Status
 
-Production was last verified at `c76f563` in `jev-shadow` mode with DeepSeek authoritative. The corrected 300-case synthetic evaluation produced 293/300 correct effective cascade outcomes, 168/175 accepted factual outcomes, and zero incorrect accepted results. See `AI_SYNTHETIC_300_EVALUATION_2026-09-21.md` for limitations and reproduction. The exact-host `jev-validated` promotion mode is implemented locally but has not been deployed or enabled. A configured JEV key still selects shadow mode when no explicit mode is set.
+Production was last verified at `c76f563` in `jev-shadow` mode with DeepSeek authoritative. The corrected 300-case synthetic evaluation produced 293/300 correct effective cascade outcomes, 168/175 accepted factual outcomes, and zero incorrect accepted results. The bounded Lighting Supply evaluation then produced 5/5 correct JEV-cascade outcomes, versus 4/5 for DeepSeek alone, with zero false factual results after capture-time relabeling. See `AI_SYNTHETIC_300_EVALUATION_2026-09-21.md` and `REAL_SUPPLIER_EVALUATION_2026-09-22.md` for limitations and reproduction. The exact-host `jev-validated` promotion mode is implemented locally but has not been deployed or enabled. A configured JEV key still selects shadow mode when no explicit mode is set.
 
 ## Decision flow
 
@@ -75,4 +75,4 @@ JEV should not become primary until it has:
 - bounded fallback and measured whole-pipeline cost/latency;
 - successful tests on authorized real supplier pages.
 
-The 300-case synthetic evaluation cleared the synthetic correctness and safety checks, but not the authorized-real-page requirement. The next promotion stage is therefore `jev-validated`, with exact-host allowlisting and persisted routing provenance. It is not a global production switch.
+The synthetic and bounded real-page evaluations cleared their current correctness and safety checks. The real-page sample is still one public domain, four in-stock products, and one backorder; it does not establish supplier permission for recurring commercial monitoring. Before allowlisting `lightingsupply.com`, repeat the capture in an independent window and add current out-of-stock, preorder, or discontinued evidence. The next promotion stage remains `jev-validated`, with exact-host allowlisting and persisted routing provenance. It is not a global production switch.

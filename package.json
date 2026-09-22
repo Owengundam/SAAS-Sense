@@ -21,6 +21,7 @@
     "evaluate:fixtures": "node scripts/evaluate-fixtures.js",
     "generate:ai-synthetic": "node scripts/generate-ai-synthetic-cases.js",
     "evaluate:ai-synthetic": "node scripts/evaluate-ai-synthetic.js",
+    "evaluate:real-suppliers": "node scripts/evaluate-real-suppliers.js",
     "smoke": "node scripts/smoke.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },

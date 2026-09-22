@@ -1,5 +1,7 @@
 const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
 const CONTENT_CRAWLER_ACTOR_ID = "apify~website-content-crawler";
+const DEFAULT_ACTOR_TIMEOUT_MS = 70_000;
+const DEFAULT_BROWSER_ACTOR_TIMEOUT_MS = 120_000;
 
 function firstText(...values) {
   return values.find((value) => typeof value === "string" && value.trim())?.trim() || "";
@@ -143,7 +145,12 @@ function buildInput(actorId, source) {
       startUrls: [{ url: source.url }],
       maxCrawlDepth: 0,
       maxCrawlPages: 1,
-      crawlerType: "cheerio",
+      // Supplier inventory badges are often populated client-side. A raw HTTP
+      // crawl can return a valid product page while silently omitting the one
+      // field we need, so render JavaScript for the bounded fallback capture.
+      crawlerType: "playwright:firefox",
+      htmlTransformer: "none",
+      dynamicContentWaitSecs: 10,
       useSitemaps: false,
       respectRobotsTxtFile: true,
       maxRequestRetries: 0,
@@ -174,17 +181,28 @@ function providerAttempt(result, actorId, role) {
 }
 
 export class ApifyProvider {
-  constructor({ token, actorId = ECOMMERCE_ACTOR_ID, fetchImpl = fetch } = {}) {
+  constructor({
+    token,
+    actorId = ECOMMERCE_ACTOR_ID,
+    fetchImpl = fetch,
+    timeoutMs = DEFAULT_ACTOR_TIMEOUT_MS,
+    browserTimeoutMs = DEFAULT_BROWSER_ACTOR_TIMEOUT_MS,
+  } = {}) {
     this.token = token;
     this.actorId = actorId;
     this.fetchImpl = fetchImpl;
+    this.timeoutMs = timeoutMs;
+    this.browserTimeoutMs = browserTimeoutMs;
   }
 
   async fetchFromActor(actorId, source) {
     const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=1`;
     const input = buildInput(actorId, source);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 70_000);
+    const timeoutMs = actorId === CONTENT_CRAWLER_ACTOR_ID
+      ? this.browserTimeoutMs
+      : this.timeoutMs;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.fetchImpl(endpoint, {
         method: "POST",
