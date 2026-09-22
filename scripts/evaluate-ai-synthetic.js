@@ -20,7 +20,7 @@ const deepseek = new SiliconFlowEvidenceReader({
   token: deepSeekToken,
   model: process.env.SILICONFLOW_MODEL,
   endpoint: process.env.SILICONFLOW_ENDPOINT,
-  timeoutMs: 20_000,
+  timeoutMs: 30_000,
 });
 const factualStates = new Set([
   STATES.IN_STOCK, STATES.PREORDER, STATES.BACKORDERED,
@@ -141,4 +141,3 @@ const summary = {
 };
 await appendFile(outputPath, `SUMMARY ${JSON.stringify(summary)}\n`);
 console.log(`SUMMARY ${JSON.stringify(summary)}`);
-

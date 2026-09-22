@@ -96,7 +96,7 @@ for (let productIndex = 0; productIndex < products.length; productIndex += 1) {
         productTitle: product.title,
         supplierSku: product.sku,
         supplierProductId: product.supplierProductId,
-        supplierVariantId: product.supplierVariantId,
+        ...(scenario === "exact_variant_mixed" ? { supplierVariantId: product.supplierVariantId } : {}),
         shopifyProductId: `gid://shopify/Product/${1000 + productIndex}`,
         shopifyVariantId: `gid://shopify/ProductVariant/${2000 + productIndex}`,
         matchTerms: [product.title, product.sku],
@@ -114,4 +114,3 @@ if (cases.length !== 300 || new Set(cases.map((item) => item.id)).size !== 300) 
 const target = new URL("../fixtures/ai-synthetic-300.json", import.meta.url);
 await writeFile(target, `${JSON.stringify(cases, null, 2)}\n`);
 console.log(`Wrote ${cases.length} cases to ${target.pathname}`);
-
