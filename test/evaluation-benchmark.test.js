@@ -38,6 +38,8 @@ test("live benchmark does not report accuracy when every capture failed at the e
   assert.equal(report.accuracyNumerator, 0);
   assert.equal(report.accuracyDenominator, 0);
   assert.equal(report.stateAccuracy, null);
+  assert.equal(report.incorrectFactualAcceptances, 0);
+  assert.equal(report.safetyGatePass, false);
   assert.equal(report.labelEvidenceMisses, 0);
   assert.equal(report.medianLatencyMs, null);
   assert.equal(report.allRequestMedianLatencyMs, 3);
@@ -45,11 +47,11 @@ test("live benchmark does not report accuracy when every capture failed at the e
 
 test("live benchmark accuracy uses only usable captures with current label evidence", () => {
   const rows = [
-    { method: "direct", ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: true, latencyMs: 100, costUsd: null },
-    { method: "direct", ok: true, usable: true, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 200, costUsd: null },
-    { method: "direct", ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: null, latencyMs: 300, costUsd: null },
-    { method: "direct", ok: true, usable: true, correctAgainstFixture: false, labelEvidencePresent: false, latencyMs: 400, costUsd: null },
-    { method: "direct", ok: true, usable: false, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 500, costUsd: null },
+    { method: "direct", domain: "a.test", category: "stock", expectedFactual: true, factual: true, ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: true, latencyMs: 100, costUsd: null },
+    { method: "direct", domain: "a.test", category: "stock", expectedFactual: true, factual: true, ok: true, usable: true, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 200, costUsd: null },
+    { method: "direct", domain: "b.test", category: "stock", expectedFactual: true, factual: false, ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: null, latencyMs: 300, costUsd: null },
+    { method: "direct", domain: "b.test", category: "stock", expectedFactual: true, factual: true, ok: true, usable: true, correctAgainstFixture: false, labelEvidencePresent: false, latencyMs: 400, costUsd: null },
+    { method: "direct", domain: "c.test", category: "stock", expectedFactual: true, factual: true, ok: true, usable: false, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 500, costUsd: null },
   ];
 
   const report = summarizeFetchBenchmark(rows, ["direct"]).direct;
@@ -62,6 +64,31 @@ test("live benchmark accuracy uses only usable captures with current label evide
   assert.equal(report.fixtureStateMatches, 2);
   assert.equal(report.fixtureStateMismatches, 1);
   assert.equal(report.stateAccuracy, 2 / 3);
+  assert.equal(report.domainCount, 2);
+  assert.equal(report.categoryCount, 1);
+  assert.equal(report.expectedFactualCases, 3);
+  assert.equal(report.correctFactualAcceptances, 1);
+  assert.equal(report.incorrectFactualAcceptances, 1);
+  assert.equal(report.safeAbstentions, 0);
+  assert.equal(report.factualCoverage, 1 / 3);
+  assert.equal(report.safetyGatePass, false);
   assert.equal(report.labelEvidenceMisses, 1);
   assert.equal(report.medianLatencyMs, 300);
+});
+
+test("live benchmark separates safe abstention from unsafe factual acceptance", () => {
+  const rows = [
+    { method: "direct", domain: "a.test", category: "in-stock", expectedFactual: true, factual: true, ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: true, latencyMs: 100, costUsd: null },
+    { method: "direct", domain: "b.test", category: "out-of-stock", expectedFactual: true, factual: false, ok: true, usable: true, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 200, costUsd: null },
+    { method: "direct", domain: "c.test", category: "deferred", expectedFactual: false, factual: false, ok: true, usable: true, correctAgainstFixture: true, labelEvidencePresent: true, latencyMs: 300, costUsd: null },
+  ];
+
+  const report = summarizeFetchBenchmark(rows, ["direct"]).direct;
+  assert.equal(report.domainCount, 3);
+  assert.equal(report.categoryCount, 3);
+  assert.equal(report.correctFactualAcceptances, 1);
+  assert.equal(report.incorrectFactualAcceptances, 0);
+  assert.equal(report.safeAbstentions, 1);
+  assert.equal(report.factualCoverage, 0.5);
+  assert.equal(report.safetyGatePass, true);
 });

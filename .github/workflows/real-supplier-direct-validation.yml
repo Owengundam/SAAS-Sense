@@ -1,0 +1,51 @@
+name: real-supplier-direct-validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/real-supplier-direct-validation.yml
+      - fixtures/real-supplier-validation-25.json
+      - scripts/benchmark-fetchers.js
+      - src/fetch-benchmark.js
+      - src/domain.js
+      - src/providers/direct-http.js
+      - src/providers/page-content.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FETCH_BENCHMARK_FIXTURE: fixtures/real-supplier-validation-25.json
+      FETCH_BENCHMARK_METHODS: direct
+      FETCH_BENCHMARK_RUNS: "1"
+      FETCH_BENCHMARK_OUTPUT: /tmp/real-supplier-direct-validation.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Run 25-page direct validation
+        run: npm run benchmark:fetchers -- --live
+      - name: Enforce capture and safety gates
+        run: |
+          jq '.summary.direct' "$FETCH_BENCHMARK_OUTPUT"
+          jq -e '
+            .summary.direct.scorableCaptures >= 20 and
+            .summary.direct.domainCount >= 3 and
+            .summary.direct.incorrectFactualAcceptances == 0 and
+            .summary.direct.safetyGatePass == true
+          ' "$FETCH_BENCHMARK_OUTPUT"
+      - name: Upload raw validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-supplier-direct-validation
+          path: ${{ env.FETCH_BENCHMARK_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 7
