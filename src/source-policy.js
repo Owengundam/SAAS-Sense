@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { lookup } from "node:dns/promises";
 
 export const DEFAULT_SUPPORTED_DOMAINS = Object.freeze([
   "books.toscrape.com",
@@ -24,7 +25,10 @@ function isPrivateIpv4(host) {
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0) ||
     (a === 192 && b === 168) ||
+    (a === 192 && b === 88 && parts[2] === 99) ||
     (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && parts[2] === 100) ||
+    (a === 203 && b === 0 && parts[2] === 113) ||
     a >= 224;
 }
 
@@ -65,6 +69,33 @@ export function validateSupplierUrl(value, supportedDomains = DEFAULT_SUPPORTED_
   if (!isSupportedHostname(url.hostname, supportedDomains)) throw new Error("UNSUPPORTED_SUPPLIER_DOMAIN");
   url.hash = "";
   return url;
+}
+
+export function validatePublicResourceUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("INVALID_RESOURCE_URL");
+  }
+  if (["data:", "blob:", "about:"].includes(url.protocol)) return url;
+  if (!["https:", "wss:"].includes(url.protocol)) throw new Error("UNSAFE_RESOURCE_PROTOCOL");
+  if (url.username || url.password) throw new Error("RESOURCE_CREDENTIALS_FORBIDDEN");
+  if (url.port && url.port !== "443") throw new Error("UNSAFE_RESOURCE_PORT");
+  if (isPrivateHostname(url.hostname)) throw new Error("PRIVATE_RESOURCE_FORBIDDEN");
+  return url;
+}
+
+export async function assertPublicHostnameDns(hostname, lookupImpl = lookup) {
+  const host = normalizeHost(hostname);
+  if (isPrivateHostname(host)) throw new Error("PRIVATE_DNS_TARGET_FORBIDDEN");
+  const records = await lookupImpl(host, { all: true, verbatim: true });
+  const addresses = Array.isArray(records) ? records : [records];
+  if (!addresses.length) throw new Error("SOURCE_DNS_EMPTY");
+  if (addresses.some((record) => isPrivateHostname(record?.address || record))) {
+    throw new Error("PRIVATE_DNS_TARGET_FORBIDDEN");
+  }
+  return addresses.map((record) => record?.address || record);
 }
 
 export function validateSupplierRedirect(sourceUrl, resolvedUrl, supportedDomains = DEFAULT_SUPPORTED_DOMAINS) {

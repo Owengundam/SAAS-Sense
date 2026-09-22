@@ -3,8 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDatabase } from "./db.js";
-import { MockProvider } from "./providers/mock.js";
-import { ApifyProvider } from "./providers/apify.js";
+import { createPageProvider } from "./providers/create-page-provider.js";
 import { createEvidenceReader } from "./providers/create-evidence-reader.js";
 import { SupplierSignalService } from "./service.js";
 import { authenticateRequest } from "./security.js";
@@ -18,9 +17,7 @@ const databasePath = process.env.DATABASE_PATH || join(root, "data", "supplier-s
 const db = createDatabase(databasePath);
 if (demoMode) seedDemo(db);
 
-const provider = process.env.PROVIDER === "apify"
-  ? new ApifyProvider({ token: process.env.APIFY_API_TOKEN, actorId: process.env.APIFY_ACTOR_ID })
-  : new MockProvider({ fixturePath: join(root, "fixtures", "mock-pages.json") });
+const provider = createPageProvider(process.env, { root });
 const evidenceReader = createEvidenceReader(process.env);
 const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
   ?.split(",")
@@ -93,7 +90,7 @@ export function createAppServer(overrides = {}) {
           const results = body.sourceId
             ? [await appService.checkSource(auth.shop, body.sourceId)]
             : await appService.checkAll(auth.shop);
-          return json(response, 200, { simulated: process.env.PROVIDER !== "apify", results });
+          return json(response, 200, { simulated: String(process.env.PROVIDER || "mock").toLowerCase() === "mock", results });
         }
         return json(response, 404, { error: "NOT_FOUND" });
       }

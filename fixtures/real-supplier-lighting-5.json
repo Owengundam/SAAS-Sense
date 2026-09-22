@@ -1,0 +1,57 @@
+[
+  {
+    "id": "lighting-supply-philips-f32t8-tl950-alto",
+    "expected": "IN_STOCK",
+    "labelEvidence": "54 in Stock: Ready to Ship",
+    "source": {
+      "url": "https://lightingsupply.com/products/philips-f32t8-tl950-alto",
+      "productTitle": "Philips 479634 F32T8/TL950/ALTO 32W 48 Inch 5000K T8 90 CRI Medium Bi-Pin Base Bulb",
+      "supplierSku": "F32T8/TL950/ALTO",
+      "matchTerms": ["F32T8/TL950/ALTO", "927871205501", "479634"]
+    }
+  },
+  {
+    "id": "lighting-supply-broan-s1100622",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 7-14 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/broan-nutone-s1100622",
+      "productTitle": "Broan-NuTone Light Fixture Assembly",
+      "supplierSku": "S1100622",
+      "matchTerms": ["S1100622", "Broan-NuTone Light Fixture Assembly"]
+    }
+  },
+  {
+    "id": "lighting-supply-standard-ledr-1",
+    "expected": "IN_STOCK",
+    "labelEvidence": "53 in Stock: Ready to Ship",
+    "source": {
+      "url": "https://lightingsupply.com/products/standard-bl-ledr-1",
+      "productTitle": "Standard-BL LED Dual Head White Emergency Fixture 120/277V",
+      "supplierSku": "LEDR-1",
+      "matchTerms": ["LEDR-1", "Standard-BL LED Dual Head White Emergency Fixture"]
+    }
+  },
+  {
+    "id": "lighting-supply-satco-s39916",
+    "expected": "IN_STOCK",
+    "labelEvidence": "1514 in Stock: Ready to Ship",
+    "source": {
+      "url": "https://lightingsupply.com/products/satco-nuvo-satco-nuvo-s39916",
+      "productTitle": "SATCO/NUVO 14W T8 LED 4 Foot 5000K Medium Bi-Pin Base",
+      "supplierSku": "SATCO/NUVO-S39916",
+      "matchTerms": ["SATCO/NUVO-S39916", "S39916"]
+    }
+  },
+  {
+    "id": "lighting-supply-satco-s39915",
+    "expected": "IN_STOCK",
+    "labelEvidence": "851 in Stock: Ready to Ship",
+    "source": {
+      "url": "https://lightingsupply.com/products/satco-nuvo-satco-nuvo-s39915",
+      "productTitle": "SATCO/NUVO 14W T8 LED 4 Foot 4000K Medium Bi-Pin Base",
+      "supplierSku": "SATCO/NUVO-S39915",
+      "matchTerms": ["SATCO/NUVO-S39915", "S39915"]
+    }
+  }
+]

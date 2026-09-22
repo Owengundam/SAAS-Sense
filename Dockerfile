@@ -1,18 +1,29 @@
-FROM node:22-alpine
-RUN apk add --no-cache openssl
+FROM node:22-bookworm-slim
 
-EXPOSE 3000
+ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates gosu openssl \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-ENV NODE_ENV=production
-
 COPY package.json package-lock.json* ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev \
+  && npx playwright-core install --with-deps chromium \
+  && npm cache clean --force
 
 COPY . .
 
-RUN npm run build
+RUN npm run build \
+  && useradd --create-home --shell /usr/sbin/nologin appuser \
+  && mkdir -p /data /ms-playwright \
+  && chown -R appuser:appuser /app /data \
+  && chmod +x /app/docker-entrypoint.sh
 
+EXPOSE 3000
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["npm", "run", "docker-start"]

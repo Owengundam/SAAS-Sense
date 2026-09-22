@@ -60,6 +60,27 @@ The production shell uses Shopify's official React Router adapter, managed insta
 
 `PROVIDER=mock` uses `fixtures/mock-pages.json`. Tests can queue malformed, ambiguous, failed, or changing results without spending money.
 
+### Cascade — implemented and locally tested
+
+`PROVIDER=cascade` performs a fresh direct HTTP request first. It sends cache-bypass headers, follows only validated supplier redirects, caps the response at 2 MB, and preserves visible-page and JSON-LD evidence. It escalates only when the capture lacks both a configured product identity and availability evidence.
+
+With `SELF_HOSTED_BROWSER_ENABLED=true`, the second tier renders the same URL in Chromium only when direct capture indicates missing rendered content. Ambiguous wording stays in the semantic interpretation path. Chromium launches lazily, handles one browser job at a time, reuses the process with a fresh isolated context for each check, and closes after an idle timeout. Images, media, fonts, service workers, private-network resources, unsafe protocols, and unapproved top-level redirects are blocked. Apify remains the final tier for browser failure, access blocks, or timeouts; security rejections are terminal and cannot be routed around.
+
+```text
+PROVIDER=cascade
+DIRECT_HTTP_TIMEOUT_MS=15000
+DIRECT_HTTP_MAX_BYTES=2000000
+SELF_HOSTED_BROWSER_ENABLED=false
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
+BROWSER_TIMEOUT_MS=40000
+BROWSER_CONTENT_WAIT_MS=5000
+BROWSER_IDLE_TIMEOUT_MS=120000
+BROWSER_RESTART_BACKOFF_MS=5000
+BROWSER_CHROMIUM_SANDBOX=true
+```
+
+Each attempted tier records provider, role, outcome, latency, and run ID. `INCONCLUSIVE` means the request succeeded but did not contain enough identity-plus-availability evidence to stop escalation.
+
 ### Apify — connected and live-tested
 
 Set these only through a secure secret configuration interface:
@@ -70,7 +91,9 @@ APIFY_API_TOKEN=...
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 ```
 
-The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard; normal input is still restricted to one URL and the current listed product-detail event price is about $0.006 before extra-property events. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly. Before unattended checks, measure the automatic fallback rate, extraction accuracy, latency, and cost across several merchant-authorized supplier domains.
+The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard and remains restricted to one URL. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly.
+
+Use `npm run benchmark:fetchers -- --live` to compare fresh direct HTTP, self-hosted Chromium, the full cascade, and optionally Apify against up to 50 labeled cases. The harness repeats each case three times by default and reports capture success, usable evidence, fixture-state agreement, median/p95 latency, escalation attempts, and Apify cost when the run API exposes it. Configure the fixture, methods, repetitions, and output through `FETCH_BENCHMARK_FIXTURE`, `FETCH_BENCHMARK_METHODS`, `FETCH_BENCHMARK_RUNS`, and `FETCH_BENCHMARK_OUTPUT`.
 
 ### SiliconFlow DeepSeek — implemented; live verification pending
 
@@ -93,12 +116,14 @@ DeepSeek remains authoritative by default. Available modes are:
 ```text
 AI_READER_MODE=deepseek     # current behavior; no JEV calls
 AI_READER_MODE=jev-shadow   # DeepSeek decides; JEV is measured only
+AI_READER_MODE=jev-validated # JEV primary only on exact allowlisted hosts
 AI_READER_MODE=jev-primary  # accepted JEV decisions first; bounded DeepSeek fallback
+JEV_PRIMARY_DOMAINS=supplier.example,www.supplier.example
 JEV_API_KEY=...
 TYPESAFE_MODEL=jev-1.13.0
 ```
 
-Providing `JEV_API_KEY` without `AI_READER_MODE` safely selects `jev-shadow`. Set `AI_READER_MODE=deepseek` to explicitly disable JEV calls, or use `jev-primary` only after the shadow evaluation.
+Providing `JEV_API_KEY` without `AI_READER_MODE` safely selects `jev-shadow`. Set `AI_READER_MODE=deepseek` to explicitly disable JEV calls. `jev-validated` promotes the measured cascade only for exact hostnames in `JEV_PRIMARY_DOMAINS`; all other hosts remain DeepSeek-authoritative with JEV in shadow. Subdomains are never included implicitly. Reserve unrestricted `jev-primary` for a later, separately approved rollout.
 
 Fallback is reason-specific. Service errors and inconclusive interpretations may reach DeepSeek. Missing evidence, strong product/variant mismatch, contradictory evidence, and truncated candidate retrieval remain uncertain instead of asking another model for a more convenient answer. Shadow evaluations never change observations, transitions, or alerts.
 
@@ -112,19 +137,31 @@ Mount a persistent Railway volume at `/data`, then configure these non-secret va
 DATABASE_URL=file:/data/shopify.sqlite
 SUPPLIER_DATABASE_PATH=/data/supplier-signal.db
 PORT=3000
-PROVIDER=mock
+PROVIDER=cascade
+DIRECT_HTTP_TIMEOUT_MS=15000
+DIRECT_HTTP_MAX_BYTES=2000000
+SELF_HOSTED_BROWSER_ENABLED=false
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
+BROWSER_TIMEOUT_MS=40000
+BROWSER_CONTENT_WAIT_MS=5000
+BROWSER_IDLE_TIMEOUT_MS=120000
+BROWSER_RESTART_BACKOFF_MS=5000
+BROWSER_CHROMIUM_SANDBOX=true
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
+JEV_PRIMARY_DOMAINS=
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
 SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
+
+The deployment image uses Debian Bookworm and installs the Chromium build matching the pinned `playwright-core` version during image construction. Runtime checks execute as an unprivileged user with the Chromium sandbox requested. Run `npm run smoke:browser -- --live` in the final image before enabling the browser tier; it must launch Chromium, execute JavaScript, extract the expected evidence, and close cleanly. Playwright requires a container runtime that permits its user-namespace seccomp policy for sandboxed crawling. Railway does not currently document a way to supply that policy, so keep `SELF_HOSTED_BROWSER_ENABLED=false` there and use direct HTTP with Apify as the managed fallback. Never solve this by disabling Chromium's sandbox inside the application service.
 
 ## Security boundaries
 
@@ -136,6 +173,7 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 - Every observation has a decision audit recording structured/rules/AI provenance, AI acceptance or rejection, model and trace metadata, prompt version, token usage, timing, quote, and bounded context.
 - Multi-model runs record each provider evaluation, shadow status, fallback reason, separate probability/confidence signals, and exact evidence provenance.
 - Only HTTPS source URLs are accepted.
+- Direct HTTP redirects are validated before they are followed. The local browser blocks private-network subresources and unsafe protocols.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.
 - Supplier-page text is untrusted model input; the AI receives no tools, and every factual quote is verified server-side.

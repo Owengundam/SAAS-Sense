@@ -23,3 +23,16 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run smoke
+
+  browser-image-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag supplier-signal-browser-smoke .
+      - name: Verify sandboxed Chromium runtime
+        run: >-
+          docker run --rm --init --ipc=host
+          --security-opt seccomp=.github/playwright-seccomp.json
+          supplier-signal-browser-smoke npm run smoke:browser -- --live
