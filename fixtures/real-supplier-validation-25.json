@@ -1,0 +1,303 @@
+[
+  {
+    "id": "lighting-supply-broan-s1100622",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 7-14 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/broan-nutone-s1100622",
+      "productTitle": "Broan-NuTone Light Fixture Assembly",
+      "supplierSku": "S1100622",
+      "matchTerms": ["S1100622"]
+    }
+  },
+  {
+    "id": "lighting-supply-lithonia-olvtcm",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/lithonia-olvtcm",
+      "productTitle": "Lithonia LED Vapor Tight Ceiling Mount 4000K",
+      "supplierSku": "OLVTCM",
+      "matchTerms": ["OLVTCM"]
+    }
+  },
+  {
+    "id": "lighting-supply-bryant-tpc50b",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/bryant-tpc50b",
+      "productTitle": "Bryant Distribution Box Cable 50 Amp 50 Foot",
+      "supplierSku": "TPC50B",
+      "matchTerms": ["TPC50B"]
+    }
+  },
+  {
+    "id": "lighting-supply-caddy-ccc0075",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 7-14 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/caddy-ccc0075",
+      "productTitle": "Caddy Cushion Clamp Insulated Strut Clamp",
+      "supplierSku": "CCC0075",
+      "matchTerms": ["CCC0075"]
+    }
+  },
+  {
+    "id": "lighting-supply-eti-64507101",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 14-28 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/eti-64507101",
+      "productTitle": "ETI Sellado Series 2 Foot Vaportight",
+      "supplierSku": "64507101",
+      "matchTerms": ["64507101"]
+    }
+  },
+  {
+    "id": "lighting-supply-3m-67895",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/3m-g0ee143f7",
+      "productTitle": "3M 67895 Hookit Diamond Microfinishing Film Disc 675L",
+      "supplierSku": "67895",
+      "matchTerms": ["67895"]
+    }
+  },
+  {
+    "id": "lighting-supply-philips-f32t8-tl950-alto",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "in Stock: Ready to Ship",
+    "source": {
+      "url": "https://lightingsupply.com/products/philips-f32t8-tl950-alto",
+      "productTitle": "Philips 479634 F32T8/TL950/ALTO 32W 48 Inch 5000K T8 90 CRI Medium Bi-Pin Base Bulb",
+      "supplierSku": "F32T8/TL950/ALTO",
+      "matchTerms": ["F32T8/TL950/ALTO"]
+    }
+  },
+  {
+    "id": "lighting-supply-lithonia-wltu",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/lithonia-wltu",
+      "productTitle": "Lithonia Emergency Light For Wet Locations",
+      "supplierSku": "WLTU",
+      "matchTerms": ["WLTU"]
+    }
+  },
+  {
+    "id": "lighting-supply-remke-104a0090ap",
+    "category": "backorder",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 7-14 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/remke-104a0090ap",
+      "productTitle": "Remke Mini-Link Plug Assembly PVC Female 4-Pole 9 Foot 16 AWG",
+      "supplierSku": "104A0090AP",
+      "matchTerms": ["104A0090AP"]
+    }
+  },
+  {
+    "id": "visual-comfort-siena-ss4016an-wg",
+    "category": "variant-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "in stock",
+    "source": {
+      "url": "https://www.visualcomfort.com/us/p/siena-large-flush-mount-ss4016",
+      "productTitle": "Siena Large Flush Mount in Antique Nickel",
+      "supplierSku": "SS 4016AN-WG",
+      "supplierVariantId": "SS 4016AN-WG",
+      "matchTerms": ["SS 4016AN-WG"]
+    }
+  },
+  {
+    "id": "surya-aamnah-amh-002",
+    "category": "deferred-availability",
+    "expected": "UNCERTAIN",
+    "labelEvidence": "See Availability",
+    "source": {
+      "url": "https://www.surya.com/Product/AMH-002-P",
+      "productTitle": "Aamnah AMH-002 Pouf",
+      "supplierSku": "AMH-002",
+      "matchTerms": ["AMH-002"]
+    }
+  },
+  {
+    "id": "miele-wtv-500-09612041",
+    "category": "explicit-out-of-stock",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
+    "source": {
+      "url": "https://shop.miele.hk/en/wtv-500-zid09612041/",
+      "productTitle": "WTV 500",
+      "supplierProductId": "09612041",
+      "matchTerms": ["09612041"]
+    }
+  },
+  {
+    "id": "miele-guard-l1-comfort-12804090",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/floorcare/guard-l1-comfort-zid12804090/",
+      "productTitle": "Guard L1 Comfort",
+      "supplierProductId": "12804090",
+      "matchTerms": ["12804090"]
+    }
+  },
+  {
+    "id": "miele-tea525wp-12719150",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/tumble-dryers/tea525wp-8kg-active-zid12719150/",
+      "productTitle": "TEA525WP 8kg Active",
+      "supplierProductId": "12719150",
+      "matchTerms": ["12719150"]
+    }
+  },
+  {
+    "id": "miele-ted645wp-12719190",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/tumble-dryers/ted645wp-ecospeed-9kg-zid12719190/",
+      "productTitle": "TED645WP EcoSpeed&9kg",
+      "supplierProductId": "12719190",
+      "matchTerms": ["12719190"]
+    }
+  },
+  {
+    "id": "miele-teh785wp-11871830",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/tumble-dryers/teh785wp-ecospeed-9kg-zid11871830/",
+      "productTitle": "TEH785WP EcoSpeed&9kg",
+      "supplierProductId": "11871830",
+      "matchTerms": ["11871830"]
+    }
+  },
+  {
+    "id": "miele-tel785wp-11871900",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/tumble-dryers/tel785wp-ecospeed-steam-9kg-t1-heat-pump-dryer-zid11871900/",
+      "productTitle": "TEL785WP EcoSpeed&Steam&9kg",
+      "supplierProductId": "11871900",
+      "matchTerms": ["11871900"]
+    }
+  },
+  {
+    "id": "miele-twv780wp-11876930",
+    "category": "related-product-copy",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/tumble-dryers/twv780wp-passion-t1-heat-pump-dryer-zid11876930/",
+      "productTitle": "TWV780WP Passion",
+      "supplierProductId": "11876930",
+      "matchTerms": ["11876930"]
+    }
+  },
+  {
+    "id": "miele-plinth-filter-07070070",
+    "category": "explicit-out-of-stock",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid07070070/",
+      "productTitle": "Plinth filter for tumble dryers",
+      "supplierProductId": "07070070",
+      "matchTerms": ["07070070"]
+    }
+  },
+  {
+    "id": "miele-fluff-filter-06162751",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/fluff-filter-for-tumble-dryers-zid06162751/",
+      "productTitle": "Fluff filter for tumble dryers",
+      "supplierProductId": "06162751",
+      "matchTerms": ["06162751"]
+    }
+  },
+  {
+    "id": "miele-plinth-filter-09688381",
+    "category": "explicit-out-of-stock",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid09688381/",
+      "productTitle": "Plinth filter for tumble dryers",
+      "supplierProductId": "09688381",
+      "matchTerms": ["09688381"]
+    }
+  },
+  {
+    "id": "miele-fluff-filter-07358910",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/fluff-filter-for-tumble-dryers-zid07358910/",
+      "productTitle": "Fluff filter for tumble dryers",
+      "supplierProductId": "07358910",
+      "matchTerms": ["07358910"]
+    }
+  },
+  {
+    "id": "miele-fluff-filter-04759513",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/fluff-filter-for-tumble-dryers-zid04759513/",
+      "productTitle": "Fluff filter for tumble dryers",
+      "supplierProductId": "04759513",
+      "matchTerms": ["04759513"]
+    }
+  },
+  {
+    "id": "miele-plinth-filter-09499230",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid09499230/",
+      "productTitle": "Plinth filter for tumble dryers",
+      "supplierProductId": "09499230",
+      "matchTerms": ["09499230"]
+    }
+  },
+  {
+    "id": "miele-suction-hose-07330631",
+    "category": "explicit-out-of-stock",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
+    "source": {
+      "url": "https://shop.miele.hk/en/floorcare/vacuum-spare-parts/suction-hose-zid07330631/",
+      "productTitle": "Suction hose",
+      "supplierProductId": "07330631",
+      "matchTerms": ["07330631"]
+    }
+  }
+]

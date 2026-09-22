@@ -77,11 +77,15 @@ for (let repetition = 1; repetition <= repetitions; repetition += 1) {
       const row = {
         repetition,
         id: testCase.id,
+        domain: new URL(testCase.source.url).hostname,
+        category: testCase.category || "unclassified",
         method,
         expected: testCase.expected,
+        expectedFactual: !["UNCERTAIN", "SOURCE_ERROR", "UNKNOWN"].includes(testCase.expected),
         ok: Boolean(page.ok),
         usable: hasUsefulAvailabilityEvidence(testCase.source, page),
         state: observation.state,
+        factual: observation.factual,
         correctAgainstFixture: observation.state === testCase.expected,
         labelEvidencePresent: testCase.labelEvidence
           ? String(page.text || "").toLowerCase().includes(String(testCase.labelEvidence).toLowerCase())

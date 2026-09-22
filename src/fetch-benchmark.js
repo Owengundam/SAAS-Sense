@@ -21,6 +21,15 @@ export function summarizeFetchBenchmark(rows, methodNames) {
     const knownCosts = selected.map((row) => row.costUsd).filter(Number.isFinite);
     const totalCostUsd = knownCosts.length ? knownCosts.reduce((sum, value) => sum + value, 0) : null;
     const fixtureStateMatches = scorable.filter((row) => row.correctAgainstFixture).length;
+    const expectedFactual = scorable.filter((row) => row.expectedFactual !== false);
+    const incorrectFactualAcceptances = scorable.filter((row) =>
+      row.factual === true && !row.correctAgainstFixture).length;
+    const correctFactualAcceptances = scorable.filter((row) =>
+      row.factual === true && row.correctAgainstFixture).length;
+    const safeAbstentions = expectedFactual.filter((row) =>
+      row.factual === false && !row.correctAgainstFixture).length;
+    const domains = new Set(scorable.map((row) => row.domain).filter(Boolean));
+    const categories = new Set(scorable.map((row) => row.category).filter(Boolean));
     const scoreStatus = scorable.length === 0
       ? "UNSCORED"
       : scorable.length === selected.length
@@ -40,6 +49,16 @@ export function summarizeFetchBenchmark(rows, methodNames) {
       fixtureStateMatches,
       fixtureStateMismatches: scorable.length - fixtureStateMatches,
       stateAccuracy: scorable.length ? fixtureStateMatches / scorable.length : null,
+      domainCount: domains.size,
+      categoryCount: categories.size,
+      expectedFactualCases: expectedFactual.length,
+      correctFactualAcceptances,
+      incorrectFactualAcceptances,
+      safeAbstentions,
+      factualCoverage: expectedFactual.length
+        ? correctFactualAcceptances / expectedFactual.length
+        : null,
+      safetyGatePass: scorable.length > 0 && incorrectFactualAcceptances === 0,
       labelEvidenceMatches: successful.filter((row) => row.labelEvidencePresent === true).length,
       labelEvidenceMisses: successful.filter((row) => row.labelEvidencePresent === false).length,
       medianLatencyMs: percentile(successful.map((row) => row.latencyMs), 0.5),

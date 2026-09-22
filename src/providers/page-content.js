@@ -141,8 +141,7 @@ export function extractProductPage({ html, url, runId }) {
   const structuredState = states.size === 1 ? [...states][0] : null;
   const structuredAvailabilityDeferred = Boolean(structuredState) && hasDeferredAvailabilityText(text);
   const structuredAvailabilityConflict = Boolean(structuredState) &&
-    visibleStates.size > 0 &&
-    !visibleStates.has(structuredState);
+    [...visibleStates].some((visibleState) => visibleState !== structuredState);
   return {
     title: products.map((product) => clean(product.name)).find(Boolean) || titleFromHtml(html),
     text,
@@ -165,6 +164,7 @@ export function hasUsefulAvailabilityEvidence(source, result) {
   const compact = normalized(searchable);
   const identityTerms = [
     ...(Array.isArray(source?.matchTerms) ? source.matchTerms : []),
+    source?.productTitle,
     source?.supplierSku,
     source?.supplierProductId,
     source?.supplierVariantId,
@@ -176,9 +176,16 @@ export function hasUsefulAvailabilityEvidence(source, result) {
     ...(Array.isArray(source?.inStockTerms) ? source.inStockTerms : []),
     ...(Array.isArray(source?.outOfStockTerms) ? source.outOfStockTerms : []),
   ].map(clean).filter(Boolean);
-  const availabilityPattern = /\b(in\s*stock|out\s*of\s*stock|sold\s*out|pre[ -]?order(?:ed)?|back[ -]?order(?:ed)?|discontinued|unavailable|available|ready\s*to\s*ship|ships?\s+(?:in|within))\b|有货|现货|缺货|售罄|预售|库存/iu;
+  const availabilityPattern = /\b(in\s*stock|out\s*of\s*stock|sold\s*out|pre[ -]?order(?:ed)?|back[ -]?order(?:ed)?|discontinued|unavailable|available\s+now|ready\s*to\s*ship|ships?\s+(?:in|within))\b|有货|现货|缺货|售罄|预售|库存/iu;
   const lines = searchable.split(/\r?\n/).filter(Boolean);
-  const windows = lines.map((_, index) => lines.slice(Math.max(0, index - 2), index + 3).join(" "));
+  const identityLineIndexes = identityTerms.length
+    ? lines.flatMap((line, index) => {
+      const compactLine = normalized(line);
+      return identityTerms.some((term) => compactLine.includes(term)) ? [index] : [];
+    })
+    : lines.map((_, index) => index);
+  const windows = identityLineIndexes.map((index) =>
+    lines.slice(Math.max(0, index - 20), index + 21).join(" ").slice(0, 8_000));
   return windows.some((window) => {
     const compactWindow = normalized(window);
     const localIdentity = !identityTerms.length || identityTerms.some((term) => compactWindow.includes(term));

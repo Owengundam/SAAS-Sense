@@ -4,6 +4,7 @@ import { BrowserProvider } from "../src/providers/browser.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
 import { DirectHttpProvider } from "../src/providers/direct-http.js";
 import { createPageProvider } from "../src/providers/create-page-provider.js";
+import { classifyObservation } from "../src/domain.js";
 
 const source = {
   url: "https://supplier.test/products/a-1",
@@ -57,6 +58,23 @@ test("visible availability conflict prevents stale JSON-LD from bypassing eviden
   assert.equal(result.availabilityState, null);
   assert.ok(result.evidenceRecords.some((record) => record.text.includes("InStock")));
   assert.match(result.text, /Backorder/);
+});
+
+test("a matching structured state is suppressed when visible copy has another factual state", async () => {
+  const html = productHtml.replace(
+    "In stock and ready to ship.",
+    "Sold out. Backorder: Usually ships in 10-20 days.",
+  ).replace("schema.org/InStock", "schema.org/OutOfStock");
+  const provider = new DirectHttpProvider({
+    supportedDomains: ["supplier.test"],
+    dnsLookup: publicDns,
+    fetchImpl: async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.structuredAvailabilityConflict, true);
+  assert.equal(result.availabilityState, null);
+  assert.equal(classifyObservation(source, result).state, "UNCERTAIN");
 });
 
 test("deferred availability copy prevents structured stock from becoming a fact", async () => {

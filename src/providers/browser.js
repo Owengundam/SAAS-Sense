@@ -18,6 +18,7 @@ function compactError(error) {
 function identityTerms(source) {
   return [
     ...(Array.isArray(source?.matchTerms) ? source.matchTerms : []),
+    source?.productTitle,
     source?.supplierSku,
     source?.supplierProductId,
     source?.supplierVariantId,
