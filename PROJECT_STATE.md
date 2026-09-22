@@ -22,7 +22,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
 - Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
-- The new page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Production remains on its existing provider setting until the live benchmark passes.
+- The page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Railway production uses direct HTTP with Apify fallback; its Chromium tier remains disabled.
 
 ## Completed
 
@@ -45,6 +45,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added a two-stage JEV reader, exact evidence-candidate selection, structured/page-text provenance, provider-specific probability gates, shadow evaluation, reason-specific DeepSeek fallback, and multi-model audit records.
 - Added fresh direct HTTP capture, optional self-hosted Chromium rendering, evidence-based escalation to Apify, per-tier latency/outcome auditing, and a bounded live benchmark harness.
 - Hardened the planned browser runtime with Debian Bookworm, a matching bundled Chromium, lazy process reuse, fresh contexts, concurrency one, idle shutdown, restart backoff, service-worker blocking, DNS checks, and terminal security failures.
+- Split the container into a lean default Railway target and an explicit browser-worker target so Railway does not download or ship Chromium while the sandboxed browser smoke remains independently testable.
 
 ## Tested locally
 
