@@ -1,0 +1,76 @@
+name: real-supplier-holdout-evaluation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/real-supplier-holdout-evaluation.yml
+      - fixtures/real-supplier-holdout-24.json
+      - scripts/evaluate-real-suppliers.js
+      - src/real-supplier-fixture.js
+      - test/real-supplier-fixture.test.js
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-supplier-holdout-evaluation-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    # This corpus is a one-shot holdout frozen against PR #14's merge. A later
+    # policy change must create a new unseen corpus instead of rerunning this one.
+    if: github.event.pull_request.base.sha == '88174635c49123fa2e62b24505307d8911ea5f7a'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      TYPESAFE_MODEL: jev-1.13.0
+      AI_FALLBACK_PROVIDER: openrouter
+      OPENROUTER_MODEL: deepseek/deepseek-v4.1-flash
+      OPENROUTER_ENDPOINT: https://openrouter.ai/api/v1/chat/completions
+      REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-holdout-24.json
+      REAL_SUPPLIER_DEVELOPMENT_FIXTURE: fixtures/real-supplier-validation-25.json
+      REAL_SUPPLIER_FIXTURE_SHA256: 99a14920910fcdbffe3a1a928fc67fe79f8991da38769d289df239d35253e95f
+      REAL_SUPPLIER_HOLDOUT_BASELINE_SHA: 88174635c49123fa2e62b24505307d8911ea5f7a
+      REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-holdout-evaluation.json
+      REAL_SUPPLIER_DATASET_ROLE: holdout
+      REAL_SUPPLIER_EVAL_MODE: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Require model evaluation secrets
+        run: |
+          test -n "${JEV_API_KEY:-${TYPESAFE_API_KEY:-}}"
+          test -n "${OPENROUTER_API_KEY:-}"
+          curl --fail --silent --show-error --output /dev/null \
+            --header "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+            https://openrouter.ai/api/v1/models
+      - name: Verify fixture integrity and run the one-shot holdout
+        run: npm run evaluate:real-suppliers -- --live
+      - name: Enforce promotion gates on unseen cases
+        run: |
+          jq '{fixtureSha256, fixtureMetadata, models: .summary.models, policies: .summary.policies, gates: .summary.gates}' "$REAL_SUPPLIER_EVAL_OUTPUT"
+          jq -e '
+            .summary.gates.evaluationValid == true and
+            .summary.gates.serviceGatePass == true and
+            .summary.gates.safetyGatePass == true and
+            .summary.gates.coverageGatePass == true and
+            .summary.gates.evaluationPass == true and
+            .summary.gates.holdoutGatePass == true and
+            .summary.gates.promotionEligible == true
+          ' "$REAL_SUPPLIER_EVAL_OUTPUT"
+      - name: Upload raw holdout report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-supplier-holdout-evaluation
+          path: ${{ env.REAL_SUPPLIER_EVAL_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 30

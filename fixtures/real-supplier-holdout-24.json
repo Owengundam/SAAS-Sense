@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "datasetRole": "holdout",
+  "frozenAt": "2026-09-22T13:00:00Z",
+  "frozenAgainstCommit": "88174635c49123fa2e62b24505307d8911ea5f7a",
+  "selectionProtocol": "Twenty-four previously unused URLs were labeled from supplier-visible availability before the first model run: eight cases each from Lighting Supply, Miele Hong Kong, and Surya.",
+  "cases": [
+    {
+      "id": "holdout-lighting-supply-lithonia-wsqledp340ksr3277pesfdnaxd",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-wsqledp340ksr3277pesfdnaxd",
+        "productTitle": "Lithonia 40W LED Type III Distribution Architectural Sconce Wall Pack",
+        "supplierSku": "WSQLEDP340KSR3277PESFDNAXD",
+        "matchTerms": ["WSQLEDP340KSR3277PESFDNAXD"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-zl1dl24smr1500lmfstmv35k80criw",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-zl1dl24smr1500lmfstmv35k80criw",
+        "productTitle": "Lithonia LED Strip 1500Lm 3500K",
+        "supplierSku": "ZL1DL24SMR1500LMFSTMV35K80CRIW",
+        "matchTerms": ["ZL1DL24SMR1500LMFSTMV35K80CRIW"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-hsd36",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-hsd36",
+        "productTitle": "Lithonia 3 Foot Jack Chain With Hanger",
+        "supplierSku": "HSD36",
+        "matchTerms": ["HSD36"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-sl1",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-sl1",
+        "productTitle": "Lithonia 1/2 Inch Sealing Locknut",
+        "supplierSku": "SL1",
+        "matchTerms": ["SL1"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-elsq",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-elsq",
+        "productTitle": "Lithonia 6 V Self-Contained Square Emergency Lighting Unit",
+        "supplierSku": "ELSQ",
+        "matchTerms": ["ELSQ"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-rsx2ledp640kr5mvoltrpafaoddbxd",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-rsx2ledp640kr5mvoltrpafaoddbxd",
+        "productTitle": "Lithonia RSX2 LED Area Luminaire",
+        "supplierSku": "RSX2LEDP640KR5MVOLTRPAFAODDBXD",
+        "matchTerms": ["RSX2LEDP640KR5MVOLTRPAFAODDBXD"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-d2fsl2",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-d2fsl2",
+        "productTitle": "Lithonia Lens For FSL 2X2",
+        "supplierSku": "D2FSL2",
+        "matchTerms": ["D2FSL2"]
+      }
+    },
+    {
+      "id": "holdout-lighting-supply-lithonia-wgz48",
+      "category": "backorder",
+      "expected": "BACKORDERED",
+      "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+      "source": {
+        "url": "https://lightingsupply.com/products/lithonia-wgz48",
+        "productTitle": "Lithonia Wire Guard For Use With Z Series 48 Inch",
+        "supplierSku": "WGZ48",
+        "matchTerms": ["WGZ48"]
+      }
+    },
+    {
+      "id": "holdout-miele-lava-stone-01949790",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/lava-stone-lava-rocks-zid01949790/",
+        "productTitle": "Lava stone Lava rocks",
+        "supplierProductId": "01949790",
+        "matchTerms": ["01949790"]
+      }
+    },
+    {
+      "id": "holdout-miele-water-inlet-hose-04623454",
+      "category": "explicit-out-of-stock",
+      "expected": "OUT_OF_STOCK",
+      "labelEvidence": "Unavailable online",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/x-accessories/laundry/water-inlet-hose-2-2m-screw-conn3-4z-zid04623454/",
+        "productTitle": "Water inlet hose 2,2m screw-conn3/4Z",
+        "supplierProductId": "04623454",
+        "matchTerms": ["04623454"]
+      }
+    },
+    {
+      "id": "holdout-miele-airclean-filter-03944711",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/x-accessories/floorcare/sf-sac-20-30-airclean-filter-zid03944711/",
+        "productTitle": "SF-SAC 20/30 AirClean filter",
+        "supplierProductId": "03944711",
+        "matchTerms": ["03944711"]
+      }
+    },
+    {
+      "id": "holdout-miele-dggl-1-05001370",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/x-accessories/accessories-for-baking-and-steam-cooking/accessories-for-steam-ovens/dggl-1-perforated-steam-cooking-containers-zid05001370/",
+        "productTitle": "DGGL 1 Perforated steam cooking containers",
+        "supplierProductId": "05001370",
+        "matchTerms": ["05001370"]
+      }
+    },
+    {
+      "id": "holdout-miele-dgg-2-05001390",
+      "category": "explicit-out-of-stock",
+      "expected": "OUT_OF_STOCK",
+      "labelEvidence": "Unavailable online",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/dgg-2-unperforated-steam-cooking-container-zid05001390/",
+        "productTitle": "DGG 2 Unperforated steam cooking container",
+        "supplierProductId": "05001390",
+        "matchTerms": ["05001390"]
+      }
+    },
+    {
+      "id": "holdout-miele-dgg-3-05001400",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/dgg-3-unperforated-steam-cooking-container-zid05001400/",
+        "productTitle": "DGG 3 Unperforated steam cooking container",
+        "supplierProductId": "05001400",
+        "matchTerms": ["05001400"]
+      }
+    },
+    {
+      "id": "holdout-miele-silicon-grease-05132001",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/kitchen/kitchen-spare-parts/silicon-grease-6g-zid05132001/",
+        "productTitle": "Silicon grease (6g)",
+        "supplierProductId": "05132001",
+        "matchTerms": ["05132001"]
+      }
+    },
+    {
+      "id": "holdout-miele-baking-rack-06881872",
+      "category": "explicit-in-stock",
+      "expected": "IN_STOCK",
+      "labelEvidence": "In stock",
+      "source": {
+        "url": "https://shop.miele.hk/en/accessories-consumables/x-accessories/microwave-combi-ovens/baking-and-roasting-rack-for-mw-combi-ovens-zid06881872/",
+        "productTitle": "Baking and roasting rack for MW Combi ovens",
+        "supplierProductId": "06881872",
+        "matchTerms": ["06881872"]
+      }
+    },
+    {
+      "id": "holdout-surya-vel-001",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/VEL-001",
+        "productTitle": "VEL-001",
+        "supplierSku": "VEL-001",
+        "matchTerms": ["VEL-001"]
+      }
+    },
+    {
+      "id": "holdout-surya-lua-001",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/LUA-001-P",
+        "productTitle": "LUA-001",
+        "supplierSku": "LUA-001",
+        "matchTerms": ["LUA-001"]
+      }
+    },
+    {
+      "id": "holdout-surya-aun-2307",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/AUN-2307-P",
+        "productTitle": "AUN-2307",
+        "supplierSku": "AUN-2307",
+        "matchTerms": ["AUN-2307"]
+      }
+    },
+    {
+      "id": "holdout-surya-riv-2311",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/RIV-2311-P",
+        "productTitle": "RIV-2311",
+        "supplierSku": "RIV-2311",
+        "matchTerms": ["RIV-2311"]
+      }
+    },
+    {
+      "id": "holdout-surya-ank-2300",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/ANK-2300-P",
+        "productTitle": "ANK-2300",
+        "supplierSku": "ANK-2300",
+        "matchTerms": ["ANK-2300"]
+      }
+    },
+    {
+      "id": "holdout-surya-kvt-2306",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/KVT-2306-P",
+        "productTitle": "KVT-2306",
+        "supplierSku": "KVT-2306",
+        "matchTerms": ["KVT-2306"]
+      }
+    },
+    {
+      "id": "holdout-surya-wsw-2301",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/WSW-2301-P",
+        "productTitle": "WSW-2301",
+        "supplierSku": "WSW-2301",
+        "matchTerms": ["WSW-2301"]
+      }
+    },
+    {
+      "id": "holdout-surya-mos-003",
+      "category": "deferred-availability",
+      "expected": "UNCERTAIN",
+      "labelEvidence": "See Availability",
+      "source": {
+        "url": "https://www.surya.com/Product/MOS-003-P",
+        "productTitle": "MOS-003",
+        "supplierSku": "MOS-003",
+        "matchTerms": ["MOS-003"]
+      }
+    }
+  ]
+}
