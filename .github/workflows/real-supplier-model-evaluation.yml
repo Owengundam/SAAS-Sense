@@ -1,0 +1,67 @@
+name: real-supplier-model-evaluation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/real-supplier-model-evaluation.yml
+      - fixtures/real-supplier-validation-25.json
+      - scripts/evaluate-real-suppliers.js
+      - src/domain.js
+      - src/evidence.js
+      - src/model-benchmark.js
+      - src/providers/direct-http.js
+      - src/providers/jev.js
+      - src/providers/page-content.js
+      - src/providers/siliconflow.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-supplier-model-evaluation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+      TYPESAFE_MODEL: jev-1.13.0
+      SILICONFLOW_MODEL: deepseek-ai/DeepSeek-V4-Flash
+      REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-validation-25.json
+      REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-model-evaluation.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - name: Require model evaluation secrets
+        run: |
+          test -n "${JEV_API_KEY:-${TYPESAFE_API_KEY:-}}"
+          test -n "${SILICONFLOW_API_KEY:-}"
+      - name: Evaluate JEV and DeepSeek on shared captures
+        run: npm run evaluate:real-suppliers -- --live
+      - name: Enforce corpus and unsafe-acceptance gates
+        run: |
+          jq '{models: .summary.models, policies: .summary.policies, gates: .summary.gates}' "$REAL_SUPPLIER_EVAL_OUTPUT"
+          jq -e '
+            .summary.scorableCases >= 20 and
+            .summary.domainCount >= 3 and
+            .summary.models.jev.falseAccepted == 0 and
+            .summary.policies.jevCascade.falseFactual == 0 and
+            .summary.gates.evaluationPass == true
+          ' "$REAL_SUPPLIER_EVAL_OUTPUT"
+      - name: Upload raw model evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-supplier-model-evaluation
+          path: ${{ env.REAL_SUPPLIER_EVAL_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 7
