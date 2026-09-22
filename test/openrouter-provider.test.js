@@ -47,7 +47,11 @@ test("OpenRouter uses pinned DeepSeek V4.1 Flash with strict structured output",
   assert.equal(captured.options.headers["X-OpenRouter-Title"], "SupplierSignal");
   assert.equal(body.model, "deepseek/deepseek-v4.1-flash");
   assert.deepEqual(body.reasoning, { enabled: false });
-  assert.deepEqual(body.provider, { require_parameters: true });
+  assert.deepEqual(body.provider, {
+    require_parameters: true,
+    sort: "latency",
+    preferred_max_latency: { p90: 5 },
+  });
   assert.equal(body.temperature, 0);
   assert.equal(body.response_format.type, "json_schema");
   assert.equal(body.response_format.json_schema.strict, true);
