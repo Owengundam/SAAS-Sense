@@ -43,6 +43,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added inspectable evidence, corrected availability vocabulary, source editing/deletion, and fast-confirmation scheduling logic.
 - Added provider-independent constrained evidence readers, now defaulting to pinned OpenRouter model `deepseek/deepseek-v4.1-flash`, with SiliconFlow rollback, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
 - Added a two-stage JEV reader, exact evidence-candidate selection, structured/page-text provenance, provider-specific probability gates, shadow evaluation, reason-specific DeepSeek fallback, and multi-model audit records.
+- Replaced the demo-like public screen with a conversion-focused $49 pilot page, added a first-run merchant checklist, reduced the default source form to four essential fields, and wired an authenticated redirect to Shopify's hosted pricing page behind an explicit enable flag.
 - Added fresh direct HTTP capture, optional self-hosted Chromium rendering, evidence-based escalation to Apify, per-tier latency/outcome auditing, and a bounded live benchmark harness.
 - Hardened the planned browser runtime with Debian Bookworm, a matching bundled Chromium, lazy process reuse, fresh contexts, concurrency one, idle shutdown, restart backoff, service-worker blocking, DNS checks, and terminal security failures.
 - Split the container into a lean default Railway target and an explicit browser-worker target so Railway does not download or ship Chromium while the sandboxed browser smoke remains independently testable.
@@ -84,8 +85,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Minimum next owner action
 
-Recruit one design-partner merchant and obtain 3–5 supplier product URLs they are authorized to monitor.
+Create the $49 monthly plan in Shopify App Pricing, provide the final company/support details for the public policies, and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
 
 ## Next execution step
 
-Run capped checks against 3–5 merchant-authorized supplier pages, measure false/uncertain rates, and only then decide whether to enable automatic scheduling.
+Enable the hosted pricing link after the Shopify plan exists, complete the App Store listing/policy fields, and onboard the first merchant. Keep automatic scheduling limited to that merchant's sources until their baseline checks are reviewed.

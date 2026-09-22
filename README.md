@@ -17,6 +17,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 - Tenant-scoped source editing and confirmed deletion with cascading evidence cleanup.
 - HMAC verification, webhook deduplication, uninstall disablement, and shop-redaction deletion.
 - Shopify App Pricing redirect and subscription-gate integration points.
+- Conversion-focused public pilot page and a first-run checklist that drives merchants to one verified supplier baseline.
 - Responsive merchant dashboard and add-source flow.
 - Shopify's official React Router authentication shell with Prisma session storage.
 - Verified uninstall, scope-change, and privacy webhook endpoints.
@@ -171,6 +172,8 @@ SCOPES=read_products
 ```
 
 Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `OPENROUTER_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Keep `SILICONFLOW_API_KEY` only if you want the explicit rollback provider. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
+
+For the paid pilot, create the $49 monthly plan in Shopify App Pricing first, then set `SHOPIFY_APP_HANDLE=supplier-signal` and `SHOPIFY_APP_PRICING_ENABLED=true`. The app keeps the hosted pricing link disabled until that external plan exists, so merchants cannot be sent to an unfinished checkout.
 
 The default `railway` image target uses Debian Bookworm without a bundled browser. This keeps Railway builds and deployments lean while `SELF_HOSTED_BROWSER_ENABLED=false` routes captures through direct HTTP with Apify as the managed fallback.
 
