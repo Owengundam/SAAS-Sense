@@ -30,7 +30,10 @@ const browser = new BrowserProvider({
   supportedDomains,
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   timeoutMs: Number.parseInt(process.env.BROWSER_TIMEOUT_MS || "40000", 10),
-  renderWaitMs: Number.parseInt(process.env.BROWSER_RENDER_WAIT_MS || "2000", 10),
+  contentWaitMs: Number.parseInt(process.env.BROWSER_CONTENT_WAIT_MS || "5000", 10),
+  idleTimeoutMs: Number.parseInt(process.env.BROWSER_IDLE_TIMEOUT_MS || "120000", 10),
+  restartBackoffMs: Number.parseInt(process.env.BROWSER_RESTART_BACKOFF_MS || "5000", 10),
+  chromiumSandbox: process.env.BROWSER_CHROMIUM_SANDBOX !== "false",
 });
 const apify = process.env.APIFY_API_TOKEN
   ? new ApifyProvider({ token: process.env.APIFY_API_TOKEN, actorId: process.env.APIFY_ACTOR_ID })

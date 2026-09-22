@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { validateSupplierRedirect } from "../source-policy.js";
-import { extractProductPage } from "./page-content.js";
+import { assertPublicHostnameDns, validateSupplierRedirect } from "../source-policy.js";
+import { extractProductPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 2_000_000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const SECURITY_ERRORS = new Set([
+  "HTTPS_REQUIRED",
+  "INVALID_SOURCE_URL",
+  "PRIVATE_DNS_TARGET_FORBIDDEN",
+  "PRIVATE_SOURCE_FORBIDDEN",
+  "SOURCE_URL_CREDENTIALS_FORBIDDEN",
+  "UNAPPROVED_SUPPLIER_REDIRECT",
+  "UNSUPPORTED_SUPPLIER_DOMAIN",
+  "UNSUPPORTED_SUPPLIER_PORT",
+]);
 
 async function readBoundedBody(response, maxBytes) {
   if (!response.body) return "";
@@ -33,12 +43,14 @@ export class DirectHttpProvider {
     maxBytes = DEFAULT_MAX_BYTES,
     maxRedirects = 3,
     supportedDomains,
+    dnsLookup,
   } = {}) {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.maxBytes = maxBytes;
     this.maxRedirects = maxRedirects;
     this.supportedDomains = supportedDomains;
+    this.dnsLookup = dnsLookup;
     this.providerName = "direct-http";
   }
 
@@ -49,6 +61,7 @@ export class DirectHttpProvider {
     let currentUrl = source.url;
     try {
       for (let redirects = 0; redirects <= this.maxRedirects; redirects += 1) {
+        await assertPublicHostnameDns(new URL(currentUrl).hostname, this.dnsLookup);
         const response = await this.fetchImpl(currentUrl, {
           method: "GET",
           redirect: "manual",
@@ -79,20 +92,40 @@ export class DirectHttpProvider {
           return { ok: false, error: `Direct HTTP unsupported content type: ${contentType || "unknown"}`, runId, url: currentUrl };
         }
         const html = await readBoundedBody(response, this.maxBytes);
-        return {
+        const extracted = extractProductPage({ html, url: currentUrl, runId });
+        const draft = {
           ok: true,
           runId,
           url: currentUrl,
-          ...extractProductPage({ html, url: currentUrl, runId }),
+          ...extracted,
           fetchStrategy: "direct-http",
           fetchedAt: new Date().toISOString(),
         };
+        const scriptCount = [...html.matchAll(/<script\b/gi)].length;
+        const renderHook = /(?:data-|id=|class=)["'][^"']*(?:availability|inventory|stock)[^"']*["']/i.test(html);
+        const identityTerms = [
+          ...(Array.isArray(source?.matchTerms) ? source.matchTerms : []),
+          source?.supplierSku,
+          source?.supplierProductId,
+          source?.supplierVariantId,
+        ].map((value) => String(value || "").toLowerCase()).filter(Boolean);
+        const lowerText = extracted.text.toLowerCase();
+        const identityFound = !identityTerms.length || identityTerms.some((term) => lowerText.includes(term));
+        draft.renderingLikelyRequired = !identityFound ||
+          (!hasUsefulAvailabilityEvidence(source, draft) && renderHook && scriptCount >= 2);
+        draft.captureDisposition = hasUsefulAvailabilityEvidence(source, draft)
+          ? "USABLE_EVIDENCE"
+          : draft.renderingLikelyRequired
+            ? "MISSING_RENDERED_CONTENT"
+            : "INTERPRET_CAPTURED_CONTENT";
+        return draft;
       }
       throw new Error("Direct HTTP redirect limit exceeded");
     } catch (error) {
       return {
         ok: false,
         error: error.name === "AbortError" ? "Direct HTTP timeout" : error.message,
+        terminal: SECURITY_ERRORS.has(error.message),
         runId,
         url: currentUrl,
       };

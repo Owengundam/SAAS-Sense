@@ -11,6 +11,16 @@ function attemptFor(provider, result, index, latencyMs, usable) {
   };
 }
 
+function shouldEscalate(provider, result, usable) {
+  if (usable || result?.terminal) return false;
+  if (result?.ok === false) return true;
+  if (provider?.providerName === "direct-http") return result?.renderingLikelyRequired === true;
+  if (provider?.providerName === "self-hosted-chromium") {
+    return result?.managedFallbackRecommended === true;
+  }
+  return false;
+}
+
 export class CascadingPageProvider {
   constructor({ providers = [], evidenceGate = hasUsefulAvailabilityEvidence } = {}) {
     if (!providers.length) throw new Error("PAGE_PROVIDER_REQUIRED");
@@ -38,6 +48,14 @@ export class CascadingPageProvider {
       lastResult = result;
       if (result?.ok && !bestSuccessful) bestSuccessful = result;
       if (usable) {
+        return {
+          ...result,
+          fallbackUsed: index > 0,
+          fetchTier: index + 1,
+          providerAttempts: attempts,
+        };
+      }
+      if (!shouldEscalate(provider, result, usable)) {
         return {
           ...result,
           fallbackUsed: index > 0,

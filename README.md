@@ -64,16 +64,19 @@ The production shell uses Shopify's official React Router adapter, managed insta
 
 `PROVIDER=cascade` performs a fresh direct HTTP request first. It sends cache-bypass headers, follows only validated supplier redirects, caps the response at 2 MB, and preserves visible-page and JSON-LD evidence. It escalates only when the capture lacks both a configured product identity and availability evidence.
 
-With `SELF_HOSTED_BROWSER_ENABLED=true`, the second tier renders the same URL in Chromium. Images, media, fonts, private-network resources, unsafe protocols, and unapproved top-level redirects are blocked. Apify remains the final tier when its token is configured; its existing structured-product and managed-browser fallback remains intact.
+With `SELF_HOSTED_BROWSER_ENABLED=true`, the second tier renders the same URL in Chromium only when direct capture indicates missing rendered content. Ambiguous wording stays in the semantic interpretation path. Chromium launches lazily, handles one browser job at a time, reuses the process with a fresh isolated context for each check, and closes after an idle timeout. Images, media, fonts, service workers, private-network resources, unsafe protocols, and unapproved top-level redirects are blocked. Apify remains the final tier for browser failure, access blocks, or timeouts; security rejections are terminal and cannot be routed around.
 
 ```text
 PROVIDER=cascade
 DIRECT_HTTP_TIMEOUT_MS=15000
 DIRECT_HTTP_MAX_BYTES=2000000
 SELF_HOSTED_BROWSER_ENABLED=true
-PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
 BROWSER_TIMEOUT_MS=40000
-BROWSER_RENDER_WAIT_MS=2000
+BROWSER_CONTENT_WAIT_MS=5000
+BROWSER_IDLE_TIMEOUT_MS=120000
+BROWSER_RESTART_BACKOFF_MS=5000
+BROWSER_CHROMIUM_SANDBOX=true
 ```
 
 Each attempted tier records provider, role, outcome, latency, and run ID. `INCONCLUSIVE` means the request succeeded but did not contain enough identity-plus-availability evidence to stop escalation.
@@ -138,9 +141,12 @@ PROVIDER=cascade
 DIRECT_HTTP_TIMEOUT_MS=15000
 DIRECT_HTTP_MAX_BYTES=2000000
 SELF_HOSTED_BROWSER_ENABLED=true
-PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=
 BROWSER_TIMEOUT_MS=40000
-BROWSER_RENDER_WAIT_MS=2000
+BROWSER_CONTENT_WAIT_MS=5000
+BROWSER_IDLE_TIMEOUT_MS=120000
+BROWSER_RESTART_BACKOFF_MS=5000
+BROWSER_CHROMIUM_SANDBOX=true
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
@@ -154,6 +160,8 @@ SCOPES=read_products
 ```
 
 Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
+
+The deployment image uses Debian Bookworm and installs the Chromium build matching the pinned `playwright-core` version during image construction. Runtime checks execute as an unprivileged user with the Chromium sandbox requested. Run `npm run smoke:browser -- --live` in the final image before enabling the browser tier; it must launch Chromium, execute JavaScript, extract the expected evidence, and close cleanly.
 
 ## Security boundaries
 

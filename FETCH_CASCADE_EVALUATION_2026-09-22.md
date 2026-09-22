@@ -5,10 +5,10 @@
 The page-provider path now supports:
 
 1. fresh direct HTTP with cache-bypass headers, bounded body size, manual redirect validation, visible-text extraction, and JSON-LD provenance;
-2. optional self-hosted Chromium rendering with bounded time, blocked heavy assets, and public-resource checks;
+2. optional self-hosted Chromium rendering with bounded time, lazy process reuse, fresh isolated contexts, concurrency one, idle shutdown, blocked heavy assets and service workers, and public-resource/DNS checks;
 3. Apify as the final managed fallback, retaining its structured-product and browser-crawler behavior.
 
-Escalation stops only when the capture contains a configured product identity and nearby availability evidence. Every attempted tier records its outcome and latency. JEV/DeepSeek routing remains downstream of capture and keeps its existing fail-closed policy.
+Direct HTTP escalates to Chromium only when rendering is likely to recover missing content. Captured ambiguous wording stays in the semantic interpretation path. Chromium escalates to Apify only after failure, timeout, or a detected access block. Security rejections are terminal. Every attempted tier records its outcome and latency. JEV/DeepSeek routing remains downstream of capture and keeps its existing fail-closed policy.
 
 ## Five-page direct HTTP result
 
@@ -34,7 +34,9 @@ The extractor now retains the JSON-LD value as auditable evidence but removes it
 
 ## Browser status
 
-The Chromium adapter passes unit tests with a controlled browser implementation. A real Chromium and headless-shell launch were attempted in this workspace, but the host blocks the Unix socket Chromium requires before any page opens. Docker is unavailable here, so the Alpine/Railway container could not be built locally. The Dockerfile installs system Chromium and the application will fail over to Apify if that tier cannot launch.
+The Chromium adapter passes unit tests with a controlled browser implementation. A real Chromium and headless-shell launch were attempted in this workspace, but the host blocks the Unix socket Chromium requires before any page opens. Docker is unavailable here, so the Railway image could not be built locally. The deployment Dockerfile now uses Debian Bookworm and installs the browser build matching the pinned Playwright version. A forced smoke command is included for the final image; the browser tier must remain disabled until that command passes on Railway.
+
+After DNS destination validation was added, this workspace could no longer repeat the live supplier run because its local resolver returned `EAI_AGAIN` for the public supplier domain. The fetcher failed closed. This does not establish that Railway DNS will succeed; the staging smoke must verify both DNS validation and browser launch in the deployed runtime.
 
 ## What this establishes
 

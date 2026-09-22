@@ -37,7 +37,10 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
       supportedDomains,
       executablePath: env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
       timeoutMs: integer(env.BROWSER_TIMEOUT_MS, 40_000),
-      renderWaitMs: integer(env.BROWSER_RENDER_WAIT_MS, 2_000),
+      contentWaitMs: integer(env.BROWSER_CONTENT_WAIT_MS, 5_000),
+      idleTimeoutMs: integer(env.BROWSER_IDLE_TIMEOUT_MS, 120_000),
+      restartBackoffMs: integer(env.BROWSER_RESTART_BACKOFF_MS, 5_000),
+      chromiumSandbox: env.BROWSER_CHROMIUM_SANDBOX !== "false",
     }));
   }
   if (env.APIFY_API_TOKEN) {

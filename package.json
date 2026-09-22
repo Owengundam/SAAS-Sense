@@ -23,6 +23,7 @@
     "evaluate:ai-synthetic": "node scripts/evaluate-ai-synthetic.js",
     "evaluate:real-suppliers": "node scripts/evaluate-real-suppliers.js",
     "benchmark:fetchers": "node scripts/benchmark-fetchers.js",
+    "smoke:browser": "node scripts/smoke-browser.js",
     "smoke": "node scripts/smoke.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
