@@ -44,6 +44,7 @@ function frequencies(values) {
 
 export function summarizeModel(rows, modelName) {
   const selected = rows.filter((row) => row.scorable);
+  const invoked = selected.filter((row) => !row[modelName]?.skipped);
   const expectedFactual = selected.filter((row) => row.expectedFactual !== false);
   const acceptedCorrect = selected.filter((row) =>
     row[modelName]?.accepted && row[modelName]?.effectiveState === expectedState(row)).length;
@@ -55,9 +56,11 @@ export function summarizeModel(rows, modelName) {
   const latencies = selected.map((row) => row[modelName]?.latencyMs).filter(Number.isFinite);
 
   return {
-    evaluations: selected.length,
-    succeeded: selected.filter((row) => row[modelName]?.ok).length,
-    failures: selected.filter((row) => !row[modelName]?.ok).length,
+    eligibleCases: selected.length,
+    evaluations: invoked.length,
+    skipped: selected.length - invoked.length,
+    succeeded: invoked.filter((row) => row[modelName]?.ok).length,
+    failures: invoked.filter((row) => !row[modelName]?.ok).length,
     acceptedCorrect,
     falseAccepted,
     safeAbstentions,
@@ -71,7 +74,10 @@ export function summarizeModel(rows, modelName) {
     traceCount: traceCount(selected, modelName),
     fallbackUsed: selected.filter((row) => row[modelName]?.fallbackUsed).length,
     rejectionReasons: frequencies(selected
-      .filter((row) => !row[modelName]?.accepted)
+      .filter((row) => !row[modelName]?.accepted && !row[modelName]?.skipped)
+      .map((row) => row[modelName]?.reason)),
+    skipReasons: frequencies(selected
+      .filter((row) => row[modelName]?.skipped)
       .map((row) => row[modelName]?.reason)),
     costUsd: null,
   };

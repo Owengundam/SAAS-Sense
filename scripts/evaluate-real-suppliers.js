@@ -183,6 +183,7 @@ for (const [index, testCase] of cases.entries()) {
       fallbackUsed: false,
       latencyMs: 0,
     };
+    jevResult = { ...cascadeResult };
   }
 
   if (scorable && includeParallelComparison) {
