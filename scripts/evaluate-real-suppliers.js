@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { classifyObservation, evaluateAiObservation } from "../src/domain.js";
 import { evaluateLabelEvidenceBinding } from "../src/evidence.js";
 import { summarizeModelBenchmark } from "../src/model-benchmark.js";
+import { assertHoldoutDisjoint, normalizeRealSupplierFixture } from "../src/real-supplier-fixture.js";
 import { createFallbackEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { DirectHttpProvider } from "../src/providers/direct-http.js";
 import { CascadingEvidenceReader } from "../src/providers/evidence-readers.js";
@@ -23,7 +24,28 @@ if (!jevToken || !productionDeepseek) throw new Error(
 );
 
 const fixturePath = resolve(process.env.REAL_SUPPLIER_FIXTURE || "fixtures/real-supplier-validation-25.json");
-const fixtureCases = JSON.parse(await readFile(pathToFileURL(fixturePath), "utf8"));
+const fixtureText = await readFile(pathToFileURL(fixturePath), "utf8");
+const fixtureSha256 = createHash("sha256").update(fixtureText).digest("hex");
+const requestedDatasetRole = process.env.REAL_SUPPLIER_DATASET_ROLE
+  ? String(process.env.REAL_SUPPLIER_DATASET_ROLE).trim().toLowerCase()
+  : undefined;
+const fixture = normalizeRealSupplierFixture(JSON.parse(fixtureText), {
+  requestedRole: requestedDatasetRole,
+  expectedFixtureSha256: process.env.REAL_SUPPLIER_FIXTURE_SHA256,
+  actualFixtureSha256: fixtureSha256,
+  expectedBaselineSha: process.env.REAL_SUPPLIER_HOLDOUT_BASELINE_SHA,
+});
+const fixtureCases = fixture.cases;
+const datasetRole = fixture.datasetRole;
+if (datasetRole === "holdout") {
+  const developmentPath = resolve(process.env.REAL_SUPPLIER_DEVELOPMENT_FIXTURE || "");
+  if (!process.env.REAL_SUPPLIER_DEVELOPMENT_FIXTURE) {
+    throw new Error("REAL_SUPPLIER_DEVELOPMENT_FIXTURE_REQUIRED");
+  }
+  const developmentPayload = JSON.parse(await readFile(pathToFileURL(developmentPath), "utf8"));
+  const developmentFixture = normalizeRealSupplierFixture(developmentPayload, { requestedRole: "development" });
+  assertHoldoutDisjoint(fixtureCases, developmentFixture.cases);
+}
 const requestedCaseId = process.env.REAL_SUPPLIER_CASE_ID;
 const cases = requestedCaseId
   ? fixtureCases.filter((testCase) => testCase.id === requestedCaseId)
@@ -34,8 +56,6 @@ const outputPath = resolve(process.env.REAL_SUPPLIER_EVAL_OUTPUT || "/tmp/real-s
 const evaluationMode = String(process.env.REAL_SUPPLIER_EVAL_MODE || "production").trim().toLowerCase();
 if (!["production", "both"].includes(evaluationMode)) throw new Error("INVALID_REAL_SUPPLIER_EVAL_MODE");
 const includeParallelComparison = evaluationMode === "both";
-const datasetRole = String(process.env.REAL_SUPPLIER_DATASET_ROLE || "development").trim().toLowerCase();
-if (!["development", "holdout"].includes(datasetRole)) throw new Error("INVALID_REAL_SUPPLIER_DATASET_ROLE");
 
 const supportedDomains = [...new Set(cases.map((testCase) => new URL(testCase.source.url).hostname))];
 const provider = new DirectHttpProvider({ supportedDomains });
@@ -288,6 +308,8 @@ const summary = summarizeModelBenchmark(rows, { datasetRole });
 await writeFile(outputPath, `${JSON.stringify({
   generatedAt: new Date().toISOString(),
   fixturePath,
+  fixtureSha256,
+  fixtureMetadata: fixture.metadata,
   captureInputPath,
   evaluationMode,
   datasetRole,
