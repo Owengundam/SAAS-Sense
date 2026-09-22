@@ -9,7 +9,11 @@ import styles from "../styles/dashboard.module.css";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   ensureTenant(session.shop);
-  return getSupplierSignal().service.dashboard(session.shop);
+  return {
+    ...getSupplierSignal().service.dashboard(session.shop),
+    shop: session.shop,
+    pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -133,9 +137,16 @@ export default function Index() {
     return observation?.checked_at === source.lastAttemptAt ? observation : null;
   }).filter(Boolean);
   const review = activeLatest.filter((item: any) => !item.factual).slice(0, 5);
+  const setupSteps = [
+    { done: data.sources.length > 0, label: "Add one authorized supplier page" },
+    { done: data.tenant.monthlyCheckUsage > 0, label: "Run the first availability check" },
+    { done: confirmed > 0, label: "See your first verified baseline" },
+  ];
+  const setupComplete = setupSteps.every((step) => step.done);
 
   return (
     <div className={styles.page}>
+      <ui-title-bar title="SupplierSignal" />
       <div className={styles.hero}>
         <div>
           <span className={styles.eyebrow}>SupplierSignal · read-only monitoring</span>
@@ -149,6 +160,25 @@ export default function Index() {
       </div>
       {data.simulated && <div className={`${styles.notice} ${styles.error}`}>Demo provider is active. No live supplier pages are being checked.</div>}
       {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : fetcher.data.warning ? styles.warningNotice : ""}`}>{fetcher.data.message}</div>}
+      {!setupComplete && <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="setup-heading">
+        <div className={styles.setupHeader}>
+          <div>
+            <span className={styles.connected}>Connected to {data.shop}</span>
+            <h2 id="setup-heading" className={styles.sectionTitle}>Verify your first supplier item</h2>
+            <p className={styles.muted}>Add one exact product page and run a check. Most pilot setups take under five minutes.</p>
+          </div>
+          <strong>{setupSteps.filter((step) => step.done).length}/{setupSteps.length}</strong>
+        </div>
+        <div className={styles.progress} aria-label={`${setupSteps.filter((step) => step.done).length} of ${setupSteps.length} setup steps complete`}>
+          <span style={{ width: `${setupSteps.filter((step) => step.done).length / setupSteps.length * 100}%` }} />
+        </div>
+        <ol className={styles.setupSteps}>
+          {setupSteps.map((step, index) => <li className={step.done ? styles.done : ""} key={step.label}>
+            <span>{step.done ? "✓" : index + 1}</span>{step.label}
+          </li>)}
+        </ol>
+        {data.sources.length === 0 && <a className={styles.buttonLink} href="#add-source">Add your first source</a>}
+      </section>}
       <div className={styles.metrics}>
         <div className={styles.card}><span className={styles.metricLabel}>Monitored links</span><strong className={styles.metric}>{data.tenant.sourceUsage}/{data.tenant.sourceLimit}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Confirmed baselines</span><strong className={styles.metric}>{confirmed}</strong></div>
@@ -247,23 +277,35 @@ export default function Index() {
             </table>
           </div>
         </section>
-        <aside className={styles.card}>
+        <aside className={styles.card} id="add-source">
           <h2 className={styles.sectionTitle}>Add supplier source</h2>
+          <p className={styles.formIntro}>Start with one item whose supplier availability you normally check by hand.</p>
           <Form method="post" className={styles.form}>
             <input type="hidden" name="intent" value="add-source" />
             <label>Shopify SKU<input name="sku" required maxLength={120} /></label>
             <label>Product title<input name="productTitle" required maxLength={200} /></label>
-            <label>Shopify product ID<input name="shopifyProductId" placeholder="gid://shopify/Product/..." /></label>
-            <label>Shopify variant ID<input name="shopifyVariantId" placeholder="gid://shopify/ProductVariant/..." /></label>
-            <label>Supplier SKU<input name="supplierSku" placeholder="Supplier's SKU or model number" /></label>
-            <label>Supplier product ID<input name="supplierProductId" placeholder="Supplier catalog ID" /></label>
-            <label>Supplier variant ID<input name="supplierVariantId" placeholder="Color/size variant ID" /></label>
             <label>Supplier product URL<input name="url" required type="url" placeholder="https://supplier.example/product" /></label>
-            <label>Extra match terms<input name="matchTerms" placeholder="model number, brand" /></label>
-            <span className={styles.formHelp}>Provide at least one supplier identifier or an exact extra match term.</span>
+            <label>Supplier SKU or model<input name="supplierSku" required placeholder="The exact identifier on the supplier page" /></label>
+            <details className={styles.advancedFields}>
+              <summary>Advanced matching fields</summary>
+              <div>
+                <label>Shopify product ID<input name="shopifyProductId" placeholder="gid://shopify/Product/..." /></label>
+                <label>Shopify variant ID<input name="shopifyVariantId" placeholder="gid://shopify/ProductVariant/..." /></label>
+                <label>Supplier product ID<input name="supplierProductId" placeholder="Supplier catalog ID" /></label>
+                <label>Supplier variant ID<input name="supplierVariantId" placeholder="Color/size variant ID" /></label>
+                <label>Extra match terms<input name="matchTerms" placeholder="model number, brand" /></label>
+              </div>
+            </details>
+            <span className={styles.formHelp}>Use a public product page you are authorized to monitor. Logged-in portals and marketplaces are not supported.</span>
             <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this page is the exact supplier product and variant.</label>
             <button className={styles.button} disabled={busy}>Add source</button>
           </Form>
+          {confirmed > 0 && <div className={styles.pilotPlan}>
+            <span className={styles.eyebrow}>Founding pilot</span>
+            <strong>$49/month</strong>
+            <p>25 links, 1,500 checks, assisted setup, and a weekly pilot review.</p>
+            {data.pricingEnabled && <a className={styles.buttonLink} href="/app/pricing">Choose the pilot plan</a>}
+          </div>}
           <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>
           {review.length === 0 && <span className={styles.muted}>No ambiguous or failed checks.</span>}
           {review.map((item: any) => <div className={styles.queueItem} key={item.id}><strong>{item.product_title}</strong><span className={styles.muted}>{item.reason}</span></div>)}
