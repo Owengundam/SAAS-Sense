@@ -19,6 +19,8 @@
     "test": "node --test",
     "test:coverage": "node --experimental-test-coverage --test",
     "evaluate:fixtures": "node scripts/evaluate-fixtures.js",
+    "generate:ai-synthetic": "node scripts/generate-ai-synthetic-cases.js",
+    "evaluate:ai-synthetic": "node scripts/evaluate-ai-synthetic.js",
     "smoke": "node scripts/smoke.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
