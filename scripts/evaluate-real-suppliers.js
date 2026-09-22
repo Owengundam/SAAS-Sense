@@ -1,4 +1,4 @@
-// Explicit opt-in: invokes paid TypeSafe and SiliconFlow calls.
+// Explicit opt-in: invokes paid TypeSafe and configured DeepSeek-provider calls.
 // The production evaluation executes the real sequential cascade with the same
 // reader timeouts used by the app. Optional parallel comparison runs legacy and
 // shared DeepSeek inputs against the exact same capture.
@@ -9,18 +9,18 @@ import { pathToFileURL } from "node:url";
 import { classifyObservation, evaluateAiObservation } from "../src/domain.js";
 import { evaluateLabelEvidenceBinding } from "../src/evidence.js";
 import { summarizeModelBenchmark } from "../src/model-benchmark.js";
+import { createFallbackEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { DirectHttpProvider } from "../src/providers/direct-http.js";
 import { CascadingEvidenceReader } from "../src/providers/evidence-readers.js";
 import { JevEvidenceReader } from "../src/providers/jev.js";
 import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
-import { SiliconFlowEvidenceReader } from "../src/providers/siliconflow.js";
 
 if (!process.argv.includes("--live")) throw new Error("Pass --live to authorize paid model evaluation");
 const jevToken = process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY;
-const deepSeekToken = process.env.SILICONFLOW_API_KEY;
-if (!jevToken || !deepSeekToken) {
-  throw new Error("JEV_API_KEY (or TYPESAFE_API_KEY) and SILICONFLOW_API_KEY are required");
-}
+const productionDeepseek = createFallbackEvidenceReader(process.env);
+if (!jevToken || !productionDeepseek) throw new Error(
+  "JEV_API_KEY (or TYPESAFE_API_KEY) and the configured AI fallback API key are required",
+);
 
 const fixturePath = resolve(process.env.REAL_SUPPLIER_FIXTURE || "fixtures/real-supplier-validation-25.json");
 const fixtureCases = JSON.parse(await readFile(pathToFileURL(fixturePath), "utf8"));
@@ -40,21 +40,10 @@ if (!["development", "holdout"].includes(datasetRole)) throw new Error("INVALID_
 const supportedDomains = [...new Set(cases.map((testCase) => new URL(testCase.source.url).hostname))];
 const provider = new DirectHttpProvider({ supportedDomains });
 const productionJev = new JevEvidenceReader({ token: jevToken, model: process.env.TYPESAFE_MODEL });
-const productionDeepseek = new SiliconFlowEvidenceReader({
-  token: deepSeekToken,
-  model: process.env.SILICONFLOW_MODEL,
-  endpoint: process.env.SILICONFLOW_ENDPOINT,
-});
-const legacyDeepseek = includeParallelComparison ? new SiliconFlowEvidenceReader({
-  token: deepSeekToken,
-  model: process.env.SILICONFLOW_MODEL,
-  endpoint: process.env.SILICONFLOW_ENDPOINT,
+const legacyDeepseek = includeParallelComparison ? createFallbackEvidenceReader(process.env, {
   evidenceFormat: "legacy-prefix",
 }) : null;
-const comparisonSharedDeepseek = includeParallelComparison ? new SiliconFlowEvidenceReader({
-  token: deepSeekToken,
-  model: process.env.SILICONFLOW_MODEL,
-  endpoint: process.env.SILICONFLOW_ENDPOINT,
+const comparisonSharedDeepseek = includeParallelComparison ? createFallbackEvidenceReader(process.env, {
   evidenceFormat: "shared-v2",
 }) : null;
 
@@ -307,6 +296,8 @@ await writeFile(outputPath, `${JSON.stringify({
     : "one-direct-capture-shared-by-production-and-comparison-readers",
   readerSettings: {
     jevTimeoutMs: productionJev.timeoutMs,
+    deepseekProvider: productionDeepseek.provider,
+    deepseekModel: productionDeepseek.model,
     deepseekTimeoutMs: productionDeepseek.timeoutMs,
     deepseekEvidenceFormat: productionDeepseek.evidenceFormat,
   },

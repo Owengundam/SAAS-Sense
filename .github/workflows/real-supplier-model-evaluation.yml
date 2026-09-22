@@ -10,8 +10,11 @@ on:
       - src/evidence.js
       - src/model-benchmark.js
       - src/providers/direct-http.js
+      - src/providers/create-evidence-reader.js
       - src/providers/evidence-readers.js
       - src/providers/jev.js
+      - src/providers/openai-compatible-evidence.js
+      - src/providers/openrouter.js
       - src/providers/page-content.js
       - src/providers/siliconflow.js
   workflow_dispatch:
@@ -39,10 +42,11 @@ jobs:
     env:
       JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-      SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       TYPESAFE_MODEL: jev-1.13.0
-      SILICONFLOW_MODEL: deepseek-ai/DeepSeek-V4-Flash
-      SILICONFLOW_ENDPOINT: https://api.siliconflow.com/v1/chat/completions
+      AI_FALLBACK_PROVIDER: openrouter
+      OPENROUTER_MODEL: deepseek/deepseek-v4.1-flash
+      OPENROUTER_ENDPOINT: https://openrouter.ai/api/v1/chat/completions
       REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-validation-25.json
       REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-model-evaluation.json
       REAL_SUPPLIER_DATASET_ROLE: development
@@ -59,10 +63,10 @@ jobs:
       - name: Require model evaluation secrets
         run: |
           test -n "${JEV_API_KEY:-${TYPESAFE_API_KEY:-}}"
-          test -n "${SILICONFLOW_API_KEY:-}"
+          test -n "${OPENROUTER_API_KEY:-}"
           curl --fail --silent --show-error --output /dev/null \
-            --header "Authorization: Bearer ${SILICONFLOW_API_KEY}" \
-            https://api.siliconflow.com/v1/models
+            --header "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+            https://openrouter.ai/api/v1/models
       - name: Evaluate the production cascade and shared-input comparison
         run: npm run evaluate:real-suppliers -- --live
       - name: Enforce layered production-readiness gates

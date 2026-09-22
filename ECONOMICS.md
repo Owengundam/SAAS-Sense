@@ -10,7 +10,7 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 - Hard cap: 1,500 checks/month.
 - No unlimited tier.
 - 15% of the cap is reserved for retries; retries stop when the cap is exhausted.
-- Apify AI summarization is disabled. Direct HTTP and self-hosted Chromium run before Apify in cascade mode; SiliconFlow evidence extraction is invoked only when structured availability is absent.
+- Apify AI summarization is disabled. Direct HTTP and self-hosted Chromium run before Apify in cascade mode; the configured DeepSeek evidence provider is invoked only when structured availability is absent.
 
 ## Cost inputs
 
@@ -21,7 +21,7 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 | Structured product extraction | Apify E-commerce Scraping Tool Starter listing observed 2026-09-22: $1.50/1,000 product details; the $19 plan includes $19 usage credit |
 | Apify browser rendering | Optional E-commerce Scraping Tool rendering surcharge observed 2026-09-22: $0.57/1,000 products; the separate Website Content Crawler remains usage based |
 | Expected blend | Unknown until the fresh-fetch benchmark measures direct, local-browser, and Apify escalation rates |
-| AI evidence fallback | SiliconFlow DeepSeek V4 Flash observed 2026-09-16: off-peak ¥1.5/M input and ¥4.5/M output; otherwise ¥3/M input and ¥9/M output |
+| AI evidence fallback | OpenRouter DeepSeek V4.1 Flash observed 2026-09-22: $0.30/M input and $1.20/M output at peak; scheduled off-peak rates may be lower |
 | Apify account allocation | $19 Starter spread across 10 pilot merchants = $1.90 each |
 | App hosting/database | Assumption: $3–$6 allocated per merchant |
 | Storage/observability/email | Assumption: $0.50–$1.00 per merchant |
@@ -46,7 +46,7 @@ The old extraction-cost row was based on an outdated Apify event price and canno
 
 ## AI cost boundary
 
-Evidence sent to SiliconFlow is capped at 12,000 characters, thinking is disabled, and output is capped at 350 tokens. At an illustrative 3,500 input and 100 output tokens, one AI-assisted check is about ¥0.0057 off-peak or ¥0.0114 at regular pricing. If every one of the 1,500 monthly checks required AI, that would be roughly ¥8.55–¥17.10; in the intended flow only checks missing structured availability invoke it. Measure the real fallback rate before treating this as a stable unit-cost assumption.
+Evidence sent to OpenRouter is capped at 12,000 characters, reasoning is disabled, and output is capped at 350 tokens. At an illustrative 3,500 input and 100 output tokens, one AI-assisted check is about $0.00117 at the observed peak rate. If every one of the 1,500 monthly checks required AI, that would be about $1.76; in the intended flow only checks missing structured availability invoke it. Measure the real fallback rate and current route pricing before treating this as a stable unit-cost assumption.
 
 ## Retry and failure policy
 
@@ -70,7 +70,7 @@ The commercial target is useful only if churn and support are controlled. A reas
 - Fresh direct HTTP is attempted before paid providers, with a response-size cap and validated redirects.
 - Self-hosted Chromium is attempted only when direct content lacks product identity plus availability evidence.
 - One-product Actor input, optional enrichments disabled, AI summary disabled, and Apify's minimum supported $1 maximum-charge guard per run.
-- SiliconFlow calls are bounded, non-thinking, strict-schema requests and are skipped when Apify supplies structured availability.
+- OpenRouter calls are bounded, non-reasoning, strict-schema requests and are skipped when Apify supplies structured availability.
 - Per-run timeout and small evidence excerpts.
 - Duplicate provider run IDs do not create duplicate observations or alerts.
 

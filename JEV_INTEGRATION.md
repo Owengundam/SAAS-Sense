@@ -50,6 +50,16 @@ AI_READER_MODE=deepseek
 JEV_API_KEY=
 TYPESAFE_MODEL=jev-1.13.0
 JEV_PRIMARY_DOMAINS=
+AI_FALLBACK_PROVIDER=openrouter
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
+OPENROUTER_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+```
+
+SiliconFlow remains available as an explicit rollback:
+
+```text
+AI_FALLBACK_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
