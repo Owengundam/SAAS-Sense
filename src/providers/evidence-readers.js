@@ -30,6 +30,14 @@ function attempts(result) {
   return [];
 }
 
+function sourceHostname(source) {
+  try {
+    return new URL(source?.url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "";
+  }
+}
+
 export class CascadingEvidenceReader {
   constructor({ primary, fallback = null } = {}) {
     this.primary = primary;
@@ -114,6 +122,32 @@ export class ShadowEvidenceReader {
         accepted: Boolean(shadowResult.acceptedByPolicy),
         state: shadowResult.availability || "UNKNOWN",
         reason: shadowResult.reasonCode || shadowResult.error || shadowResult.reason,
+      },
+    };
+  }
+}
+
+export class ValidatedSourceEvidenceReader {
+  constructor({ validatedDomains = [], validated, unvalidated } = {}) {
+    this.validatedDomains = new Set(validatedDomains);
+    this.validated = validated;
+    this.unvalidated = unvalidated;
+    this.model = unvalidated?.model;
+    this.promptVersion = unvalidated?.promptVersion;
+    this.provider = "validated-source-router";
+  }
+
+  async analyze(source, providerResult) {
+    const hostname = sourceHostname(source);
+    const isValidated = this.validatedDomains.has(hostname);
+    const reader = isValidated ? this.validated : this.unvalidated;
+    const result = await reader.analyze(source, providerResult);
+    return {
+      ...result,
+      readerRouting: {
+        policy: "EXACT_HOST_ALLOWLIST",
+        hostname,
+        validated: isValidated,
       },
     };
   }

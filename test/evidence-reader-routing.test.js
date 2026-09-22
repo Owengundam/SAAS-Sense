@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CascadingEvidenceReader, ShadowEvidenceReader } from "../src/providers/evidence-readers.js";
+import {
+  CascadingEvidenceReader,
+  ShadowEvidenceReader,
+  ValidatedSourceEvidenceReader,
+} from "../src/providers/evidence-readers.js";
 
 const source = { sku: "A-1" };
 const providerResult = { text: "A-1. Only two remain." };
@@ -53,4 +57,36 @@ test("shadow mode records JEV without changing the DeepSeek decision", async () 
   assert.equal(result.availability, "IN_STOCK");
   assert.equal(result.readerMode, "JEV_SHADOW");
   assert.equal(result.modelEvaluations.find((item) => item.shadow).selectedState, "OUT_OF_STOCK");
+});
+
+test("validated-source mode promotes only exact allowlisted hosts", async () => {
+  let validatedCalls = 0;
+  let unvalidatedCalls = 0;
+  const reader = new ValidatedSourceEvidenceReader({
+    validatedDomains: ["supplier.example"],
+    validated: { async analyze() {
+      validatedCalls += 1;
+      return { ok: true, readerMode: "JEV_PRIMARY", availability: "IN_STOCK" };
+    } },
+    unvalidated: { async analyze() {
+      unvalidatedCalls += 1;
+      return { ok: true, readerMode: "JEV_SHADOW", availability: "OUT_OF_STOCK" };
+    } },
+  });
+
+  const promoted = await reader.analyze(
+    { ...source, url: "https://supplier.example/product/a" },
+    providerResult,
+  );
+  assert.equal(promoted.availability, "IN_STOCK");
+  assert.equal(promoted.readerRouting.validated, true);
+
+  const subdomain = await reader.analyze(
+    { ...source, url: "https://cdn.supplier.example/product/a" },
+    providerResult,
+  );
+  assert.equal(subdomain.availability, "OUT_OF_STOCK");
+  assert.equal(subdomain.readerRouting.validated, false);
+  assert.equal(validatedCalls, 1);
+  assert.equal(unvalidatedCalls, 1);
 });

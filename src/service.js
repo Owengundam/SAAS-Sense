@@ -218,7 +218,11 @@ export class SupplierSignalService {
           acceptancePolicyVersion: aiResult.acceptancePolicyVersion || null,
           signals: aiResult.decisionSignals,
           shadowSummary: aiResult.shadowSummary || null,
-        } : aiResult?.shadowSummary ? { shadowSummary: aiResult.shadowSummary } : null,
+          readerRouting: aiResult.readerRouting || null,
+        } : aiResult?.shadowSummary || aiResult?.readerRouting ? {
+          shadowSummary: aiResult.shadowSummary || null,
+          readerRouting: aiResult.readerRouting || null,
+        } : null,
         finalState: observation.state,
         finalConfidence: observation.confidence,
       };

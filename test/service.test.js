@@ -149,6 +149,11 @@ test("multi-model attempts and evidence provenance are persisted for audit", asy
     provider: "siliconflow",
     readerMode: "JEV_PRIMARY",
     fallbackReason: "INCONCLUSIVE_INTERPRETATION",
+    readerRouting: {
+      policy: "EXACT_HOST_ALLOWLIST",
+      hostname: "supplier.test",
+      validated: true,
+    },
     productMatch: "MATCH",
     availability: "IN_STOCK",
     evidenceQuote: quote,
@@ -187,6 +192,11 @@ test("multi-model attempts and evidence provenance are persisted for audit", asy
   assert.equal(decision.fallback_reason, "INCONCLUSIVE_INTERPRETATION");
   assert.equal(decision.evidence_origin, "PAGE_TEXT");
   assert.equal(decision.evidence_snapshot_id, "snapshot-1");
+  assert.deepEqual(JSON.parse(decision.decision_details).readerRouting, {
+    policy: "EXACT_HOST_ALLOWLIST",
+    hostname: "supplier.test",
+    validated: true,
+  });
   db.close();
 });
 

@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
-import { CascadingEvidenceReader, ShadowEvidenceReader } from "../src/providers/evidence-readers.js";
+import {
+  CascadingEvidenceReader,
+  ShadowEvidenceReader,
+  ValidatedSourceEvidenceReader,
+} from "../src/providers/evidence-readers.js";
 import { SiliconFlowEvidenceReader } from "../src/providers/siliconflow.js";
 
 test("DeepSeek remains the default evidence reader", () => {
@@ -50,4 +54,31 @@ test("a configured JEV key opts into safe shadow mode", () => {
     SILICONFLOW_API_KEY: "deepseek-key",
   });
   assert.ok(reader instanceof ShadowEvidenceReader);
+});
+
+test("validated mode requires an exact-host allowlist and both providers", () => {
+  const reader = createEvidenceReader({
+    AI_READER_MODE: "jev-validated",
+    JEV_API_KEY: "jev-key",
+    SILICONFLOW_API_KEY: "deepseek-key",
+    JEV_PRIMARY_DOMAINS: "supplier.example, www.supplier.example",
+  });
+  assert.ok(reader instanceof ValidatedSourceEvidenceReader);
+  assert.deepEqual([...reader.validatedDomains], ["supplier.example", "www.supplier.example"]);
+  assert.throws(
+    () => createEvidenceReader({
+      AI_READER_MODE: "jev-validated",
+      JEV_API_KEY: "jev-key",
+      SILICONFLOW_API_KEY: "deepseek-key",
+    }),
+    /JEV_PRIMARY_DOMAINS_REQUIRED/,
+  );
+  assert.throws(
+    () => createEvidenceReader({
+      AI_READER_MODE: "jev-validated",
+      JEV_API_KEY: "jev-key",
+      JEV_PRIMARY_DOMAINS: "supplier.example",
+    }),
+    /SILICONFLOW_API_KEY_REQUIRED_FOR_VALIDATED_MODE/,
+  );
 });

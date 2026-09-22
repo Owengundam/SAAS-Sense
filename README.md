@@ -93,12 +93,14 @@ DeepSeek remains authoritative by default. Available modes are:
 ```text
 AI_READER_MODE=deepseek     # current behavior; no JEV calls
 AI_READER_MODE=jev-shadow   # DeepSeek decides; JEV is measured only
+AI_READER_MODE=jev-validated # JEV primary only on exact allowlisted hosts
 AI_READER_MODE=jev-primary  # accepted JEV decisions first; bounded DeepSeek fallback
+JEV_PRIMARY_DOMAINS=supplier.example,www.supplier.example
 JEV_API_KEY=...
 TYPESAFE_MODEL=jev-1.13.0
 ```
 
-Providing `JEV_API_KEY` without `AI_READER_MODE` safely selects `jev-shadow`. Set `AI_READER_MODE=deepseek` to explicitly disable JEV calls, or use `jev-primary` only after the shadow evaluation.
+Providing `JEV_API_KEY` without `AI_READER_MODE` safely selects `jev-shadow`. Set `AI_READER_MODE=deepseek` to explicitly disable JEV calls. `jev-validated` promotes the measured cascade only for exact hostnames in `JEV_PRIMARY_DOMAINS`; all other hosts remain DeepSeek-authoritative with JEV in shadow. Subdomains are never included implicitly. Reserve unrestricted `jev-primary` for a later, separately approved rollout.
 
 Fallback is reason-specific. Service errors and inconclusive interpretations may reach DeepSeek. Missing evidence, strong product/variant mismatch, contradictory evidence, and truncated candidate retrieval remain uncertain instead of asking another model for a more convenient answer. Shadow evaluations never change observations, transitions, or alerts.
 
@@ -118,6 +120,7 @@ SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
+JEV_PRIMARY_DOMAINS=
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
 SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false

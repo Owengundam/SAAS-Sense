@@ -2,7 +2,7 @@
 
 ## Status
 
-Production was last verified at `b69f8be` in `jev-shadow` mode with DeepSeek authoritative. The v2 evidence-window improvement is locally implemented and live-evaluated in an isolated reader: 19/20 correct effective synthetic outcomes, 10/11 correct accepted factual results, zero incorrect accepted results. It has not been deployed. See `JEV_ACCURACY_EVALUATION_2026-09-21.md` for limitations and reproduction. A configured JEV key selects shadow mode when no explicit mode is set.
+Production was last verified at `c76f563` in `jev-shadow` mode with DeepSeek authoritative. The corrected 300-case synthetic evaluation produced 293/300 correct effective cascade outcomes, 168/175 accepted factual outcomes, and zero incorrect accepted results. See `AI_SYNTHETIC_300_EVALUATION_2026-09-21.md` for limitations and reproduction. The exact-host `jev-validated` promotion mode is implemented locally but has not been deployed or enabled. A configured JEV key still selects shadow mode when no explicit mode is set.
 
 ## Decision flow
 
@@ -49,6 +49,7 @@ Initial thresholds are deliberately provisional and must not be loosened without
 AI_READER_MODE=deepseek
 JEV_API_KEY=
 TYPESAFE_MODEL=jev-1.13.0
+JEV_PRIMARY_DOMAINS=
 SILICONFLOW_API_KEY=
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
@@ -56,6 +57,7 @@ SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 
 - `deepseek`: existing behavior and safe default.
 - `jev-shadow`: DeepSeek remains authoritative; JEV results are stored for comparison.
+- `jev-validated`: JEV is primary only when the source hostname is an exact member of `JEV_PRIMARY_DOMAINS`; other sources keep DeepSeek authoritative and JEV shadowed.
 - `jev-primary`: accepted JEV decisions are authoritative; DeepSeek is a bounded backup for recoverable failures.
 - `TYPESAFE_API_KEY` remains supported as a compatibility alias for `JEV_API_KEY`.
 - When `JEV_API_KEY` is present and `AI_READER_MODE` is omitted, the service selects `jev-shadow`; an explicit mode always wins.
@@ -72,3 +74,5 @@ JEV should not become primary until it has:
 - reproducible evidence provenance for every accepted fact;
 - bounded fallback and measured whole-pipeline cost/latency;
 - successful tests on authorized real supplier pages.
+
+The 300-case synthetic evaluation cleared the synthetic correctness and safety checks, but not the authorized-real-page requirement. The next promotion stage is therefore `jev-validated`, with exact-host allowlisting and persisted routing provenance. It is not a global production switch.
