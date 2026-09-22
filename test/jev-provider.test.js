@@ -130,3 +130,45 @@ test("strong JEV product mismatch is a hard failure and skips classification", a
   assert.equal(result.allowFallback, false);
   assert.equal(result.productMatch, "MISMATCH");
 });
+
+test("JEV sends the exact variant first when a mixed-variant page exceeds its candidate budget", async () => {
+  const targetSource = {
+    productTitle: "Siena Large Flush Mount in Antique Nickel",
+    supplierSku: "SS 4016AN-WG",
+    supplierVariantId: "SS 4016AN-WG",
+    matchTerms: ["SS 4016AN-WG", "Siena Large Flush Mount in Antique Nickel"],
+  };
+  const distractors = Array.from({ length: 140 }, (_, index) =>
+    `Related finish SKU SS-OTHER-${index}. ${index % 2 ? "In stock." : "Within 4 weeks."}`);
+  const target = "Siena Large Flush Mount in Antique Nickel with White Glass. SKU SS 4016AN-WG. 39 in stock, ships by 09.22.26.";
+  const mixedPage = {
+    ...providerResult,
+    text: [...distractors, target].join("\n\n"),
+    rawPageText: [...distractors, target].join("\n\n"),
+    evidenceRecords: [],
+  };
+  const requests = [];
+  const reader = new JevEvidenceReader({
+    token: "typesafe-key",
+    maxCandidates: 5,
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      if (requests.length === 1) return response({
+        evidence: choiceAnswer("P001", { P001: 0.98, NONE: 0.02 }, 0.95),
+        product_match: choiceAnswer("MATCH", { MATCH: 0.99, UNCERTAIN: 0.01 }, 0.95),
+        consistency: choiceAnswer("CONSISTENT", { CONSISTENT: 0.98, UNCERTAIN: 0.02 }, 0.94),
+      });
+      return response({
+        product_match: choiceAnswer("MATCH", { MATCH: 0.99, UNCERTAIN: 0.01 }, 0.95),
+        availability: choiceAnswer("IN_STOCK", { IN_STOCK: 0.98, UNKNOWN: 0.02 }, 0.94),
+      });
+    },
+  });
+
+  const result = await reader.analyze(targetSource, mixedPage);
+  assert.match(requests[0].state.candidates[0].text, /SS 4016AN-WG/);
+  assert.match(requests[0].state.candidates[0].text, /39 in stock/);
+  assert.equal(result.acceptedByPolicy, true);
+  assert.equal(result.availability, "IN_STOCK");
+});

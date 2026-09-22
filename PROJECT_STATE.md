@@ -46,6 +46,9 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added fresh direct HTTP capture, optional self-hosted Chromium rendering, evidence-based escalation to Apify, per-tier latency/outcome auditing, and a bounded live benchmark harness.
 - Hardened the planned browser runtime with Debian Bookworm, a matching bundled Chromium, lazy process reuse, fresh contexts, concurrency one, idle shutdown, restart backoff, service-worker blocking, DNS checks, and terminal security failures.
 - Split the container into a lean default Railway target and an explicit browser-worker target so Railway does not download or ship Chromium while the sandboxed browser smoke remains independently testable.
+- Added exact-supplier-identity ranking before JEV's bounded candidate selection, preventing long mixed-variant pages from dropping the monitored variant behind unrelated finishes while preserving verbatim evidence provenance.
+- Added a provisional five-case, four-domain direct-capture fixture. The first local live attempt was invalidated because the runner returned `EAI_AGAIN` for every public supplier hostname; no accuracy score was claimed.
+- Hardened live benchmark denominators so DNS/provider failures are counted separately, accuracy is `null` with no scorable evidence, and latency percentiles exclude failed captures.
 
 ## Tested locally
 
@@ -62,11 +65,12 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Webhook HMAC, duplicate delivery, uninstall, customer request acknowledgement, and shop deletion.
 - Hosted Shopify pricing URL and inactive subscription gate.
 - AI extraction of explicit but nonstandard availability wording, hallucinated-quote rejection, rules-versus-AI conflict handling, invalid JSON handling, timeout/failure fallback, and no-tool prompt isolation.
+- Exact-variant JEV retrieval from a page with 140 conflicting availability-bearing distractor variants, including end-to-end candidate selection and policy acceptance.
 
 ## Not verified
 
 - Partner API subscription query or app-plan selection.
-- Cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains. Railway does not currently document the seccomp/user-namespace control required for sandboxed Chromium, so its browser tier remains disabled there.
+- Direct-capture and cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains. The local cross-domain attempt could not resolve public DNS. Railway does not currently document the seccomp/user-namespace control required for sandboxed Chromium, so its browser tier remains disabled there.
 - Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
 - Live TypeSafe request compatibility, JEV accuracy/calibration, latency, token usage, and fallback rate on saved and real supplier captures.
 - Scheduling, email delivery, or production observability.

@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyObservation } from "../src/domain.js";
+import { summarizeFetchBenchmark } from "../src/fetch-benchmark.js";
 import { ApifyProvider } from "../src/providers/apify.js";
 import { BrowserProvider } from "../src/providers/browser.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
@@ -98,30 +99,7 @@ for (let repetition = 1; repetition <= repetitions; repetition += 1) {
   }
 }
 
-function percentile(values, fraction) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
-}
-
-const summary = {};
-for (const method of methods.keys()) {
-  const selected = rows.filter((row) => row.method === method);
-  const knownCosts = selected.map((row) => row.costUsd).filter(Number.isFinite);
-  const usable = selected.filter((row) => row.usable).length;
-  const totalCostUsd = knownCosts.length ? knownCosts.reduce((sum, value) => sum + value, 0) : null;
-  summary[method] = {
-    requests: selected.length,
-    fetchSuccesses: selected.filter((row) => row.ok).length,
-    usableCaptures: usable,
-    fixtureStateMatches: selected.filter((row) => row.correctAgainstFixture).length,
-    labelEvidenceMatches: selected.filter((row) => row.labelEvidencePresent === true).length,
-    medianLatencyMs: percentile(selected.map((row) => row.latencyMs), 0.5),
-    p95LatencyMs: percentile(selected.map((row) => row.latencyMs), 0.95),
-    totalKnownCostUsd: totalCostUsd,
-    costPerSuccessfulFreshCheckUsd: totalCostUsd == null || !usable ? null : totalCostUsd / usable,
-  };
-}
+const summary = summarizeFetchBenchmark(rows, methods.keys());
 
 await writeFile(outputPath, `${JSON.stringify({
   generatedAt: new Date().toISOString(),

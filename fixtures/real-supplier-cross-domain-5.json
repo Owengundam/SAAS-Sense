@@ -1,0 +1,58 @@
+[
+  {
+    "id": "lighting-supply-broan-s1100622",
+    "expected": "BACKORDERED",
+    "labelEvidence": "Backorder: Usually Ships in 7-14 Days",
+    "source": {
+      "url": "https://lightingsupply.com/products/broan-nutone-s1100622",
+      "productTitle": "Broan-NuTone Light Fixture Assembly",
+      "supplierSku": "S1100622",
+      "matchTerms": ["S1100622", "Broan-NuTone Light Fixture Assembly"]
+    }
+  },
+  {
+    "id": "visual-comfort-siena-ss4016an-wg",
+    "expected": "IN_STOCK",
+    "labelEvidence": "in stock",
+    "source": {
+      "url": "https://www.visualcomfort.com/us/p/siena-large-flush-mount-ss4016",
+      "productTitle": "Siena Large Flush Mount in Antique Nickel",
+      "supplierSku": "SS 4016AN-WG",
+      "supplierVariantId": "SS 4016AN-WG",
+      "matchTerms": ["SS 4016AN-WG", "Siena Large Flush Mount in Antique Nickel"]
+    }
+  },
+  {
+    "id": "surya-aamnah-amh-002",
+    "expected": "UNCERTAIN",
+    "labelEvidence": "See Availability",
+    "source": {
+      "url": "https://www.surya.com/Product/AMH-002-P",
+      "productTitle": "Aamnah AMH-002 Pouf",
+      "supplierSku": "AMH-002",
+      "matchTerms": ["AMH-002", "Aamnah"]
+    }
+  },
+  {
+    "id": "miele-wtv-500-09612041",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
+    "source": {
+      "url": "https://shop.miele.hk/en/wtv-500-zid09612041/",
+      "productTitle": "WTV 500",
+      "supplierProductId": "09612041",
+      "matchTerms": ["WTV 500", "09612041"]
+    }
+  },
+  {
+    "id": "miele-guard-l1-comfort-12804090",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
+    "source": {
+      "url": "https://shop.miele.hk/en/floorcare/guard-l1-comfort-zid12804090/",
+      "productTitle": "Guard L1 Comfort",
+      "supplierProductId": "12804090",
+      "matchTerms": ["Guard L1 Comfort", "12804090"]
+    }
+  }
+]
