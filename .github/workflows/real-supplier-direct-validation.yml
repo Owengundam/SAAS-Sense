@@ -43,6 +43,7 @@ jobs:
             .summary.direct.safetyGatePass == true
           ' "$FETCH_BENCHMARK_OUTPUT"
       - name: Upload raw validation report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: real-supplier-direct-validation

@@ -105,6 +105,7 @@ export class DirectHttpProvider {
         const renderHook = /(?:data-|id=|class=)["'][^"']*(?:availability|inventory|stock)[^"']*["']/i.test(html);
         const identityTerms = [
           ...(Array.isArray(source?.matchTerms) ? source.matchTerms : []),
+          source?.productTitle,
           source?.supplierSku,
           source?.supplierProductId,
           source?.supplierVariantId,

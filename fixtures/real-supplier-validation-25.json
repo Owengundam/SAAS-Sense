@@ -72,15 +72,15 @@
     }
   },
   {
-    "id": "lighting-supply-3m-65084",
-    "category": "backorder",
-    "expected": "BACKORDERED",
-    "labelEvidence": "Backorder: Usually Ships in 10-20 Days",
+    "id": "lighting-supply-philips-f32t8-tl950-alto",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "in Stock: Ready to Ship",
     "source": {
-      "url": "https://lightingsupply.com/products/3m-g15e9ae7f",
-      "productTitle": "3M 65084 Full Tapered Cartridge Roll 747D",
-      "supplierSku": "65084",
-      "matchTerms": ["65084"]
+      "url": "https://lightingsupply.com/products/philips-f32t8-tl950-alto",
+      "productTitle": "Philips 479634 F32T8/TL950/ALTO 32W 48 Inch 5000K T8 90 CRI Medium Bi-Pin Base Bulb",
+      "supplierSku": "F32T8/TL950/ALTO",
+      "matchTerms": ["F32T8/TL950/ALTO"]
     }
   },
   {
