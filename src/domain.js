@@ -59,6 +59,17 @@ function evidenceIncludesQuote(evidence, quote) {
   return normalizedQuote.length >= 3 && normalizedEvidence.includes(normalizedQuote);
 }
 
+function isAcceptedJevConflictResolution(aiResult) {
+  const consistency = aiResult?.decisionSignals?.consistency;
+  return aiResult?.provider === "typesafe" &&
+    aiResult.acceptedByPolicy === true &&
+    aiResult.reasonCode === "ACCEPTED" &&
+    Boolean(aiResult.evidenceReference) &&
+    consistency?.choice === "CONSISTENT" &&
+    Number(consistency.winningProbability) >= 0.9 &&
+    Number(consistency.nativeConfidence) >= 0.6;
+}
+
 export function evaluateAiObservation(deterministic, providerResult, aiResult) {
   if (!aiResult?.ok) return {
     observation: deterministic,
@@ -140,11 +151,14 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     influencedDecision: true,
   };
 
-  // A model may confidently quote one side of a real product-bound conflict
-  // while ignoring the other (for example, "Sold out" beside an explicit
-  // backorder lead time). Exact-quote verification proves that the quote is
-  // present, not that selecting it over the contradictory fact is safe.
-  if (!deterministic.factual && String(deterministic.reason).startsWith("Conflicting availability terms:")) return {
+  // A generic model may confidently quote one side of a real product-bound
+  // conflict while ignoring the other. JEV may resolve only when its full
+  // acceptance policy selected referenced product-bound evidence and separately
+  // classified the monitored product's evidence as strongly consistent. This
+  // preserves related-product recovery without trusting an isolated quote.
+  if (!deterministic.factual &&
+    String(deterministic.reason).startsWith("Conflicting availability terms:") &&
+    !isAcceptedJevConflictResolution(aiResult)) return {
     observation: deterministic,
     accepted: false,
     rejectionReason: "Captured availability evidence contains conflicting factual states",

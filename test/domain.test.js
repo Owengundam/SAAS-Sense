@@ -144,6 +144,95 @@ test("AI cannot choose one side of conflicting monitored-product availability", 
   assert.match(evaluated.rejectionReason, /conflicting factual states/);
 });
 
+test("accepted JEV evidence can resolve conflicts caused by related-product copy", () => {
+  const evidence = [
+    "In stock",
+    "Guard L1 Comfort",
+    "Product ID: 12804090",
+  ].join("\n");
+  const page = {
+    ok: true,
+    url: "https://supplier.test/guard-l1-comfort-12804090",
+    title: "Guard L1 Comfort",
+    text: `${evidence}\nAccessories\nSTB 101 Turbo Mini\nUnavailable online.`,
+    runId: "capture-12804090",
+  };
+  const deterministic = classifyObservation({
+    ...source,
+    productTitle: "Guard L1 Comfort",
+    supplierSku: "12804090",
+    matchTerms: ["12804090", "Guard L1 Comfort"],
+  }, page);
+  const evaluated = evaluateAiObservation(deterministic, page, {
+    ok: true,
+    provider: "typesafe",
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: evidence,
+    evidenceReference: {
+      origin: "PAGE_TEXT",
+      snapshotId: "capture-12804090",
+      sourceUrl: page.url,
+      offsetStart: 0,
+      offsetEnd: evidence.length,
+      text: evidence,
+    },
+    confidence: 0.95,
+    acceptedByPolicy: true,
+    reasonCode: "ACCEPTED",
+    decisionSignals: {
+      consistency: {
+        choice: "CONSISTENT",
+        winningProbability: 0.99,
+        nativeConfidence: 0.98,
+      },
+    },
+  });
+
+  assert.equal(deterministic.factual, false);
+  assert.match(deterministic.reason, /Conflicting availability terms/);
+  assert.equal(evaluated.accepted, true);
+  assert.equal(evaluated.observation.state, STATES.IN_STOCK);
+  assert.equal(evaluated.observation.factual, true);
+});
+
+test("JEV cannot resolve a captured conflict without strong consistency evidence", () => {
+  const page = {
+    ok: true,
+    url: "https://supplier.test/67895",
+    title: "3M 67895 Microfinishing Disc",
+    text: "3M 67895 Microfinishing Disc. Sold out. Backorder: Usually ships in 10-20 days.",
+  };
+  const deterministic = classifyObservation({
+    ...source,
+    productTitle: "3M 67895 Microfinishing Disc",
+    supplierSku: "67895",
+    matchTerms: ["67895"],
+  }, page);
+  const evaluated = evaluateAiObservation(deterministic, page, {
+    ok: true,
+    provider: "typesafe",
+    productMatch: "MATCH",
+    availability: "OUT_OF_STOCK",
+    evidenceQuote: "Sold out",
+    evidenceReference: { origin: "PAGE_TEXT", text: "Sold out" },
+    confidence: 0.95,
+    acceptedByPolicy: true,
+    reasonCode: "ACCEPTED",
+    decisionSignals: {
+      consistency: {
+        choice: "UNCERTAIN",
+        winningProbability: 0.7,
+        nativeConfidence: 0.4,
+      },
+    },
+  });
+
+  assert.equal(evaluated.accepted, false);
+  assert.equal(evaluated.observation.state, STATES.UNCERTAIN);
+  assert.match(evaluated.rejectionReason, /conflicting factual states/);
+});
+
 test("prefers structured provider availability over ambiguous page copy", () => {
   const result = classifyObservation(source, {
     ok: true,
