@@ -1,7 +1,6 @@
 import { join, resolve } from "node:path";
 import { createDatabase } from "../src/db.js";
-import { MockProvider } from "../src/providers/mock.js";
-import { ApifyProvider } from "../src/providers/apify.js";
+import { createPageProvider } from "../src/providers/create-page-provider.js";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
 
@@ -20,10 +19,8 @@ function createCore(): Core {
   const databasePath = process.env.SUPPLIER_DATABASE_PATH ||
     join(process.cwd(), "data", "supplier-signal.db");
   const db = createDatabase(databasePath);
-  const liveProvider = process.env.PROVIDER === "apify";
-  const provider = liveProvider
-    ? new (ApifyProvider as any)({ token: process.env.APIFY_API_TOKEN, actorId: process.env.APIFY_ACTOR_ID })
-    : new MockProvider({ fixturePath: resolve(process.cwd(), "fixtures", "mock-pages.json") });
+  const liveProvider = String(process.env.PROVIDER || "mock").toLowerCase() !== "mock";
+  const provider = createPageProvider(process.env, { root: resolve(process.cwd()) });
   const evidenceReader = createEvidenceReader(process.env);
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
   const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS

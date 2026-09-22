@@ -1,4 +1,4 @@
-# Project State — 2026-09-15 UTC
+# Project State — 2026-09-22 UTC
 
 ## Selected opportunity
 
@@ -22,7 +22,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
 - Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
-- Apify E-commerce Scraping Tool is the primary production adapter; missing structured availability automatically triggers one bounded Website Content Crawler pass, and mock remains the default.
+- The new page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Production remains on its existing provider setting until the live benchmark passes.
 
 ## Completed
 
@@ -43,6 +43,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added inspectable evidence, corrected availability vocabulary, source editing/deletion, and fast-confirmation scheduling logic.
 - Added a constrained `deepseek-ai/DeepSeek-V4-Flash` evidence reader through SiliconFlow, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
 - Added a two-stage JEV reader, exact evidence-candidate selection, structured/page-text provenance, provider-specific probability gates, shadow evaluation, reason-specific DeepSeek fallback, and multi-model audit records.
+- Added fresh direct HTTP capture, optional self-hosted Chromium rendering, evidence-based escalation to Apify, per-tier latency/outcome auditing, and a bounded live benchmark harness.
 
 ## Tested locally
 
@@ -63,7 +64,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 ## Not verified
 
 - Partner API subscription query or app-plan selection.
-- Apify accuracy, timeout behavior, and cost across multiple real supplier domains.
+- Cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains.
 - Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
 - Live TypeSafe request compatibility, JEV accuracy/calibration, latency, token usage, and fallback rate on saved and real supplier captures.
 - Scheduling, email delivery, or production observability.

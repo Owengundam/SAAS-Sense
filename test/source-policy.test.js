@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isPrivateHostname,
+  validatePublicResourceUrl,
   validateSupplierRedirect,
   validateSupplierUrl,
 } from "../src/source-policy.js";
@@ -34,4 +35,11 @@ test("redirects must remain on an explicitly declared supported hostname", () =>
     "https://cdn.supplier.example/a",
     supported,
   ), /UNAPPROVED_SUPPLIER_REDIRECT/);
+});
+
+test("browser subresources reject private networks and unsafe protocols", () => {
+  assert.equal(validatePublicResourceUrl("https://cdn.example/assets/app.js").hostname, "cdn.example");
+  assert.equal(validatePublicResourceUrl("data:text/plain,ok").protocol, "data:");
+  assert.throws(() => validatePublicResourceUrl("http://cdn.example/app.js"), /UNSAFE_RESOURCE_PROTOCOL/);
+  assert.throws(() => validatePublicResourceUrl("https://127.0.0.1/secrets"), /PRIVATE_RESOURCE_FORBIDDEN/);
 });

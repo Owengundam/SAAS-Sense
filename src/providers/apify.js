@@ -193,6 +193,7 @@ export class ApifyProvider {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.browserTimeoutMs = browserTimeoutMs;
+    this.providerName = "apify";
   }
 
   async fetchFromActor(actorId, source) {

@@ -22,6 +22,7 @@
     "generate:ai-synthetic": "node scripts/generate-ai-synthetic-cases.js",
     "evaluate:ai-synthetic": "node scripts/evaluate-ai-synthetic.js",
     "evaluate:real-suppliers": "node scripts/evaluate-real-suppliers.js",
+    "benchmark:fetchers": "node scripts/benchmark-fetchers.js",
     "smoke": "node scripts/smoke.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
@@ -35,6 +36,7 @@
     "@shopify/shopify-app-react-router": "^1.1.0",
     "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
     "isbot": "^5.1.31",
+    "playwright-core": "1.55.0",
     "prisma": "^6.16.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

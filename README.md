@@ -60,6 +60,24 @@ The production shell uses Shopify's official React Router adapter, managed insta
 
 `PROVIDER=mock` uses `fixtures/mock-pages.json`. Tests can queue malformed, ambiguous, failed, or changing results without spending money.
 
+### Cascade — implemented and locally tested
+
+`PROVIDER=cascade` performs a fresh direct HTTP request first. It sends cache-bypass headers, follows only validated supplier redirects, caps the response at 2 MB, and preserves visible-page and JSON-LD evidence. It escalates only when the capture lacks both a configured product identity and availability evidence.
+
+With `SELF_HOSTED_BROWSER_ENABLED=true`, the second tier renders the same URL in Chromium. Images, media, fonts, private-network resources, unsafe protocols, and unapproved top-level redirects are blocked. Apify remains the final tier when its token is configured; its existing structured-product and managed-browser fallback remains intact.
+
+```text
+PROVIDER=cascade
+DIRECT_HTTP_TIMEOUT_MS=15000
+DIRECT_HTTP_MAX_BYTES=2000000
+SELF_HOSTED_BROWSER_ENABLED=true
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+BROWSER_TIMEOUT_MS=40000
+BROWSER_RENDER_WAIT_MS=2000
+```
+
+Each attempted tier records provider, role, outcome, latency, and run ID. `INCONCLUSIVE` means the request succeeded but did not contain enough identity-plus-availability evidence to stop escalation.
+
 ### Apify — connected and live-tested
 
 Set these only through a secure secret configuration interface:
@@ -70,7 +88,9 @@ APIFY_API_TOKEN=...
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 ```
 
-The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard; normal input is still restricted to one URL and the current listed product-detail event price is about $0.006 before extra-property events. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly. Before unattended checks, measure the automatic fallback rate, extraction accuracy, latency, and cost across several merchant-authorized supplier domains.
+The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard and remains restricted to one URL. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly.
+
+Use `npm run benchmark:fetchers -- --live` to compare fresh direct HTTP, self-hosted Chromium, the full cascade, and optionally Apify against up to 50 labeled cases. The harness repeats each case three times by default and reports capture success, usable evidence, fixture-state agreement, median/p95 latency, escalation attempts, and Apify cost when the run API exposes it. Configure the fixture, methods, repetitions, and output through `FETCH_BENCHMARK_FIXTURE`, `FETCH_BENCHMARK_METHODS`, `FETCH_BENCHMARK_RUNS`, and `FETCH_BENCHMARK_OUTPUT`.
 
 ### SiliconFlow DeepSeek — implemented; live verification pending
 
@@ -114,7 +134,13 @@ Mount a persistent Railway volume at `/data`, then configure these non-secret va
 DATABASE_URL=file:/data/shopify.sqlite
 SUPPLIER_DATABASE_PATH=/data/supplier-signal.db
 PORT=3000
-PROVIDER=mock
+PROVIDER=cascade
+DIRECT_HTTP_TIMEOUT_MS=15000
+DIRECT_HTTP_MAX_BYTES=2000000
+SELF_HOSTED_BROWSER_ENABLED=true
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+BROWSER_TIMEOUT_MS=40000
+BROWSER_RENDER_WAIT_MS=2000
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
@@ -127,7 +153,7 @@ SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Switch to `PROVIDER=apify` and enable the scheduler only after controlled checks against authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
 
 ## Security boundaries
 
@@ -139,6 +165,7 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 - Every observation has a decision audit recording structured/rules/AI provenance, AI acceptance or rejection, model and trace metadata, prompt version, token usage, timing, quote, and bounded context.
 - Multi-model runs record each provider evaluation, shadow status, fallback reason, separate probability/confidence signals, and exact evidence provenance.
 - Only HTTPS source URLs are accepted.
+- Direct HTTP redirects are validated before they are followed. The local browser blocks private-network subresources and unsafe protocols.
 - Webhooks use the raw body for HMAC and a delivery ID for idempotency.
 - A provider failure never becomes an inventory fact or alert.
 - Supplier-page text is untrusted model input; the AI receives no tools, and every factual quote is verified server-side.

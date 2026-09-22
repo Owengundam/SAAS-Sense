@@ -67,6 +67,21 @@ export function validateSupplierUrl(value, supportedDomains = DEFAULT_SUPPORTED_
   return url;
 }
 
+export function validatePublicResourceUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("INVALID_RESOURCE_URL");
+  }
+  if (["data:", "blob:", "about:"].includes(url.protocol)) return url;
+  if (!["https:", "wss:"].includes(url.protocol)) throw new Error("UNSAFE_RESOURCE_PROTOCOL");
+  if (url.username || url.password) throw new Error("RESOURCE_CREDENTIALS_FORBIDDEN");
+  if (url.port && url.port !== "443") throw new Error("UNSAFE_RESOURCE_PORT");
+  if (isPrivateHostname(url.hostname)) throw new Error("PRIVATE_RESOURCE_FORBIDDEN");
+  return url;
+}
+
 export function validateSupplierRedirect(sourceUrl, resolvedUrl, supportedDomains = DEFAULT_SUPPORTED_DOMAINS) {
   const source = validateSupplierUrl(sourceUrl, supportedDomains);
   let resolved;
