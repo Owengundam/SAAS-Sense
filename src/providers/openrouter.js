@@ -22,6 +22,7 @@ export class OpenRouterEvidenceReader extends OpenAiCompatibleEvidenceReader {
       endpoint,
       fetchImpl,
       timeoutMs,
+      maxAttempts: 2,
       maxEvidenceChars,
       promptVersion,
       evidenceFormat,
