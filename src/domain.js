@@ -6,6 +6,15 @@ const DEFAULT_PREORDER_TERMS = ["preorder", "pre order", "pre-order"];
 const DEFAULT_BACKORDER_TERMS = ["backorder", "back order", "back-order", "backordered"];
 const DEFAULT_DISCONTINUED_TERMS = ["discontinued", "no longer available", "end of life"];
 const DEFAULT_LEAD_TIME_TERMS = ["ships in", "dispatches in", "lead time"];
+const DEFAULT_DEFERRED_AVAILABILITY_TERMS = [
+  "see availability",
+  "check availability",
+  "view availability",
+  "contact us for availability",
+  "contact supplier for availability",
+  "log in to see availability",
+  "login to see availability",
+];
 
 export const STATES = Object.freeze({
   IN_STOCK: "IN_STOCK",
@@ -182,6 +191,17 @@ export function classifyObservation(source, providerResult, now = new Date()) {
       reason: !providerResult.text
         ? "Missing page content"
         : `Product match ambiguous (${matchedTerms.length}/${expectedTerms.length} terms)`,
+      checkedAt: now.toISOString(),
+      factual: false,
+    };
+  }
+
+  const deferredHits = DEFAULT_DEFERRED_AVAILABILITY_TERMS.filter((term) => containsTerm(text, term));
+  if (deferredHits.length > 0) {
+    return {
+      state: STATES.UNCERTAIN,
+      confidence: 0.6,
+      reason: `Availability is deferred by “${deferredHits[0]}”`,
       checkedAt: now.toISOString(),
       factual: false,
     };
