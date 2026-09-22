@@ -59,6 +59,22 @@ test("visible availability conflict prevents stale JSON-LD from bypassing eviden
   assert.match(result.text, /Backorder/);
 });
 
+test("deferred availability copy prevents structured stock from becoming a fact", async () => {
+  const html = productHtml.replace(
+    "In stock and ready to ship.",
+    "See Availability. Related accessories are in stock.",
+  );
+  const provider = new DirectHttpProvider({
+    supportedDomains: ["supplier.test"],
+    dnsLookup: publicDns,
+    fetchImpl: async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+  const result = await provider.fetchPage(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.structuredAvailabilityDeferred, true);
+  assert.equal(result.availabilityState, null);
+});
+
 test("direct HTTP validates every supplier redirect before following it", async () => {
   let calls = 0;
   const provider = new DirectHttpProvider({

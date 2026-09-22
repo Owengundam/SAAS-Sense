@@ -45,6 +45,10 @@ function availabilityStatesFromText(value) {
   return states;
 }
 
+function hasDeferredAvailabilityText(value) {
+  return /\b(?:(?:see|check|view)\s+(?:current\s+)?availability|(?:log\s*in|login)\s+to\s+see\s+availability|contact\s+(?:us|the\s+supplier)\s+for\s+availability)\b/iu.test(String(value || ""));
+}
+
 function collectProducts(value, output = [], depth = 0) {
   if (!value || depth > 8) return output;
   if (Array.isArray(value)) {
@@ -135,6 +139,7 @@ export function extractProductPage({ html, url, runId }) {
   }
   const visibleStates = availabilityStatesFromText(text);
   const structuredState = states.size === 1 ? [...states][0] : null;
+  const structuredAvailabilityDeferred = Boolean(structuredState) && hasDeferredAvailabilityText(text);
   const structuredAvailabilityConflict = Boolean(structuredState) &&
     visibleStates.size > 0 &&
     !visibleStates.has(structuredState);
@@ -144,8 +149,9 @@ export function extractProductPage({ html, url, runId }) {
     rawPageText: text,
     pageSnapshotId: runId,
     evidenceRecords,
-    availabilityState: structuredAvailabilityConflict ? null : structuredState,
+    availabilityState: structuredAvailabilityConflict || structuredAvailabilityDeferred ? null : structuredState,
     structuredAvailabilityConflict,
+    structuredAvailabilityDeferred,
   };
 }
 

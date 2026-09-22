@@ -66,6 +66,24 @@ test("does not mistake unavailable for available", () => {
   assert.equal(result.state, STATES.OUT_OF_STOCK);
 });
 
+test("does not trust related or structured stock when the product defers availability", () => {
+  const result = classifyObservation({
+    ...source,
+    productTitle: "Aamnah Pouf",
+    supplierSku: "AMH-002",
+    matchTerms: ["AMH-002", "Aamnah"],
+  }, {
+    ok: true,
+    url: "https://supplier.test/amh-002",
+    title: "Aamnah Pouf",
+    text: "Aamnah Pouf. SKU AMH-002. See Availability. Related pillow is in stock.",
+    availabilityState: "IN_STOCK",
+  });
+  assert.equal(result.state, STATES.UNCERTAIN);
+  assert.equal(result.factual, false);
+  assert.match(result.reason, /deferred/i);
+});
+
 test("prefers structured provider availability over ambiguous page copy", () => {
   const result = classifyObservation(source, {
     ok: true,
