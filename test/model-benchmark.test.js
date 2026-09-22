@@ -75,6 +75,7 @@ test("exact-host promotion candidates require enough cases, safety, and coverage
     ...Array.from({ length: 5 }, () => row({
       domain: "abstaining.test",
       jev: { ok: true, accepted: false, effectiveState: "UNKNOWN", latencyMs: 100, usage: null },
+      deepseek: { ok: true, accepted: false, effectiveState: "UNKNOWN", latencyMs: 100, usage: null },
     })),
   ];
   const report = summarizeModelBenchmark(rows, {
@@ -82,11 +83,29 @@ test("exact-host promotion candidates require enough cases, safety, and coverage
     minimumDomains: 1,
     minimumDomainCases: 5,
     minimumFactualCoverage: 0.7,
+    datasetRole: "holdout",
   });
 
   assert.equal(report.gates.exactHostPromotionCandidates["eligible.test"], true);
   assert.equal(report.gates.exactHostPromotionCandidates["small.test"], false);
   assert.equal(report.gates.exactHostPromotionCandidates["abstaining.test"], false);
+});
+
+test("development captures can pass evaluation without becoming promotion evidence", () => {
+  const report = summarizeModelBenchmark([
+    ...Array.from({ length: 5 }, () => row({ domain: "development.test" })),
+  ], {
+    minimumScorableCases: 1,
+    minimumDomains: 1,
+    minimumDomainCases: 5,
+    minimumFactualCoverage: 0.7,
+    datasetRole: "development",
+  });
+
+  assert.equal(report.gates.evaluationPass, true);
+  assert.equal(report.gates.holdoutGatePass, false);
+  assert.equal(report.gates.promotionEligible, false);
+  assert.equal(report.gates.exactHostPromotionCandidates["development.test"], false);
 });
 
 test("unscored captures do not create misleading model accuracy", () => {
@@ -98,6 +117,35 @@ test("unscored captures do not create misleading model accuracy", () => {
   assert.equal(report.models.jev.factualCoverage, null);
   assert.equal(report.models.jev.safetyGatePass, false);
   assert.equal(report.gates.evaluationPass, false);
+});
+
+test("zero useful coverage cannot pass the layered evaluation gate", () => {
+  const unknown = { ok: true, accepted: false, effectiveState: "UNKNOWN", latencyMs: 20, usage: null };
+  const report = summarizeModelBenchmark([
+    row({ jev: unknown, deepseek: unknown }),
+  ], { minimumScorableCases: 1, minimumDomains: 1, minimumFactualCoverage: 0.7 });
+
+  assert.equal(report.gates.evaluationValid, true);
+  assert.equal(report.gates.serviceGatePass, true);
+  assert.equal(report.gates.safetyGatePass, true);
+  assert.equal(report.gates.coverageGatePass, false);
+  assert.equal(report.gates.promotionEligible, false);
+  assert.equal(report.gates.evaluationPass, false);
+});
+
+test("global service failure blocks every exact-host promotion candidate", () => {
+  const failed = { ok: false, accepted: false, effectiveState: "UNKNOWN", reason: "outage", latencyMs: 20 };
+  const report = summarizeModelBenchmark([
+    ...Array.from({ length: 5 }, () => row({ domain: "would-pass.test", deepseek: failed })),
+  ], {
+    minimumScorableCases: 1,
+    minimumDomains: 1,
+    minimumDomainCases: 5,
+    minimumFactualCoverage: 0.7,
+  });
+
+  assert.equal(report.gates.serviceGatePass, false);
+  assert.equal(report.gates.exactHostPromotionCandidates["would-pass.test"], false);
 });
 
 test("a dead model service cannot pass by returning no false facts", () => {

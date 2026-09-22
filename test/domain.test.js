@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyObservation, decideTransition, incorporateAiObservation, isStale, STATES } from "../src/domain.js";
+import {
+  classifyObservation,
+  decideTransition,
+  evaluateAiObservation,
+  incorporateAiObservation,
+  isStale,
+  STATES,
+} from "../src/domain.js";
 
 const source = {
   sku: "AFL-220",
@@ -82,6 +89,29 @@ test("does not trust related or structured stock when the product defers availab
   assert.equal(result.state, STATES.UNCERTAIN);
   assert.equal(result.factual, false);
   assert.match(result.reason, /deferred/i);
+});
+
+test("AI cannot override deferred monitored availability with a generic stock phrase", () => {
+  const page = {
+    ok: true,
+    url: "https://supplier.test/amh-002",
+    title: "Aamnah AMH-002 Pouf",
+    text: "AMH-002. See Availability. Related products. In Stock.",
+  };
+  const deterministic = classifyObservation({ ...source, matchTerms: ["AMH-002"] }, page);
+  const evaluated = evaluateAiObservation(deterministic, page, {
+    ok: true,
+    provider: "siliconflow",
+    productMatch: "MATCH",
+    availability: "IN_STOCK",
+    evidenceQuote: "In Stock",
+    confidence: 0.95,
+  });
+
+  assert.equal(evaluated.accepted, false);
+  assert.equal(evaluated.influencedDecision, true);
+  assert.equal(evaluated.observation.state, STATES.UNCERTAIN);
+  assert.match(evaluated.rejectionReason, /deferred/);
 });
 
 test("prefers structured provider availability over ambiguous page copy", () => {

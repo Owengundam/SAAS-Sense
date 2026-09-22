@@ -54,13 +54,17 @@ export class CascadingEvidenceReader {
       return {
         ...primaryResult,
         readerMode: "JEV_PRIMARY",
+        fallbackUsed: false,
         modelEvaluations: primaryEvaluations,
         aiAttempts: attempts(primaryResult),
       };
     }
 
-    const fallbackInput = primaryResult.fallbackEvidenceText
-      ? { ...providerResult, text: primaryResult.fallbackEvidenceText }
+    // Preserve the complete captured page for conflict detection and quote
+    // verification. The primary model may prioritize a source span, but its
+    // decision, confidence, and interpretation are never passed as evidence.
+    const fallbackInput = primaryResult.evidenceReference
+      ? { ...providerResult, preferredEvidenceReferences: [primaryResult.evidenceReference] }
       : providerResult;
     const fallbackResult = await this.fallback.analyze(source, fallbackInput);
     const fallbackQuote = String(fallbackResult.evidenceQuote || "");
@@ -83,6 +87,7 @@ export class CascadingEvidenceReader {
       ...fallbackResult,
       evidenceReference: inheritedReference,
       readerMode: "JEV_PRIMARY",
+      fallbackUsed: true,
       fallbackFrom: primaryResult.provider || "typesafe",
       fallbackReason: primaryResult.reasonCode || primaryResult.error || "PRIMARY_INCONCLUSIVE",
       modelEvaluations: [

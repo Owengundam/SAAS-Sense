@@ -10,10 +10,20 @@ on:
       - src/evidence.js
       - src/model-benchmark.js
       - src/providers/direct-http.js
+      - src/providers/evidence-readers.js
       - src/providers/jev.js
       - src/providers/page-content.js
       - src/providers/siliconflow.js
   workflow_dispatch:
+    inputs:
+      evaluation_mode:
+        description: Run the production cascade only, or include legacy/shared parallel comparison
+        required: true
+        type: choice
+        default: both
+        options:
+          - production
+          - both
 
 permissions:
   contents: read
@@ -35,6 +45,10 @@ jobs:
       SILICONFLOW_ENDPOINT: https://api.siliconflow.com/v1/chat/completions
       REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-validation-25.json
       REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-model-evaluation.json
+      REAL_SUPPLIER_DATASET_ROLE: development
+      # Pull requests run only the production path (the same upper request bound
+      # as the previous gate). The extra old-vs-new comparison is manual opt-in.
+      REAL_SUPPLIER_EVAL_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.evaluation_mode || 'production' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,19 +63,19 @@ jobs:
           curl --fail --silent --show-error --output /dev/null \
             --header "Authorization: Bearer ${SILICONFLOW_API_KEY}" \
             https://api.siliconflow.com/v1/models
-      - name: Evaluate JEV and DeepSeek on shared captures
+      - name: Evaluate the production cascade and shared-input comparison
         run: npm run evaluate:real-suppliers -- --live
-      - name: Enforce corpus and unsafe-acceptance gates
+      - name: Enforce layered production-readiness gates
         run: |
           jq '{models: .summary.models, policies: .summary.policies, gates: .summary.gates}' "$REAL_SUPPLIER_EVAL_OUTPUT"
           jq -e '
-            .summary.scorableCases >= 20 and
-            .summary.domainCount >= 3 and
-            .summary.models.jev.failures == 0 and
-            .summary.models.deepseek.failures == 0 and
-            .summary.models.jev.falseAccepted == 0 and
-            .summary.policies.jevCascade.falseFactual == 0 and
-            .summary.gates.evaluationPass == true
+            .summary.gates.evaluationValid == true and
+            .summary.gates.serviceGatePass == true and
+            .summary.gates.safetyGatePass == true and
+            .summary.gates.coverageGatePass == true and
+            .summary.gates.evaluationPass == true and
+            .summary.gates.holdoutGatePass == false and
+            .summary.gates.promotionEligible == false
           ' "$REAL_SUPPLIER_EVAL_OUTPUT"
       - name: Upload raw model evaluation report
         if: always()

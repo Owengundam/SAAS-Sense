@@ -34,8 +34,17 @@ function traceCount(selected, modelName) {
   }, 0);
 }
 
+function frequencies(values) {
+  return Object.fromEntries([...values.reduce((counts, value) => {
+    const key = value || "UNSPECIFIED";
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map())].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])));
+}
+
 export function summarizeModel(rows, modelName) {
   const selected = rows.filter((row) => row.scorable);
+  const invoked = selected.filter((row) => !row[modelName]?.skipped);
   const expectedFactual = selected.filter((row) => row.expectedFactual !== false);
   const acceptedCorrect = selected.filter((row) =>
     row[modelName]?.accepted && row[modelName]?.effectiveState === expectedState(row)).length;
@@ -47,9 +56,11 @@ export function summarizeModel(rows, modelName) {
   const latencies = selected.map((row) => row[modelName]?.latencyMs).filter(Number.isFinite);
 
   return {
-    evaluations: selected.length,
-    succeeded: selected.filter((row) => row[modelName]?.ok).length,
-    failures: selected.filter((row) => !row[modelName]?.ok).length,
+    eligibleCases: selected.length,
+    evaluations: invoked.length,
+    skipped: selected.length - invoked.length,
+    succeeded: invoked.filter((row) => row[modelName]?.ok).length,
+    failures: invoked.filter((row) => !row[modelName]?.ok).length,
     acceptedCorrect,
     falseAccepted,
     safeAbstentions,
@@ -61,6 +72,13 @@ export function summarizeModel(rows, modelName) {
     inputTokens: sumUsage(selected, modelName, "inputTokens"),
     outputTokens: sumUsage(selected, modelName, "outputTokens"),
     traceCount: traceCount(selected, modelName),
+    fallbackUsed: selected.filter((row) => row[modelName]?.fallbackUsed).length,
+    rejectionReasons: frequencies(selected
+      .filter((row) => !row[modelName]?.accepted && !row[modelName]?.skipped)
+      .map((row) => row[modelName]?.reason)),
+    skipReasons: frequencies(selected
+      .filter((row) => row[modelName]?.skipped)
+      .map((row) => row[modelName]?.reason)),
     costUsd: null,
   };
 }
@@ -91,18 +109,23 @@ export function summarizePolicy(rows, policyName) {
 }
 
 function summarizeSelection(rows) {
+  const modelNames = ["jev", "deepseek", "deepseekLegacy", "deepseekShared", "productionCascade"]
+    .filter((name) => rows.some((row) => row[name]));
+  const policyNames = [
+    "deepseekAuthoritative",
+    "jevCascade",
+    "parallelSimulatedJevCascade",
+    "legacyDeepseek",
+    "sharedDeepseek",
+    "productionCascade",
+    "productionFinal",
+    "strictAgreement",
+  ].filter((name) => rows.some((row) => row.policies && Object.hasOwn(row.policies, name)));
   return {
     cases: rows.length,
     scorableCases: rows.filter((row) => row.scorable).length,
-    models: {
-      jev: summarizeModel(rows, "jev"),
-      deepseek: summarizeModel(rows, "deepseek"),
-    },
-    policies: {
-      deepseekAuthoritative: summarizePolicy(rows, "deepseekAuthoritative"),
-      jevCascade: summarizePolicy(rows, "jevCascade"),
-      strictAgreement: summarizePolicy(rows, "strictAgreement"),
-    },
+    models: Object.fromEntries(modelNames.map((name) => [name, summarizeModel(rows, name)])),
+    policies: Object.fromEntries(policyNames.map((name) => [name, summarizePolicy(rows, name)])),
   };
 }
 
@@ -111,6 +134,7 @@ export function summarizeModelBenchmark(rows, {
   minimumDomains = 3,
   minimumDomainCases = 5,
   minimumFactualCoverage = 0.7,
+  datasetRole = "development",
 } = {}) {
   const scorable = rows.filter((row) => row.scorable);
   const domains = [...new Set(scorable.map((row) => row.domain).filter(Boolean))];
@@ -123,12 +147,36 @@ export function summarizeModelBenchmark(rows, {
     domainCount: domains.length,
     categoryCount: categories.length,
     labelEvidenceMatches: rows.filter((row) => row.capture?.labelEvidencePresent === true).length,
+    labelEvidenceBound: rows.filter((row) => row.capture?.labelEvidenceBound === true).length,
     byDomain: {},
+    byExpectedState: {},
   };
 
   for (const domain of domains) {
     summary.byDomain[domain] = summarizeSelection(rows.filter((row) => row.domain === domain));
   }
+  for (const state of [...new Set(scorable.map((row) => row.expected))]) {
+    summary.byExpectedState[state] = summarizeSelection(rows.filter((row) => row.expected === state));
+  }
+
+  const productionModel = summary.models.productionCascade || summary.models.jev;
+  const comparisonFallback = summary.models.deepseekShared || summary.models.deepseek;
+  const serviceModels = summary.models.productionCascade
+    ? [summary.models.productionCascade]
+    : [summary.models.jev, comparisonFallback].filter(Boolean);
+  const promotionPolicyName = summary.policies.productionFinal
+    ? "productionFinal"
+    : summary.policies.productionCascade
+      ? "productionCascade"
+      : "jevCascade";
+  const promotionPolicy = summary.policies[promotionPolicyName];
+  const evaluationValid = summary.scorableCases >= minimumScorableCases && summary.domainCount >= minimumDomains;
+  const serviceGatePass = serviceModels.length > 0 && serviceModels.every((model) => model.failures === 0);
+  const safetyGatePass = Boolean(productionModel?.safetyGatePass && promotionPolicy?.safetyGatePass);
+  const coverageGatePass = Number.isFinite(promotionPolicy?.factualCoverage) &&
+    promotionPolicy.factualCoverage >= minimumFactualCoverage;
+  const holdoutGatePass = datasetRole === "holdout";
+  const evaluationPass = evaluationValid && serviceGatePass && safetyGatePass && coverageGatePass;
 
   summary.gates = {
     thresholds: {
@@ -137,20 +185,30 @@ export function summarizeModelBenchmark(rows, {
       minimumDomainCases,
       minimumFactualCoverage,
     },
-    corpusPass: summary.scorableCases >= minimumScorableCases && summary.domainCount >= minimumDomains,
-    modelServicePass: summary.models.jev.failures === 0 && summary.models.deepseek.failures === 0,
-    jevSafetyPass: summary.models.jev.safetyGatePass,
-    cascadeSafetyPass: summary.policies.jevCascade.safetyGatePass,
+    datasetRole,
+    evaluationValid,
+    serviceGatePass,
+    safetyGatePass,
+    coverageGatePass,
+    holdoutGatePass,
+    promotionEligible: evaluationPass && holdoutGatePass,
+    coveragePolicy: promotionPolicyName,
+    corpusPass: evaluationValid,
+    modelServicePass: serviceGatePass,
+    jevSafetyPass: Boolean(summary.models.jev?.safetyGatePass),
+    cascadeSafetyPass: Boolean((summary.policies.productionCascade || summary.policies.jevCascade)?.safetyGatePass),
     exactHostPromotionCandidates: Object.fromEntries(domains.map((domain) => {
       const domainSummary = summary.byDomain[domain];
-      const eligible = domainSummary.scorableCases >= minimumDomainCases &&
-        domainSummary.models.jev.falseAccepted === 0 &&
-        domainSummary.policies.jevCascade.falseFactual === 0 &&
-        domainSummary.models.jev.factualCoverage >= minimumFactualCoverage;
+      const domainModel = domainSummary.models.productionCascade || domainSummary.models.jev;
+      const domainPolicy = domainSummary.policies[promotionPolicyName];
+      const eligible = evaluationValid && serviceGatePass && safetyGatePass && holdoutGatePass &&
+        domainSummary.scorableCases >= minimumDomainCases &&
+        domainModel?.falseAccepted === 0 &&
+        domainPolicy?.falseFactual === 0 &&
+        domainPolicy?.factualCoverage >= minimumFactualCoverage;
       return [domain, eligible];
     })),
   };
-  summary.gates.evaluationPass = summary.gates.corpusPass && summary.gates.modelServicePass &&
-    summary.gates.jevSafetyPass && summary.gates.cascadeSafetyPass;
+  summary.gates.evaluationPass = evaluationPass;
   return summary;
 }

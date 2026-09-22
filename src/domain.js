@@ -129,6 +129,17 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     }, accepted: false, rejectionReason: "Evidence quote was missing or could not be verified", influencedDecision: true };
   }
 
+  // A captured page that defers the monitored product's availability does not
+  // become factual because a generic stock phrase for a related card appears
+  // elsewhere in the same capture. A later provider must capture product-bound
+  // availability before this safety condition can be lifted.
+  if (!deterministic.factual && String(deterministic.reason).startsWith("Availability is deferred by")) return {
+    observation: deterministic,
+    accepted: false,
+    rejectionReason: "Captured availability was deferred for the monitored product",
+    influencedDecision: true,
+  };
+
   const confidence = Math.min(Number(aiResult.confidence) || 0, 0.97);
   if (confidence < 0.8) {
     return { observation: {

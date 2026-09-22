@@ -1,10 +1,67 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSharedEvidencePackage,
+  evidenceContextForReference,
+  evaluateLabelEvidenceBinding,
   prepareEvidenceCandidates,
   verifyEvidenceReference,
   prepareEvidenceBundle,
 } from "../src/evidence.js";
+
+test("evidence context always preserves the complete selected span", () => {
+  const selectedText = `${"x".repeat(560)} OUT OF STOCK`;
+  const text = `${"leading ".repeat(60)}${selectedText}${" trailing".repeat(60)}`;
+  const offsetStart = text.indexOf(selectedText);
+  const reference = {
+    origin: "PAGE_TEXT",
+    snapshotId: "long-selection",
+    offsetStart,
+    offsetEnd: offsetStart + selectedText.length,
+    text: selectedText,
+  };
+  const context = evidenceContextForReference({
+    rawPageText: text,
+    evidenceRecords: [{ origin: "PAGE_TEXT", snapshotId: "long-selection", text }],
+  }, reference, 700);
+  assert.match(context, /OUT OF STOCK/);
+  assert.ok(context.includes(selectedText));
+});
+
+test("shared evidence package separates expected identity and preserves provenance and conflicts", () => {
+  const text = "SKU TARGET-7. Backordered for 2 weeks.\n\nRelated shade. In stock.";
+  const source = { productTitle: "Target Lamp", supplierSku: "TARGET-7", matchTerms: ["TARGET-7"] };
+  const evidencePackage = buildSharedEvidencePackage(source, {
+    title: "Target Lamp - Supplier",
+    url: "https://supplier.test/target-7",
+    runId: "snapshot-7",
+    rawPageText: text,
+  });
+  assert.equal(evidencePackage.expectedProduct.supplierSku, "TARGET-7");
+  assert.equal(evidencePackage.observedPage.title, "Target Lamp - Supplier");
+  assert.equal(evidencePackage.observedPage.snapshotId, "snapshot-7");
+  assert.equal(evidencePackage.evidence[0].sourceUrl, "https://supplier.test/target-7");
+  assert.match(evidencePackage.evidence[0].text, /TARGET-7/);
+  assert.deepEqual(new Set(evidencePackage.potentialConflicts.map((item) => item.state)),
+    new Set(["BACKORDERED", "IN_STOCK"]));
+  assert.equal("confidence" in evidencePackage, false);
+});
+
+test("generic label evidence is scorable only when bound to monitored identity", () => {
+  const testCase = {
+    labelEvidence: "In stock",
+    source: { supplierSku: "TARGET-7", matchTerms: ["TARGET-7"] },
+  };
+  const unrelated = evaluateLabelEvidenceBinding(testCase, {
+    text: "TARGET-7 details.\n\nRelated shade. In stock.",
+  });
+  const bound = evaluateLabelEvidenceBinding(testCase, {
+    text: "TARGET-7. In stock.",
+  });
+  assert.equal(unrelated.present, true);
+  assert.equal(unrelated.bound, false);
+  assert.equal(bound.bound, true);
+});
 
 test("JEV windows preserve identity, contradictions and exact source offsets", () => {
   const text = "Arc Lamp\nSKU SUP-123\nIn stock. Currently unavailable.\n\nRelated shade\nSold out.";
