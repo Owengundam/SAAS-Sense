@@ -70,3 +70,21 @@ test("structured evidence is verified by original field path rather than synthes
   assert.equal(verifyEvidenceReference(providerResult, candidate, "https://schema.org/InStock"), true);
   assert.equal(verifyEvidenceReference(providerResult, { ...candidate, text: "In stock" }, "In stock"), false);
 });
+
+test("bounded JEV retrieval keeps exact-variant availability ahead of unrelated variants", () => {
+  const distractors = Array.from({ length: 140 }, (_, index) =>
+    `Related finish SKU SS-OTHER-${index}. ${index % 2 ? "In stock." : "Within 4 weeks."}`);
+  const target = "Siena Large Flush Mount\nSKU SS 4016AN-WG\n47 in stock, ships by 09.18.26.";
+  const text = [...distractors, target].join("\n\n");
+  const page = { rawPageText: text, runId: "mixed-variant-page" };
+  const { candidates, truncated } = prepareEvidenceBundle(page, {
+    groupAdjacent: true,
+    maxCandidates: 5,
+    identityTerms: ["SS 4016AN-WG", "Siena Large Flush Mount in Antique Nickel"],
+  });
+
+  assert.equal(truncated, true);
+  assert.match(candidates[0].text, /SS 4016AN-WG/);
+  assert.match(candidates[0].text, /47 in stock/);
+  assert.equal(verifyEvidenceReference(page, candidates[0], candidates[0].text), true);
+});

@@ -1,8 +1,35 @@
 const DEFAULT_MAX_CANDIDATES = 120;
 const DEFAULT_MAX_CANDIDATE_CHARS = 600;
+const AVAILABILITY_PATTERN = /\b(?:in\s*stock|out\s*of\s*stock|sold\s*out|unavailable|available\s+now|ready\s*to\s*ship|pre[ -]?order(?:ed)?|back[ -]?order(?:ed)?|discontinued|end\s+of\s+life|ships?\s+(?:in|within|by)|dispatches?\s+(?:in|within|by)|lead\s+time|within\s+\d+\s+(?:business\s+)?(?:day|week|month)s?)\b/iu;
 
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function searchable(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function prioritizeForIdentity(candidates, identityTerms) {
+  const terms = [...new Set((identityTerms || []).map(searchable).filter((term) => term.length >= 2))];
+  if (!terms.length) return candidates;
+  return candidates
+    .map((candidate, index) => {
+      const text = searchable(candidate.text);
+      const identityHits = terms.filter((term) => text.includes(term)).length;
+      const availability = AVAILABILITY_PATTERN.test(candidate.text) ||
+        /availability|inventory|stock/i.test(candidate.path || "");
+      return {
+        candidate,
+        index,
+        score: identityHits * 100 + (availability ? 10 : 0),
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ candidate }) => candidate);
 }
 
 function exactTrimmedRange(text, start, end) {
@@ -91,6 +118,7 @@ export function prepareEvidenceBundle(providerResult, {
   maxCandidates = DEFAULT_MAX_CANDIDATES,
   maxCandidateChars = DEFAULT_MAX_CANDIDATE_CHARS,
   groupAdjacent = false,
+  identityTerms = [],
 } = {}) {
   const records = Array.isArray(providerResult?.evidenceRecords)
     ? providerResult.evidenceRecords
@@ -133,8 +161,9 @@ export function prepareEvidenceBundle(providerResult, {
     seen.add(key);
     unique.push({ ...candidate });
   }
-  const truncated = unique.length > maxCandidates;
-  const selected = unique.slice(0, maxCandidates).map((candidate, index) => ({
+  const prioritized = prioritizeForIdentity(unique, identityTerms);
+  const truncated = prioritized.length > maxCandidates;
+  const selected = prioritized.slice(0, maxCandidates).map((candidate, index) => ({
     ...candidate,
     id: `${candidate.origin === "PAGE_TEXT" ? "P" : "S"}${String(index + 1).padStart(3, "0")}`,
   }));
