@@ -13,8 +13,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Start with public, merchant-authorized supplier product pages only.
 - Sell the finished confidence workflow, not “scraping” or Actor access.
 - Read-only pilot; no Shopify product, price, or inventory mutation.
-- Deterministic matching remains the base layer; SiliconFlow DeepSeek reviews captured evidence only when Apify omits structured availability, and AI failure falls back to the deterministic result.
-- JEV is implemented behind explicit shadow and primary modes. DeepSeek remains the default and becomes a reason-specific backup only after JEV is deliberately enabled.
+- Deterministic matching remains the base layer; OpenRouter DeepSeek V4.1 Flash reviews captured evidence only when Apify omits structured availability, and AI failure falls back to the deterministic result. SiliconFlow remains an explicit rollback provider.
+- JEV is implemented behind explicit shadow and primary modes. OpenRouter-hosted DeepSeek remains the default and becomes a reason-specific backup only after JEV is deliberately enabled.
 - Two consecutive high-confidence observations are required to confirm a change.
 - A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
@@ -41,7 +41,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Installed and opened the authenticated embedded app on `suppliersignal-test.myshopify.com`.
 - Configured the live Apify provider and completed one $0.01 controlled run; missing availability remained uncertain as designed.
 - Added inspectable evidence, corrected availability vocabulary, source editing/deletion, and fast-confirmation scheduling logic.
-- Added a constrained `deepseek-ai/DeepSeek-V4-Flash` evidence reader through SiliconFlow, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
+- Added provider-independent constrained evidence readers, now defaulting to pinned OpenRouter model `deepseek/deepseek-v4.1-flash`, with SiliconFlow rollback, exact-quote verification, prompt-injection isolation, and richer Apify additional-property evidence.
 - Added a two-stage JEV reader, exact evidence-candidate selection, structured/page-text provenance, provider-specific probability gates, shadow evaluation, reason-specific DeepSeek fallback, and multi-model audit records.
 - Added fresh direct HTTP capture, optional self-hosted Chromium rendering, evidence-based escalation to Apify, per-tier latency/outcome auditing, and a bounded live benchmark harness.
 - Hardened the planned browser runtime with Debian Bookworm, a matching bundled Chromium, lazy process reuse, fresh contexts, concurrency one, idle shutdown, restart backoff, service-worker blocking, DNS checks, and terminal security failures.
@@ -71,7 +71,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 - Partner API subscription query or app-plan selection.
 - Direct-capture and cascade accuracy, timeout behavior, escalation rate, Railway compute, and cost across multiple real supplier domains. The local cross-domain attempt could not resolve public DNS. Railway does not currently document the seccomp/user-namespace control required for sandboxed Chromium, so its browser tier remains disabled there.
-- Live SiliconFlow request compatibility, latency, extraction accuracy, and measured token cost.
+- Live OpenRouter request compatibility, latency, extraction accuracy, and measured token cost for DeepSeek V4.1 Flash.
 - Live TypeSafe request compatibility, JEV accuracy/calibration, latency, token usage, and fallback rate on saved and real supplier captures.
 - Scheduling, email delivery, or production observability.
 - App Store review, legal review, merchant interviews, willingness to pay, or repeated use.

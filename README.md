@@ -10,7 +10,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 - Supplier source onboarding with SKU, title, URL, and match terms.
 - Mock provider with realistic fixtures; no account or paid runs required.
 - Apify E-commerce Scraping Tool adapter behind a replaceable interface.
-- Deterministic classification plus a constrained SiliconFlow/DeepSeek evidence reader when structured availability is absent.
+- Deterministic classification plus a constrained OpenRouter/DeepSeek evidence reader when structured availability is absent.
 - Distinct available-now, preorder, backordered, out-of-stock, discontinued, lead-time, uncertain, and source-error states.
 - Two-check confirmation before a factual state-change alert, with a due time for a fast 20-minute confirmation.
 - Stale-result visibility, source links, timestamps, evidence excerpts, classification reasons, and an uncertainty queue.
@@ -95,13 +95,23 @@ The primary adapter requests one structured product detail, including additional
 
 Use `npm run benchmark:fetchers -- --live` to compare fresh direct HTTP, self-hosted Chromium, the full cascade, and optionally Apify against up to 50 labeled cases. The harness repeats each case three times by default and reports capture success, environment failures, usable evidence, score status, an explicit accuracy numerator/denominator, median/p95 successful-capture latency, escalation attempts, and Apify cost when the run API exposes it. Accuracy is `null` when no usable capture contains current label evidence; provider or DNS failures are never scored as model errors. Configure the fixture, methods, repetitions, and output through `FETCH_BENCHMARK_FIXTURE`, `FETCH_BENCHMARK_METHODS`, `FETCH_BENCHMARK_RUNS`, and `FETCH_BENCHMARK_OUTPUT`.
 
-### SiliconFlow DeepSeek — implemented; live verification pending
+### DeepSeek evidence fallback — OpenRouter default; live verification pending
 
-When Apify does not return a structured availability state, SupplierSignal can send a bounded, provider-independent evidence package to `deepseek-ai/DeepSeek-V4-Flash` through SiliconFlow. Expected product identity is kept separate from the observed title, resolved URL, snapshot provenance, complete selected spans, nearby context, potential conflicts, and truncation metadata. The request disables thinking, exposes no tools, and requires a strict JSON-schema response. A factual AI result is accepted only when the model matches the expected product, confidence is at least 0.8, and its verbatim evidence quote exists in the captured page text. Rules-versus-AI conflicts remain uncertain, model failures fall back to deterministic classification, and the two-check transition rule still applies.
+When Apify does not return a structured availability state, SupplierSignal can send a bounded, provider-independent evidence package to pinned model `deepseek/deepseek-v4.1-flash` through OpenRouter. Expected product identity is kept separate from the observed title, resolved URL, snapshot provenance, complete selected spans, nearby context, potential conflicts, and truncation metadata. The request disables reasoning, exposes no tools, requires a route that accepts the strict JSON-schema parameter, and then validates the response again in application code. A factual AI result is accepted only when the model matches the expected product, confidence is at least 0.8, and its verbatim evidence quote exists in the captured page text. Rules-versus-AI conflicts remain uncertain, model failures fall back to deterministic classification, and the two-check transition rule still applies.
 
 Configure these only through the deployment host's secret interface:
 
 ```text
+AI_FALLBACK_PROVIDER=openrouter
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
+OPENROUTER_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+```
+
+SiliconFlow remains an explicit rollback option; it is also selected automatically for compatibility when it is the only configured fallback credential:
+
+```text
+AI_FALLBACK_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=...
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
@@ -111,7 +121,7 @@ SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 
 JEV uses two explicitly composed stages. The first selects an exact captured evidence candidate and checks page identity/consistency. Code then retrieves that candidate and a second request classifies its product scope and availability. JEV's native confidence and winning-option probability are stored separately; they are not treated as interchangeable with DeepSeek's generated confidence.
 
-DeepSeek remains authoritative by default. Available modes are:
+The configured DeepSeek provider remains authoritative by default. Available modes are:
 
 ```text
 AI_READER_MODE=deepseek     # current behavior; no JEV calls
@@ -148,8 +158,9 @@ BROWSER_IDLE_TIMEOUT_MS=120000
 BROWSER_RESTART_BACKOFF_MS=5000
 BROWSER_CHROMIUM_SANDBOX=true
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
-SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
-SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
+AI_FALLBACK_PROVIDER=openrouter
+OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash
+OPENROUTER_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
 AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
 JEV_PRIMARY_DOMAINS=
@@ -159,7 +170,7 @@ SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
 
-Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `SILICONFLOW_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
+Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `OPENROUTER_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Keep `SILICONFLOW_API_KEY` only if you want the explicit rollback provider. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
 
 The default `railway` image target uses Debian Bookworm without a bundled browser. This keeps Railway builds and deployments lean while `SELF_HOSTED_BROWSER_ENABLED=false` routes captures through direct HTTP with Apify as the managed fallback.
 
