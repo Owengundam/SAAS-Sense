@@ -22,6 +22,7 @@ export class OpenRouterEvidenceReader extends OpenAiCompatibleEvidenceReader {
       endpoint,
       fetchImpl,
       timeoutMs,
+      maxAttempts: 2,
       maxEvidenceChars,
       promptVersion,
       evidenceFormat,
@@ -30,7 +31,11 @@ export class OpenRouterEvidenceReader extends OpenAiCompatibleEvidenceReader {
       apiKeyName: "OPENROUTER_API_KEY",
       requestOptions: {
         reasoning: { enabled: false },
-        provider: { require_parameters: true },
+        provider: {
+          require_parameters: true,
+          sort: "latency",
+          preferred_max_latency: { p90: 5 },
+        },
       },
       extraHeaders: {
         ...(httpReferer ? { "HTTP-Referer": httpReferer } : {}),

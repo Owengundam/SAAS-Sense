@@ -114,6 +114,36 @@ test("AI cannot override deferred monitored availability with a generic stock ph
   assert.match(evaluated.rejectionReason, /deferred/);
 });
 
+test("AI cannot choose one side of conflicting monitored-product availability", () => {
+  const page = {
+    ok: true,
+    url: "https://supplier.test/67895",
+    title: "3M 67895 Microfinishing Disc",
+    text: "3M 67895 Microfinishing Disc. Sold out. Backorder: Usually ships in 10-20 days.",
+  };
+  const deterministic = classifyObservation({
+    ...source,
+    productTitle: "3M 67895 Microfinishing Disc",
+    supplierSku: "67895",
+    matchTerms: ["67895"],
+  }, page);
+  const evaluated = evaluateAiObservation(deterministic, page, {
+    ok: true,
+    provider: "openrouter",
+    productMatch: "MATCH",
+    availability: "OUT_OF_STOCK",
+    evidenceQuote: "Sold out",
+    confidence: 0.95,
+  });
+
+  assert.equal(deterministic.factual, false);
+  assert.match(deterministic.reason, /Conflicting availability terms/);
+  assert.equal(evaluated.accepted, false);
+  assert.equal(evaluated.influencedDecision, true);
+  assert.equal(evaluated.observation.state, STATES.UNCERTAIN);
+  assert.match(evaluated.rejectionReason, /conflicting factual states/);
+});
+
 test("prefers structured provider availability over ambiguous page copy", () => {
   const result = classifyObservation(source, {
     ok: true,

@@ -140,6 +140,17 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     influencedDecision: true,
   };
 
+  // A model may confidently quote one side of a real product-bound conflict
+  // while ignoring the other (for example, "Sold out" beside an explicit
+  // backorder lead time). Exact-quote verification proves that the quote is
+  // present, not that selecting it over the contradictory fact is safe.
+  if (!deterministic.factual && String(deterministic.reason).startsWith("Conflicting availability terms:")) return {
+    observation: deterministic,
+    accepted: false,
+    rejectionReason: "Captured availability evidence contains conflicting factual states",
+    influencedDecision: true,
+  };
+
   const confidence = Math.min(Number(aiResult.confidence) || 0, 0.97);
   if (confidence < 0.8) {
     return { observation: {
