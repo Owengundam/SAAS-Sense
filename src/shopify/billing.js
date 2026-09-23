@@ -15,6 +15,6 @@ export function hostedPricingUrl({ shop, appHandle }) {
 // from the Partner API. The local pilot injects its own tenant state instead.
 export async function requireActiveSubscription({ fetchActiveSubscription, shopId, appId }) {
   const subscription = await fetchActiveSubscription({ shopId, appId });
-  if (!subscription || subscription.status !== "ACTIVE") throw new Error("SUBSCRIPTION_REQUIRED");
+  if (!subscription) throw new Error("SUBSCRIPTION_REQUIRED");
   return subscription;
 }

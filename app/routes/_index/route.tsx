@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { Form, redirect, useLoaderData } from "react-router";
+import { Form, redirect } from "react-router";
 import styles from "./styles.module.css";
 
 export const meta: MetaFunction = () => [
@@ -13,11 +13,10 @@ export const meta: MetaFunction = () => [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   if (url.searchParams.get("shop")) throw redirect(`/app?${url.searchParams.toString()}`);
-  return { introOfferEnabled: process.env.SHOPIFY_INTRO_OFFER_ENABLED === "true" };
+  return null;
 };
 
 export default function Landing() {
-  const { introOfferEnabled } = useLoaderData<typeof loader>();
   return (
     <main className={styles.page}>
       <nav className={styles.nav} aria-label="Main navigation">
@@ -38,7 +37,7 @@ export default function Landing() {
             <input id="shop-domain" name="shop" placeholder="your-store.myshopify.com" autoComplete="url" required />
             <button>Connect your store</button>
           </Form>
-          <p className={styles.formNote}>{introOfferEnabled ? "Intro offer: $19/month for your first 3 billing cycles, then $49/month" : "$49/month"} · 25 supplier links · assisted setup · cancel anytime</p>
+          <p className={styles.formNote}>Founding price: $19/month · 25 supplier links · assisted setup · cancel anytime</p>
           <div className={styles.points}>
             <span>Read-only</span><span>Daily checks</span><span>Evidence included</span><span>Safe uncertainty</span>
           </div>
@@ -83,14 +82,8 @@ export default function Landing() {
       <section className={styles.pricing} id="pricing">
         <div>
           <span className={styles.eyebrow}>Founding pilot</span>
-          {introOfferEnabled ? (
-            <>
-              <h2><del className={styles.regularPrice}>$49</del> $19 <small>/ month</small></h2>
-              <p>Intro price for your first 3 monthly billing cycles. Then $49/month unless you cancel. This is a paid introductory offer, not a free trial.</p>
-            </>
-          ) : (
-            <><h2>$49 <small>/ month</small></h2><p>One simple plan while we work closely with the first merchants.</p></>
-          )}
+          <h2><del className={styles.regularPrice}>$49</del> $19 <small>/ month</small></h2>
+          <p>Founding price guaranteed for your first 6 months. We will give advance notice before any later price change. Cancel anytime.</p>
         </div>
         <ul>
           <li>25 supplier product links</li>

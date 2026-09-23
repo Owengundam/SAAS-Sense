@@ -4,7 +4,7 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 
 ## Pilot plan
 
-- Proposed introductory price: **$19/month for the first three monthly billing cycles, then $49/month**. The offer is not yet live in billing.
+- Founding price: **$19/month**, guaranteed for each merchant's first six months. The offer is not live until its Shopify plan is configured.
 - 25 monitored source links.
 - Nominal cadence: once daily.
 - Hard cap: 1,500 checks/month.
@@ -32,19 +32,19 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 
 | Item | Low use | Expected use | Heavy capped use |
 | --- | ---: | ---: | ---: |
-| Revenue | $49.00 | $49.00 | $49.00 |
+| Revenue | $19.00 | $19.00 | $19.00 |
 | Checks/pages | 500 | 750 | 1,500 |
 | Extraction | Unmeasured cascade | Unmeasured cascade | Unmeasured cascade |
 | Apify account allocation | $1.90 | $1.90 | $1.90 |
 | Hosting/database | $3.00 | $4.00 | $6.00 |
 | Storage/observability/email | $0.50 | $0.75 | $1.00 |
-| Platform/payment reserve | $7.35 | $7.35 | $7.35 |
+| Platform/payment reserve | $2.85 | $2.85 | $2.85 |
 | Support allowance | $6.00 | $10.00 | $20.00 |
 | **Contribution margin** | **Pending benchmark** | **Pending benchmark** | **Pending benchmark** |
 
 The old extraction-cost row was based on an outdated Apify event price and cannot support a margin claim. Recalculate the contribution margin after measuring cascade escalation and Railway compute. If measured browser cost or support is high, reduce the check cap, restrict supported domains, charge a source-specific premium, or abandon the configuration.
 
-The $49 scenarios above model only the standard rate, not the introductory cycles. During each $19 cycle, the 15% platform reserve becomes $2.85 instead of $7.35; with all other assumed costs equal, contribution falls by $25.50/month per merchant relative to the $49 scenario. Three introductory cycles reduce gross receipts by $90 per merchant. A weekly review is excluded from the introductory offer to control support costs.
+At $19, the expected $10 support allowance alone consumes more than half of revenue. The founding plan therefore excludes recurring weekly reviews and bespoke integrations. If measured recurring cost exceeds $9.50 per merchant, reduce the check cap or supported-source scope before adding customers.
 
 ## AI cost boundary
 
@@ -61,7 +61,7 @@ Evidence sent to OpenRouter is capped at 12,000 characters, reasoning is disable
 
 ## $1,000 MRR target
 
-At $49/month, 21 active pilot-plan merchants produce $1,029 gross MRR. Under the expected scenario, they produce roughly **$511/month contribution** before founder labor, legal/accounting, taxes, acquisition cost, refunds, and general overhead. That is not $1,000 profit.
+At $19/month, 53 active merchants produce $1,007 gross MRR. Contribution remains unknown until cascade and support costs are measured; $1,000 MRR is not $1,000 profit.
 
 The commercial target is useful only if churn and support are controlled. A reasonable continuation gate is at least 50% contribution margin after the first two onboarding-heavy months, with fewer than 90 support minutes per merchant per month.
 

@@ -10,7 +10,7 @@ SupplierSignal checks the supplier product pages behind your Shopify catalog, ve
 
 ### Pilot offer
 
-**Introductory offer: $19/month for the first three monthly billing cycles, then $49/month.** The regular $49 is displayed with a strikethrough. This is a paid introductory price, not a free trial. Do not use this offer in outreach until Shopify checkout and subscription enforcement support the first three discounted cycles and the later $49 charge.
+**Founding Pilot: $19/month, with the price guaranteed for the merchant's first six months.** The regular target price of $49 is displayed with a strikethrough. Give advance notice and require Shopify plan approval before any later price change. This is a paid plan, not a free trial.
 
 - Up to 25 supplier product links.
 - Daily checks and 1,500-check monthly cap.
@@ -69,7 +69,7 @@ Hi {{first_name}},
 
 I noticed {{store}} carries products from several independent brands. I’m testing a read-only Shopify workflow that checks authorized supplier product pages and flags availability or discontinuation changes with evidence. It never edits store inventory, and failed checks stay “uncertain” instead of becoming false stock alerts.
 
-I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the proposed paid pilot is $19/month for the first three monthly billing cycles, then $49/month for 25 product links, with one lightweight assisted setup.
+I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the Founding Pilot is $19/month for 25 product links, with the price guaranteed for the first six months and one lightweight assisted setup.
 
 Best,
 {{owner_name}}
