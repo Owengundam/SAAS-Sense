@@ -1,4 +1,4 @@
-# Project State — 2026-09-22 UTC
+# Project State — 2026-09-23 UTC
 
 ## Selected opportunity
 
@@ -19,7 +19,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
 - Preorder, backordered, discontinued, and lead-time-only results are never labeled in stock.
-- Pilot offer proposed: $19/month for the first three monthly billing cycles, then $49/month; 25 source links, 1,500 checks/month, daily cadence, one lightweight assisted setup. The introductory rate must remain disabled until billing supports it.
+- Founding Pilot: $19/month with the price guaranteed for each merchant's first six months; 25 source links, 1,500 checks/month, daily cadence, and one lightweight assisted setup. Any later price change requires advance notice and Shopify plan approval.
 - Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
 - The page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Railway production uses direct HTTP with Apify fallback; its Chromium tier remains disabled.
@@ -50,6 +50,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added exact-supplier-identity ranking before JEV's bounded candidate selection, preventing long mixed-variant pages from dropping the monitored variant behind unrelated finishes while preserving verbatim evidence provenance.
 - Added a provisional five-case, four-domain direct-capture fixture. The first local live attempt was invalidated because the runner returned `EAI_AGAIN` for every public supplier hostname; no accuracy score was claimed.
 - Hardened live benchmark denominators so DNS/provider failures are counted separately, accuracy is `null` with no scorable evidence, and latency percentiles exclude failed captures.
+- Added the Partner API active-subscription check at the app root and mutation route, with a five-minute positive cache and fail-closed error handling. It remains disabled until the $19 plan and Partner API credentials are configured.
 
 ## Tested locally
 
@@ -85,8 +86,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Minimum next owner action
 
-Confirm a Shopify billing path that charges $19 in each of the first three cycles and $49 thereafter, and gates paid access. The default hosted plan editor cannot configure that promotion; its merchant-specific discounts begin on the next cycle. Then provide the final company/support details for the public policies and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
+Create the $19 monthly `Founding Pilot` in Shopify App Pricing and a Partner API client with `Manage apps`; add the organization ID, access token, and app GID to Railway. Then provide the final company/support details for the public policies and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
 
 ## Next execution step
 
-Enable the introductory display only after its exact billing terms are verified, complete the App Store listing/policy fields, and onboard the first merchant. Keep automatic scheduling limited to that merchant's sources until their baseline checks are reviewed.
+Enable `SHOPIFY_APP_PRICING_ENABLED` only after the plan and Partner API configuration exist, verify the approval loop on the development store, complete the App Store listing/policy fields, and onboard the first merchant. Keep automatic scheduling limited to that merchant's sources until their baseline checks are reviewed.

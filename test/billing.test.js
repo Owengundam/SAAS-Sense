@@ -11,8 +11,8 @@ test("rejects invalid shop handles", () => {
   assert.throws(() => hostedPricingUrl({ shop: "https://evil.test", appHandle: "supplier-signal" }), /INVALID_SHOP/);
 });
 
-test("subscription gate rejects inactive contracts", async () => {
+test("subscription gate rejects a missing active contract", async () => {
   await assert.rejects(requireActiveSubscription({
-    fetchActiveSubscription: async () => ({ status: "CANCELLED" }), shopId: "1", appId: "2",
+    fetchActiveSubscription: async () => null, shopId: "1", appId: "2",
   }), /SUBSCRIPTION_REQUIRED/);
 });

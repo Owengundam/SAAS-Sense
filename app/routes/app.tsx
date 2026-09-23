@@ -5,9 +5,12 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
 import { ensureTenant } from "../core.server";
+import { requirePaidPlan } from "../billing-gate.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, redirect, session } = await authenticate.admin(request);
+  const billingRedirect = await requirePaidPlan({ admin, redirect, session });
+  if (billingRedirect) return billingRedirect;
   ensureTenant(session.shop);
 
   // eslint-disable-next-line no-undef

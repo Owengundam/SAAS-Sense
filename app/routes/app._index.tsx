@@ -4,6 +4,7 @@ import { Form, useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureTenant, getSupplierSignal } from "../core.server";
+import { requirePaidPlan } from "../billing-gate.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -13,12 +14,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ...getSupplierSignal().service.dashboard(session.shop),
     shop: session.shop,
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
-    introOfferEnabled: process.env.SHOPIFY_INTRO_OFFER_ENABLED === "true",
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, redirect, session } = await authenticate.admin(request);
+  const billingRedirect = await requirePaidPlan({ admin, redirect, session });
+  if (billingRedirect) return billingRedirect;
   ensureTenant(session.shop);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
@@ -303,15 +305,9 @@ export default function Index() {
           </Form>
           {confirmed > 0 && <div className={styles.pilotPlan}>
             <span className={styles.eyebrow}>Founding pilot</span>
-            {data.introOfferEnabled ? (
-              <>
-                <strong><del className={styles.regularPrice}>$49</del> $19/month</strong>
-                <p>First 3 monthly billing cycles at $19/month, then $49/month unless you cancel. 25 links, 1,500 checks, and one lightweight assisted setup. Paid introductory offer; no free trial.</p>
-              </>
-            ) : (
-              <><strong>$49/month</strong><p>25 links, 1,500 checks, and one lightweight assisted setup.</p></>
-            )}
-            {data.pricingEnabled && !data.introOfferEnabled && <a className={styles.buttonLink} href="/app/pricing">Choose the pilot plan</a>}
+            <strong><del className={styles.regularPrice}>$49</del> $19/month</strong>
+            <p>Founding price guaranteed for your first 6 months. 25 links, 1,500 checks, and one lightweight assisted setup. Cancel anytime.</p>
+            {data.pricingEnabled && <a className={styles.buttonLink} href="/app/pricing">View your Shopify plan</a>}
           </div>}
           <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>
           {review.length === 0 && <span className={styles.muted}>No ambiguous or failed checks.</span>}
