@@ -65,7 +65,7 @@ The merchant must use only sources it is authorized to access and must not use t
 
 ### Plans and limits
 
-The proposed pilot is $49 per 30-day period for 25 source links and 1,500 attempted checks. Failed attempts and retries count toward the cap. There is no unlimited usage. Shopify-hosted app billing governs charges, plan changes, cancellation, and applicable taxes. `[REFUND POLICY — OWNER/COUNSEL TO COMPLETE]`.
+The proposed introductory offer is $19 per monthly billing cycle for the first three cycles, then $49 per cycle until canceled, for 25 source links and 1,500 attempted checks. It must not be advertised as available until checkout and subscription enforcement implement those exact terms. This is a paid introductory price, not a free trial. Failed attempts and retries count toward the cap. There is no unlimited usage. Shopify-hosted app billing governs charges, plan changes, cancellation, and applicable taxes. `[REFUND POLICY — OWNER/COUNSEL TO COMPLETE]`.
 
 ### Suspension
 

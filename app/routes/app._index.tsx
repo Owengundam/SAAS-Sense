@@ -13,6 +13,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ...getSupplierSignal().service.dashboard(session.shop),
     shop: session.shop,
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
+    introOfferEnabled: process.env.SHOPIFY_INTRO_OFFER_ENABLED === "true",
   };
 };
 
@@ -302,9 +303,15 @@ export default function Index() {
           </Form>
           {confirmed > 0 && <div className={styles.pilotPlan}>
             <span className={styles.eyebrow}>Founding pilot</span>
-            <strong>$49/month</strong>
-            <p>25 links, 1,500 checks, assisted setup, and a weekly pilot review.</p>
-            {data.pricingEnabled && <a className={styles.buttonLink} href="/app/pricing">Choose the pilot plan</a>}
+            {data.introOfferEnabled ? (
+              <>
+                <strong><del className={styles.regularPrice}>$49</del> $19/month</strong>
+                <p>First 3 monthly billing cycles at $19/month, then $49/month unless you cancel. 25 links, 1,500 checks, and one lightweight assisted setup. Paid introductory offer; no free trial.</p>
+              </>
+            ) : (
+              <><strong>$49/month</strong><p>25 links, 1,500 checks, and one lightweight assisted setup.</p></>
+            )}
+            {data.pricingEnabled && !data.introOfferEnabled && <a className={styles.buttonLink} href="/app/pricing">Choose the pilot plan</a>}
           </div>}
           <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>
           {review.length === 0 && <span className={styles.muted}>No ambiguous or failed checks.</span>}

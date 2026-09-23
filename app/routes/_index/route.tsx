@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { Form, redirect } from "react-router";
+import { Form, redirect, useLoaderData } from "react-router";
 import styles from "./styles.module.css";
 
 export const meta: MetaFunction = () => [
@@ -13,10 +13,11 @@ export const meta: MetaFunction = () => [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   if (url.searchParams.get("shop")) throw redirect(`/app?${url.searchParams.toString()}`);
-  return null;
+  return { introOfferEnabled: process.env.SHOPIFY_INTRO_OFFER_ENABLED === "true" };
 };
 
 export default function Landing() {
+  const { introOfferEnabled } = useLoaderData<typeof loader>();
   return (
     <main className={styles.page}>
       <nav className={styles.nav} aria-label="Main navigation">
@@ -35,9 +36,9 @@ export default function Landing() {
           <Form method="post" action="/auth/login" className={styles.form}>
             <label className={styles.srOnly} htmlFor="shop-domain">Your Shopify store domain</label>
             <input id="shop-domain" name="shop" placeholder="your-store.myshopify.com" autoComplete="url" required />
-            <button>Start the paid pilot</button>
+            <button>Connect your store</button>
           </Form>
-          <p className={styles.formNote}>$49/month · 25 supplier links · assisted setup · cancel anytime</p>
+          <p className={styles.formNote}>{introOfferEnabled ? "Intro offer: $19/month for your first 3 billing cycles, then $49/month" : "$49/month"} · 25 supplier links · assisted setup · cancel anytime</p>
           <div className={styles.points}>
             <span>Read-only</span><span>Daily checks</span><span>Evidence included</span><span>Safe uncertainty</span>
           </div>
@@ -82,15 +83,21 @@ export default function Landing() {
       <section className={styles.pricing} id="pricing">
         <div>
           <span className={styles.eyebrow}>Founding pilot</span>
-          <h2>$49 <small>/ month</small></h2>
-          <p>One simple plan while we work closely with the first merchants.</p>
+          {introOfferEnabled ? (
+            <>
+              <h2><del className={styles.regularPrice}>$49</del> $19 <small>/ month</small></h2>
+              <p>Intro price for your first 3 monthly billing cycles. Then $49/month unless you cancel. This is a paid introductory offer, not a free trial.</p>
+            </>
+          ) : (
+            <><h2>$49 <small>/ month</small></h2><p>One simple plan while we work closely with the first merchants.</p></>
+          )}
         </div>
         <ul>
           <li>25 supplier product links</li>
           <li>1,500 checks each month</li>
           <li>Daily monitoring for supported sources</li>
           <li>Evidence and uncertainty queue</li>
-          <li>Assisted setup and a weekly pilot review</li>
+          <li>One lightweight assisted setup</li>
         </ul>
         <a className={styles.cta} href="#top">Start with your store</a>
       </section>

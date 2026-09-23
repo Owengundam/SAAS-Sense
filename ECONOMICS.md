@@ -4,7 +4,7 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 
 ## Pilot plan
 
-- Price: **$49/month**.
+- Proposed introductory price: **$19/month for the first three monthly billing cycles, then $49/month**. The offer is not yet live in billing.
 - 25 monitored source links.
 - Nominal cadence: once daily.
 - Hard cap: 1,500 checks/month.
@@ -43,6 +43,8 @@ All numbers are planning assumptions, not actual revenue or measured cost. Curre
 | **Contribution margin** | **Pending benchmark** | **Pending benchmark** | **Pending benchmark** |
 
 The old extraction-cost row was based on an outdated Apify event price and cannot support a margin claim. Recalculate the contribution margin after measuring cascade escalation and Railway compute. If measured browser cost or support is high, reduce the check cap, restrict supported domains, charge a source-specific premium, or abandon the configuration.
+
+The $49 scenarios above model only the standard rate, not the introductory cycles. During each $19 cycle, the 15% platform reserve becomes $2.85 instead of $7.35; with all other assumed costs equal, contribution falls by $25.50/month per merchant relative to the $49 scenario. Three introductory cycles reduce gross receipts by $90 per merchant. A weekly review is excluded from the introductory offer to control support costs.
 
 ## AI cost boundary
 

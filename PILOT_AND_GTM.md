@@ -10,13 +10,13 @@ SupplierSignal checks the supplier product pages behind your Shopify catalog, ve
 
 ### Pilot offer
 
-**$49/month, month to month**
+**Introductory offer: $19/month for the first three monthly billing cycles, then $49/month.** The regular $49 is displayed with a strikethrough. This is a paid introductory price, not a free trial. Do not use this offer in outreach until Shopify checkout and subscription enforcement support the first three discounted cycles and the later $49 charge.
 
 - Up to 25 supplier product links.
 - Daily checks and 1,500-check monthly cap.
 - Availability, sold-out, discontinued, uncertain, and source-failed states.
 - Evidence excerpt, last-checked time, and stale warning.
-- Assisted setup and one weekly pilot review.
+- One lightweight assisted setup; no recurring weekly review.
 - No automatic edits to products, price, or inventory.
 
 Supported initially: public HTTPS supplier product pages that the merchant is authorized to monitor and that expose availability in page content. Unsupported: authenticated portals, CAPTCHAs, marketplaces, personalized pricing, customer/order data, and automatic Shopify writes.
@@ -69,7 +69,7 @@ Hi {{first_name}},
 
 I noticed {{store}} carries products from several independent brands. I’m testing a read-only Shopify workflow that checks authorized supplier product pages and flags availability or discontinuation changes with evidence. It never edits store inventory, and failed checks stay “uncertain” instead of becoming false stock alerts.
 
-I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the paid pilot is $49/month for 25 product links with assisted setup.
+I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the proposed paid pilot is $19/month for the first three monthly billing cycles, then $49/month for 25 product links, with one lightweight assisted setup.
 
 Best,
 {{owner_name}}
