@@ -19,7 +19,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
 - Preorder, backordered, discontinued, and lead-time-only results are never labeled in stock.
-- Pilot plan: $49/month, 25 source links, 1,500 checks/month, daily cadence, assisted setup.
+- Pilot offer proposed: $19/month for the first three monthly billing cycles, then $49/month; 25 source links, 1,500 checks/month, daily cadence, one lightweight assisted setup. The introductory rate must remain disabled until billing supports it.
 - Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
 - The page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Railway production uses direct HTTP with Apify fallback; its Chromium tier remains disabled.
@@ -85,8 +85,8 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Minimum next owner action
 
-Create the $49 monthly plan in Shopify App Pricing, provide the final company/support details for the public policies, and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
+Confirm a Shopify billing path that charges $19 in each of the first three cycles and $49 thereafter, and gates paid access. The default hosted plan editor cannot configure that promotion; its merchant-specific discounts begin on the next cycle. Then provide the final company/support details for the public policies and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
 
 ## Next execution step
 
-Enable the hosted pricing link after the Shopify plan exists, complete the App Store listing/policy fields, and onboard the first merchant. Keep automatic scheduling limited to that merchant's sources until their baseline checks are reviewed.
+Enable the introductory display only after its exact billing terms are verified, complete the App Store listing/policy fields, and onboard the first merchant. Keep automatic scheduling limited to that merchant's sources until their baseline checks are reviewed.

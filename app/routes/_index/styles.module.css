@@ -41,6 +41,7 @@
 .safetySection li::before, .pricing li::before { color: #3f8158; content: "✓"; font-weight: 900; left: 0; position: absolute; }
 .pricing { align-items: center; display: grid; gap: 52px; grid-template-columns: 1fr 1fr auto; margin: 0 auto; max-width: 1180px; padding: 104px 32px; }
 .pricing h2 { font-size: 54px; letter-spacing: -.05em; margin: 12px 0 8px; }
+.regularPrice { color: #839087; font-size: 30px; letter-spacing: -.02em; text-decoration-thickness: 2px; }
 .pricing h2 small { color: #839087; font-size: 20px; letter-spacing: 0; }
 .pricing p, .pricing li { color: #aebbb3; }
 .cta { display: inline-block; text-align: center; white-space: nowrap; }
