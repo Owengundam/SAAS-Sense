@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { Form, redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import styles from "./styles.module.css";
+import brandMark from "../../assets/supplier-signal-mark.png";
 
 export const meta: MetaFunction = () => [
   { title: "SupplierSignal — Supplier availability monitoring for Shopify" },
@@ -13,14 +14,20 @@ export const meta: MetaFunction = () => [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   if (url.searchParams.get("shop")) throw redirect(`/app?${url.searchParams.toString()}`);
-  return null;
+  const listingUrl = process.env.SHOPIFY_APP_STORE_URL;
+  return {
+    installUrl: listingUrl && /^https:\/\/apps\.shopify\.com\/[a-z0-9-]+\/?$/i.test(listingUrl)
+      ? listingUrl : null,
+    policiesAvailable: process.env.PUBLIC_POLICIES_APPROVED === "true",
+  };
 };
 
 export default function Landing() {
+  const { installUrl, policiesAvailable } = useLoaderData<typeof loader>();
   return (
     <main className={styles.page}>
       <nav className={styles.nav} aria-label="Main navigation">
-        <a className={styles.logo} href="#top">SupplierSignal</a>
+        <a className={styles.logo} href="#top"><img src={brandMark} alt="" />SupplierSignal</a>
         <div className={styles.navLinks}>
           <a href="#how-it-works">How it works</a>
           <a href="#pricing">Pricing</a>
@@ -32,14 +39,11 @@ export default function Landing() {
           <span className={styles.eyebrow}>Read-only monitoring for Shopify retailers</span>
           <h1>Catch supplier stock changes before they become customer problems.</h1>
           <p className={styles.lede}>SupplierSignal checks the supplier pages behind your catalog, verifies the exact product, and shows the evidence behind every result. It never edits your inventory.</p>
-          <Form method="post" action="/auth/login" className={styles.form}>
-            <label className={styles.srOnly} htmlFor="shop-domain">Your Shopify store domain</label>
-            <input id="shop-domain" name="shop" placeholder="your-store.myshopify.com" autoComplete="url" required />
-            <button>Connect your store</button>
-          </Form>
-          <p className={styles.formNote}>Founding price: $19/month · 25 supplier links · assisted setup · cancel anytime</p>
+          {installUrl ? <a className={styles.cta} href={installUrl}>Install through Shopify</a>
+            : <p className={styles.formNote}>Shopify installation will be available from our App Store listing.</p>}
+          <p className={styles.formNote}>Proposed founding plan: $19/month · up to 25 supplier links · check limits apply</p>
           <div className={styles.points}>
-            <span>Read-only</span><span>Daily checks</span><span>Evidence included</span><span>Safe uncertainty</span>
+            <span>Read-only</span><span>Checks on demand</span><span>Evidence included</span><span>Safe uncertainty</span>
           </div>
         </div>
         <div className={styles.proofCard} aria-label="Example SupplierSignal result">
@@ -82,22 +86,23 @@ export default function Landing() {
       <section className={styles.pricing} id="pricing">
         <div>
           <span className={styles.eyebrow}>Founding pilot</span>
-          <h2><del className={styles.regularPrice}>$49</del> $19 <small>/ month</small></h2>
-          <p>Founding price guaranteed for your first 6 months. We will give advance notice before any later price change. Cancel anytime.</p>
+          <h2>$19 <small>/ month</small></h2>
+          <p>Shopify displays the current plan terms and handles approval and cancellation.</p>
         </div>
         <ul>
           <li>25 supplier product links</li>
           <li>1,500 checks each month</li>
-          <li>Daily monitoring for supported sources</li>
+          <li>On-demand checks for supported sources</li>
           <li>Evidence and uncertainty queue</li>
-          <li>One lightweight assisted setup</li>
+          <li>Product and supplier source mapping</li>
         </ul>
-        <a className={styles.cta} href="#top">Start with your store</a>
+        {installUrl && <a className={styles.cta} href={installUrl}>Install through Shopify</a>}
       </section>
 
       <footer className={styles.footer}>
         <strong>SupplierSignal</strong>
         <span>Public HTTPS supplier pages only. Authenticated portals, CAPTCHAs, marketplaces, and automatic inventory writes are not supported in the pilot.</span>
+        {policiesAvailable && <span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/refunds">Refunds</a> · <a href="/support">Support</a></span>}
       </footer>
     </main>
   );

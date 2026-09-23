@@ -4,14 +4,18 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
-import { ensureTenant } from "../core.server";
+import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, redirect, session } = await authenticate.admin(request);
+  ensureTenant(session.shop);
+  getSupplierSignal().db.reconcileAuthenticatedInstallation(session.shop);
+  if (new URL(request.url).pathname === "/app/pricing") {
+    return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  }
   const billingRedirect = await requirePaidPlan({ admin, redirect, session });
   if (billingRedirect) return billingRedirect;
-  ensureTenant(session.shop);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
@@ -24,6 +28,7 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Watchlist</s-link>
+        <s-link href="/support">Support</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

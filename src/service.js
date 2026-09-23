@@ -62,6 +62,7 @@ export class SupplierSignalService {
     supportedDomains = DEFAULT_SUPPORTED_DOMAINS,
     now = () => new Date(),
     simulated = true,
+    authorizeCheck = /** @type {(shop: string, tenant: any) => Promise<void>} */ (async () => {}),
   }) {
     this.db = db;
     this.provider = provider;
@@ -72,6 +73,7 @@ export class SupplierSignalService {
     this.supportedDomains = normalizeSupportedDomains(supportedDomains);
     this.now = now;
     this.simulated = simulated;
+    this.authorizeCheck = authorizeCheck;
   }
 
   addSource(shop, input) {
@@ -101,10 +103,11 @@ export class SupplierSignalService {
 
   async checkSource(shop, sourceId) {
     const tenant = this.db.getTenant(shop);
-    if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+    if (!tenant || !tenant.active || !tenant.installed || tenant.suspension_reason) throw new Error("TENANT_DISABLED");
     const source = this.db.getSource(shop, sourceId);
     if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
     validateSupplierUrl(source.url, this.supportedDomains);
+    if (this.authorizeCheck) await this.authorizeCheck(shop, tenant);
     const usage = this.db.reserveCheckUsage(
       shop,
       source.id,
@@ -116,6 +119,12 @@ export class SupplierSignalService {
 
     try {
       let providerResult = await this.provider.fetchPage(source);
+      // An uninstall or reinstall can arrive while a network request is in flight.
+      // Do not start AI work or attach the result to a newer installation.
+      if (!this.db.getTenant(shop)?.installed || !this.db.getSource(shop, source.id)) {
+        providerAttemptsRecorded = true;
+        throw new Error("TENANT_DISABLED");
+      }
       const providerAttempts = providerResult?.providerAttempts?.length
         ? providerResult.providerAttempts
         : [{
@@ -226,6 +235,9 @@ export class SupplierSignalService {
         finalState: observation.state,
         finalConfidence: observation.confidence,
       };
+      if (!this.db.getTenant(shop)?.installed || !this.db.getSource(shop, source.id)) {
+        throw new Error("TENANT_DISABLED");
+      }
       const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
       if (inserted.id) {
         this.db.insertDecisionRecord(
@@ -335,6 +347,8 @@ export class SupplierSignalService {
         shop,
         plan: tenant.plan,
         active: Boolean(tenant.active),
+        monitoringEnabled: Boolean(tenant.monitoring_enabled),
+        installed: Boolean(tenant.installed),
         sourceUsage: sources.length,
         sourceLimit: tenant.source_limit,
         monthlyCheckUsage: this.db.countChecksThisMonth(shop, now),

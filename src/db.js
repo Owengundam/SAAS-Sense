@@ -25,6 +25,11 @@ export function createDatabase(path = ":memory:") {
       active INTEGER NOT NULL DEFAULT 1,
       source_limit INTEGER NOT NULL DEFAULT 25,
       monthly_check_limit INTEGER NOT NULL DEFAULT 1500,
+      installed INTEGER NOT NULL DEFAULT 1,
+      installed_at TEXT,
+      shopify_shop_id TEXT,
+      monitoring_enabled INTEGER NOT NULL DEFAULT 0,
+      suspension_reason TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sources (
@@ -180,6 +185,13 @@ export function createDatabase(path = ":memory:") {
     );
   `);
   const sourceColumns = new Set(db.prepare("PRAGMA table_info(sources)").all().map((column) => column.name));
+  const tenantColumns = new Set(db.prepare("PRAGMA table_info(tenants)").all().map((column) => column.name));
+  if (!tenantColumns.has("installed")) db.exec("ALTER TABLE tenants ADD COLUMN installed INTEGER NOT NULL DEFAULT 1");
+  if (!tenantColumns.has("installed_at")) db.exec("ALTER TABLE tenants ADD COLUMN installed_at TEXT");
+  if (!tenantColumns.has("shopify_shop_id")) db.exec("ALTER TABLE tenants ADD COLUMN shopify_shop_id TEXT");
+  if (!tenantColumns.has("monitoring_enabled")) db.exec("ALTER TABLE tenants ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 0");
+  if (!tenantColumns.has("suspension_reason")) db.exec("ALTER TABLE tenants ADD COLUMN suspension_reason TEXT");
+  db.exec("UPDATE tenants SET installed_at = created_at WHERE installed_at IS NULL");
   if (!sourceColumns.has("next_recheck_at")) db.exec("ALTER TABLE sources ADD COLUMN next_recheck_at TEXT");
   if (!sourceColumns.has("last_attempt_at")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_at TEXT");
   if (!sourceColumns.has("last_attempt_status")) db.exec("ALTER TABLE sources ADD COLUMN last_attempt_status TEXT");
@@ -255,8 +267,8 @@ export function createDatabase(path = ":memory:") {
     raw: db,
     close: () => db.close(),
     upsertTenant(tenant) {
-      db.prepare(`INSERT INTO tenants (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+      db.prepare(`INSERT INTO tenants (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at, installed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(shop) DO UPDATE SET demo_token=excluded.demo_token, plan=excluded.plan,
           active=excluded.active, source_limit=excluded.source_limit,
           monthly_check_limit=excluded.monthly_check_limit`).run(
@@ -267,12 +279,13 @@ export function createDatabase(path = ":memory:") {
         tenant.sourceLimit ?? 25,
         tenant.monthlyCheckLimit ?? 1500,
         tenant.createdAt || new Date().toISOString(),
+        tenant.createdAt || new Date().toISOString(),
       );
     },
     ensureTenant(tenant) {
       db.prepare(`INSERT OR IGNORE INTO tenants
-        (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at, installed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
         tenant.shop,
         tenant.demoToken || null,
         tenant.plan || "pilot",
@@ -280,20 +293,75 @@ export function createDatabase(path = ":memory:") {
         tenant.sourceLimit ?? 25,
         tenant.monthlyCheckLimit ?? 1500,
         tenant.createdAt || new Date().toISOString(),
+        tenant.createdAt || new Date().toISOString(),
       );
       return this.getTenant(tenant.shop);
+    },
+    reconcileAuthenticatedInstallation(shop, now = new Date()) {
+      const existing = this.getTenant(shop);
+      if (!existing) return this.ensureTenant({ shop, createdAt: now.toISOString() });
+      if (existing.installed || existing.suspension_reason) return existing;
+      // A new Shopify installation starts with clean merchant data and a fresh
+      // opt-in. A delayed shop/redact for the old installation can then be ignored.
+      db.prepare("DELETE FROM tenants WHERE shop = ?").run(shop);
+      this.clearTenantAuxiliaryData(shop);
+      return this.ensureTenant({ shop, createdAt: now.toISOString() });
+    },
+    setAuthenticatedShopId(shop, shopId) {
+      if (!/^gid:\/\/shopify\/Shop\/\d+$/.test(shopId)) throw new Error("INVALID_SHOP_ID");
+      db.prepare("UPDATE tenants SET shopify_shop_id = ? WHERE shop = ? AND installed = 1").run(shopId, shop);
     },
     getTenant(shop) {
       return db.prepare("SELECT * FROM tenants WHERE shop = ?").get(shop);
     },
     listActiveTenants() {
-      return db.prepare("SELECT * FROM tenants WHERE active = 1 ORDER BY created_at").all();
+      return db.prepare("SELECT * FROM tenants WHERE active = 1 AND installed = 1 AND suspension_reason IS NULL AND monitoring_enabled = 1 ORDER BY created_at").all();
     },
-    disableTenant(shop) {
-      db.prepare("UPDATE tenants SET active = 0 WHERE shop = ?").run(shop);
+    setMonitoring(shop, enabled) {
+      return db.prepare("UPDATE tenants SET monitoring_enabled = ? WHERE shop = ? AND installed = 1 AND active = 1 AND suspension_reason IS NULL")
+        .run(enabled ? 1 : 0, shop).changes > 0;
     },
-    deleteTenant(shop) {
+    disableTenant(shop, triggeredAt = "") {
+      const tenant = this.getTenant(shop);
+      // An old delivery must never disable a newer authenticated installation.
+      if (tenant?.installed_at && triggeredAt && Date.parse(triggeredAt) < Date.parse(tenant.installed_at)) return false;
+      db.prepare("UPDATE tenants SET active = 0, installed = 0, shopify_shop_id = NULL WHERE shop = ?").run(shop);
+      return true;
+    },
+    deleteTenant(shop, triggeredAt = "") {
+      const tenant = this.getTenant(shop);
+      if (tenant?.installed_at && triggeredAt && Date.parse(triggeredAt) < Date.parse(tenant.installed_at)) return false;
       db.prepare("DELETE FROM tenants WHERE shop = ?").run(shop);
+      this.clearTenantAuxiliaryData(shop);
+      return true;
+    },
+    clearTenantAuxiliaryData(shop) {
+      db.prepare("UPDATE webhook_deliveries SET shop = NULL WHERE shop = ?").run(shop);
+      db.prepare("DELETE FROM app_state WHERE key = ? OR key LIKE ?")
+        .run(`last_daily_run:${shop}`, `last_daily_run:${shop}:%`);
+    },
+    redactUninstalledTenant(shop) {
+      const tenant = this.getTenant(shop);
+      if (!tenant || tenant.installed) return false;
+      return this.deleteTenant(shop);
+    },
+    acquireSchedulerLease(name, now = new Date(), durationMs = 4 * 60 * 1000) {
+      const key = `scheduler_lease:${name}`;
+      const token = randomUUID();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = db.prepare("SELECT value FROM app_state WHERE key = ?").get(key);
+        const expiresAt = Number.parseInt(String(current?.value || "0").split("|")[0], 10);
+        if (expiresAt > now.getTime()) { db.exec("COMMIT"); return null; }
+        db.prepare("INSERT INTO app_state(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+          .run(key, `${now.getTime() + durationMs}|${token}`);
+        db.exec("COMMIT");
+        return token;
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+    },
+    releaseSchedulerLease(name, token) {
+      db.prepare("DELETE FROM app_state WHERE key = ? AND value LIKE ?")
+        .run(`scheduler_lease:${name}`, `%|${token}`);
     },
     countSources(shop) {
       return db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop = ?").get(shop).count;
@@ -309,8 +377,8 @@ export function createDatabase(path = ":memory:") {
       try {
         db.exec("BEGIN IMMEDIATE");
         transactionOpen = true;
-        const tenant = db.prepare("SELECT active, monthly_check_limit FROM tenants WHERE shop = ?").get(shop);
-        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const tenant = db.prepare("SELECT active, installed, suspension_reason, monthly_check_limit FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active || !tenant.installed || tenant.suspension_reason) throw new Error("TENANT_DISABLED");
         const month = reservedAt.slice(0, 7);
         const usage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
           WHERE shop = ? AND substr(reserved_at, 1, 7) = ?`).get(shop, month).count;

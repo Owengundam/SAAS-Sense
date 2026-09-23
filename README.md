@@ -7,7 +7,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 ## What works
 
 - Multi-tenant SQLite storage and server-side source/check quotas.
-- Supplier source onboarding with SKU, title, URL, and match terms.
+- Shopify variant selection and read-only product mapping, plus supplier URL and exact match terms.
 - Mock provider with realistic fixtures; no account or paid runs required.
 - Apify E-commerce Scraping Tool adapter behind a replaceable interface.
 - Deterministic classification plus a constrained OpenRouter/DeepSeek evidence reader when structured availability is absent.
@@ -16,8 +16,8 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 - Stale-result visibility, source links, timestamps, evidence excerpts, classification reasons, and an uncertainty queue.
 - Tenant-scoped source editing and confirmed deletion with cascading evidence cleanup.
 - HMAC verification, webhook deduplication, uninstall disablement, and shop-redaction deletion.
-- Shopify App Pricing redirect and subscription-gate integration points.
-- Conversion-focused public pilot page and a first-run checklist that drives merchants to one verified supplier baseline.
+- Shopify-hosted pricing recovery and server-side Partner API entitlement checks before manual or scheduled work.
+- Public pilot page and a first-run checklist that drives merchants to one verified supplier baseline.
 - Responsive merchant dashboard and add-source flow.
 - Shopify's official React Router authentication shell with Prisma session storage.
 - Verified uninstall, scope-change, and privacy webhook endpoints.
@@ -51,6 +51,9 @@ npm run test:coverage
 | `/health` | GET | Liveness and configured provider mode |
 | `/` | GET | Public landing and Shopify install entry |
 | `/app` | GET/POST | Shopify-authenticated embedded dashboard and actions |
+| `/app/pricing` | GET | Authenticated plan selection and recovery |
+| `/internal/scheduler` | POST | Secret-authenticated external job trigger; disabled by default |
+| `/privacy`, `/terms`, `/refunds`, `/support` | GET | Public policy and support pages once owner details are approved |
 | `/webhooks/*` | POST | Verified uninstall, scope, and privacy webhooks |
 
 The production shell uses Shopify's official React Router adapter, managed installation, expiring offline tokens, minimal `read_products` scope, and Prisma session storage. The isolated core harness in `src/server.js` remains only for deterministic testing.
@@ -173,9 +176,13 @@ SCOPES=read_products
 
 Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN`, and `OPENROUTER_API_KEY` directly in Railway Variables. Add `JEV_API_KEY` only when intentionally enabling a JEV evaluation mode. `TYPESAFE_API_KEY` remains a compatibility alias. Keep `SILICONFLOW_API_KEY` only if you want the explicit rollback provider. Never put secrets in GitHub or chat. Keep the scheduler disabled until the cascade benchmark passes on authorized supplier URLs.
 
-Create one public monthly Shopify App Pricing plan named `Founding Pilot` at $19/month, with no free trial and a welcome link to `/app`. Create a Partner API client with the `Manage apps` permission, then add `SHOPIFY_PARTNER_ORG_ID`, `SHOPIFY_PARTNER_API_ACCESS_TOKEN`, and `SHOPIFY_APP_GID` directly in Railway Variables. The app GID is `gid://shopify/App/{numeric_app_id}`. Keep `SHOPIFY_APP_PRICING_ENABLED=false` until the plan and all three Partner API values exist.
+Create one monthly Shopify App Pricing plan named `Founding Pilot` at the proposed $19/month, with a welcome link to `/app`. Verify the configured price, currency, trial, billing cycle and actual pricing item handle in Shopify. Create a Partner API client with the `Manage apps` permission, then add `SHOPIFY_PARTNER_ORG_ID`, `SHOPIFY_PARTNER_API_ACCESS_TOKEN`, `SHOPIFY_APP_GID`, and `SHOPIFY_PRICING_ITEM_HANDLE` in secure host variables. The app GID is `gid://shopify/App/{numeric_app_id}`. Keep `SHOPIFY_APP_PRICING_ENABLED=false` until the actual plan and all four values are verified.
 
-After configuration, set `SHOPIFY_APP_HANDLE=supplier-signal` and `SHOPIFY_APP_PRICING_ENABLED=true`. That single flag enables the hosted plan redirect and enforces an active Shopify App Pricing subscription at the app root and mutation route. Confirmed subscriptions are cached for five minutes; missing subscriptions are never cached, and Partner API failures fail closed instead of being treated as unpaid. Test the install → plan approval → `/app` flow on the development store before inviting a merchant.
+After configuration, set the actual `SHOPIFY_APP_HANDLE` and `SHOPIFY_APP_PRICING_ENABLED=true`. Without verified billing, production app access returns unavailable instead of granting free access. Missing subscriptions go to `/app/pricing`, which links to Shopify's hosted plan selection without an automatic redirect loop. Confirmed subscriptions are cached for one minute; missing subscriptions are never cached, and Partner API failures block checks. Test the install, decline, approval, cancellation, uninstall, and reinstall paths on the development store before inviting a merchant.
+
+The current release supports on-demand checks. Scheduled checks are **off by default** and are not a merchant promise until the deployment enables and verifies them. To evaluate scheduling, set a strong `SCHEDULER_SECRET` only in secure host configuration and configure an external scheduler to `POST /internal/scheduler` with `Authorization: Bearer <secret>` at a frequent interval (for example every 10 minutes). The job stores a daily UTC source key and handles due confirmation checks. It uses a durable lease, merchant opt-in, installed state, quota, and fresh per-tenant Shopify entitlement verification before starting checks. Verify restart/catch-up, two daily cycles, pause/uninstall/cancellation, and provider spending against an approved ceiling before setting `SCHEDULER_ENABLED=true`. The app does not create the external job itself.
+
+Public pages `/privacy`, `/terms`, `/refunds`, and `/support` require the owner to set `BUSINESS_LEGAL_NAME`, `BUSINESS_ADDRESS`, `SUPPORT_EMAIL`, `PRIVACY_EMAIL`, `POLICY_EFFECTIVE_DATE`, `REFUND_POLICY_TEXT`, and `TERMS_GOVERNING_LAW` and explicitly set `PUBLIC_POLICIES_APPROVED=true`. They return 503 until approved. Set `SHOPIFY_APP_STORE_URL` only to the real public `https://apps.shopify.com/...` listing URL; before listing approval use Shopify's supported development installation path. Review policy wording with the owner and test anonymous HTTPS access before submission.
 
 The default `railway` image target uses Debian Bookworm without a bundled browser. This keeps Railway builds and deployments lean while `SELF_HOSTED_BROWSER_ENABLED=false` routes captures through direct HTTP with Apify as the managed fallback.
 
@@ -205,6 +212,8 @@ The separate `browser` image target installs the Chromium build matching the pin
 - `PILOT_AND_GTM.md` — landing copy, onboarding, support, paid-pilot offer, outreach draft, and kill criteria.
 - `PRIVACY_AND_TERMS_DRAFT.md` — pre-legal-review policy drafts with owner facts clearly unresolved.
 - `JEV_INTEGRATION.md` — JEV/DeepSeek routing, evidence policy, provisional thresholds, and promotion gates.
+- `APP_STORE_READINESS.md` — release evidence and outstanding live/owner gates.
+- `REVIEWER_GUIDE.md` — truthful installation and reviewer walkthrough.
 
 ## Status vocabulary
 
@@ -213,4 +222,4 @@ The separate `browser` image target installs the Chromium build matching the pin
 - **Live verified:** exercised against the real external system.
 - **Deployed:** running at an owner-authorized public or private host.
 
-Current state: the authenticated app is installed on `suppliersignal-test.myshopify.com` and deployed at `https://suppliersignal-production.up.railway.app` with the live Apify provider configured. Unattended scheduling remains disabled, so only owner-triggered checks can spend Apify credit.
+The previous version was installed on a development store and deployed to Railway. This branch is not deployed or live verified. Unattended scheduling remains disabled; only owner-triggered checks can spend provider credit. See `APP_STORE_READINESS.md` for the release gates.

@@ -1,6 +1,7 @@
 .page { min-height: 100vh; color: #f4f7f5; background: #09120d; font-family: Inter, sans-serif; }
 .nav { align-items: center; display: flex; justify-content: space-between; margin: 0 auto; max-width: 1180px; padding: 24px 32px; }
-.logo { color: #f4f7f5; font-size: 18px; font-weight: 850; letter-spacing: -.02em; text-decoration: none; }
+.logo { align-items: center; color: #f4f7f5; display: inline-flex; gap: 10px; font-size: 18px; font-weight: 850; letter-spacing: -.02em; text-decoration: none; }
+.logo img { background: #fff; border-radius: 7px; height: 34px; width: 34px; }
 .navLinks { display: flex; gap: 24px; }
 .navLinks a { color: #aebbb3; font-size: 14px; font-weight: 650; text-decoration: none; }
 .navLinks a:hover { color: white; }

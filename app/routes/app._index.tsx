@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
+import { verifyShopifyVariant } from "../catalog.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -14,24 +15,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ...getSupplierSignal().service.dashboard(session.shop),
     shop: session.shop,
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
+    schedulerEnabled: process.env.SCHEDULER_ENABLED === "true",
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, redirect, session } = await authenticate.admin(request);
-  const billingRedirect = await requirePaidPlan({ admin, redirect, session });
-  if (billingRedirect) return billingRedirect;
   ensureTenant(session.shop);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+  if (!["set-monitoring", "delete-source"].includes(intent)) {
+    const billingRedirect = await requirePaidPlan({ admin, redirect, session });
+    if (billingRedirect) return billingRedirect;
+  }
   const { service } = getSupplierSignal();
   try {
     if (intent === "add-source") {
+      const catalog = await verifyShopifyVariant(admin, String(form.get("selectedVariantId") || ""));
       service.addSource(session.shop, {
-        sku: String(form.get("sku") || "").trim(),
-        productTitle: String(form.get("productTitle") || "").trim(),
-        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
-        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+        ...catalog,
         supplierProductId: String(form.get("supplierProductId") || "").trim(),
         supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
         supplierSku: String(form.get("supplierSku") || "").trim(),
@@ -52,11 +54,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: true, message: `Checked: ${stateLabel(result.observation.state, false)}.` };
     }
     if (intent === "edit-source") {
+      const current = getSupplierSignal().db.getSource(session.shop, String(form.get("sourceId") || ""));
+      if (!current?.shopifyVariantId) throw new Error("Select a Shopify variant when adding this source again.");
+      const catalog = await verifyShopifyVariant(admin, current.shopifyVariantId);
       service.updateSource(session.shop, String(form.get("sourceId") || ""), {
-        sku: String(form.get("sku") || "").trim(),
-        productTitle: String(form.get("productTitle") || "").trim(),
-        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
-        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+        ...catalog,
         supplierProductId: String(form.get("supplierProductId") || "").trim(),
         supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
         supplierSku: String(form.get("supplierSku") || "").trim(),
@@ -69,6 +71,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (intent === "delete-source") {
       service.deleteSource(session.shop, String(form.get("sourceId") || ""));
       return { ok: true, message: "Supplier source deleted. Incurred monthly usage remains counted." };
+    }
+    if (intent === "set-monitoring") {
+      const enabled = form.get("enabled") === "true";
+      if (!getSupplierSignal().db.setMonitoring(session.shop, enabled)) throw new Error("Monitoring cannot be changed for this installation.");
+      return { ok: true, message: enabled ? "Scheduled monitoring enabled." : "Scheduled monitoring paused." };
     }
     return { ok: false, message: "Unknown action." };
   } catch (error) {
@@ -117,6 +124,12 @@ export default function Index() {
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle";
+  const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
+  const chooseVariant = async () => {
+    const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: false });
+    const variant = selected?.[0];
+    if (variant) setSelectedVariant({ id: variant.id, label: variant.title || "Selected Shopify variant" });
+  };
 
   useEffect(() => {
     if (fetcher.data?.message) shopify.toast.show(fetcher.data.message, { isError: !fetcher.data.ok });
@@ -162,6 +175,17 @@ export default function Index() {
         </fetcher.Form>
       </div>
       {data.simulated && <div className={`${styles.notice} ${styles.error}`}>Demo provider is active. No live supplier pages are being checked.</div>}
+      <section className={styles.card} aria-label="Scheduled monitoring controls">
+        <strong>Scheduled monitoring: {data.tenant.monitoringEnabled ? "Opted in" : "Paused"}</strong>
+        <p className={styles.muted}>{data.schedulerEnabled ? "Checks run on demand. Scheduled checks require your active plan." : "Checks run on demand. Scheduled checks are not yet available."}</p>
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="set-monitoring" />
+          <input type="hidden" name="enabled" value={data.tenant.monitoringEnabled ? "false" : "true"} />
+          <button type="submit" className={`${styles.button} ${styles.secondary}`} disabled={busy}>
+            {data.tenant.monitoringEnabled ? "Pause scheduled checks" : "Opt in to scheduled checks"}
+          </button>
+        </fetcher.Form>
+      </section>
       {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : fetcher.data.warning ? styles.warningNotice : ""}`}>{fetcher.data.message}</div>}
       {!setupComplete && <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="setup-heading">
         <div className={styles.setupHeader}>
@@ -253,10 +277,7 @@ export default function Index() {
                           <Form method="post" className={styles.compactForm}>
                             <input type="hidden" name="intent" value="edit-source" />
                             <input type="hidden" name="sourceId" value={source.id} />
-                            <label>SKU<input name="sku" required defaultValue={source.sku} /></label>
-                            <label>Title<input name="productTitle" required defaultValue={source.productTitle} /></label>
-                            <label>Shopify product ID<input name="shopifyProductId" defaultValue={source.shopifyProductId || ""} /></label>
-                            <label>Shopify variant ID<input name="shopifyVariantId" defaultValue={source.shopifyVariantId || ""} /></label>
+                            <p className={styles.muted}>Shopify product: {source.productTitle} · {source.sku}</p>
                             <label>Supplier SKU<input name="supplierSku" defaultValue={source.supplierSku || ""} /></label>
                             <label>Supplier product ID<input name="supplierProductId" defaultValue={source.supplierProductId || ""} /></label>
                             <label>Supplier variant ID<input name="supplierVariantId" defaultValue={source.supplierVariantId || ""} /></label>
@@ -285,15 +306,14 @@ export default function Index() {
           <p className={styles.formIntro}>Start with one item whose supplier availability you normally check by hand.</p>
           <Form method="post" className={styles.form}>
             <input type="hidden" name="intent" value="add-source" />
-            <label>Shopify SKU<input name="sku" required maxLength={120} /></label>
-            <label>Product title<input name="productTitle" required maxLength={200} /></label>
+            <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={chooseVariant}>Select a Shopify variant</button>
+            <input type="hidden" name="selectedVariantId" value={selectedVariant?.id || ""} />
+            <span className={styles.formHelp}>{selectedVariant ? selectedVariant.label : "Choose the product and variant you sell in Shopify."}</span>
             <label>Supplier product URL<input name="url" required type="url" placeholder="https://supplier.example/product" /></label>
             <label>Supplier SKU or model<input name="supplierSku" required placeholder="The exact identifier on the supplier page" /></label>
             <details className={styles.advancedFields}>
               <summary>Advanced matching fields</summary>
               <div>
-                <label>Shopify product ID<input name="shopifyProductId" placeholder="gid://shopify/Product/..." /></label>
-                <label>Shopify variant ID<input name="shopifyVariantId" placeholder="gid://shopify/ProductVariant/..." /></label>
                 <label>Supplier product ID<input name="supplierProductId" placeholder="Supplier catalog ID" /></label>
                 <label>Supplier variant ID<input name="supplierVariantId" placeholder="Color/size variant ID" /></label>
                 <label>Extra match terms<input name="matchTerms" placeholder="model number, brand" /></label>
@@ -301,12 +321,12 @@ export default function Index() {
             </details>
             <span className={styles.formHelp}>Use a public product page you are authorized to monitor. Logged-in portals and marketplaces are not supported.</span>
             <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this page is the exact supplier product and variant.</label>
-            <button className={styles.button} disabled={busy}>Add source</button>
+            <button className={styles.button} disabled={busy || !selectedVariant}>Add source</button>
           </Form>
           {confirmed > 0 && <div className={styles.pilotPlan}>
             <span className={styles.eyebrow}>Founding pilot</span>
-            <strong><del className={styles.regularPrice}>$49</del> $19/month</strong>
-            <p>Founding price guaranteed for your first 6 months. 25 links, 1,500 checks, and one lightweight assisted setup. Cancel anytime.</p>
+            <strong>$19/month</strong>
+            <p>Plan terms are shown in Shopify. Up to 25 links and 1,500 attempted checks per month.</p>
             {data.pricingEnabled && <a className={styles.buttonLink} href="/app/pricing">View your Shopify plan</a>}
           </div>}
           <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>
