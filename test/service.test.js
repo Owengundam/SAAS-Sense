@@ -370,12 +370,16 @@ test("source edits are tenant-isolated and reset the baseline", async () => {
   db.close();
 });
 
-test("new sources require a declared domain, supplier identity, and explicit match confirmation", () => {
+test("new sources accept public domains but require safe URLs, supplier identity, and match confirmation", () => {
   const { db, service } = setup();
-  assert.throws(() => service.addSource("a.myshopify.com", {
-    sku: "X", productTitle: "Unknown", url: "https://unsupported.example/product",
+  assert.doesNotThrow(() => service.addSource("a.myshopify.com", {
+    sku: "X", productTitle: "Unknown", url: "https://www.alibaba.com/product-detail/example.html",
     supplierSku: "SUP-X", matchConfirmed: true,
-  }), /UNSUPPORTED_SUPPLIER_DOMAIN/);
+  }));
+  assert.throws(() => service.addSource("a.myshopify.com", {
+    sku: "X", productTitle: "Unknown", url: "https://127.0.0.1/product",
+    supplierSku: "SUP-X", matchConfirmed: true,
+  }), /PRIVATE_SOURCE_FORBIDDEN/);
   assert.throws(() => service.addSource("a.myshopify.com", {
     sku: "X", productTitle: "Unknown", url: "https://supplier.test/product",
     matchConfirmed: true,
@@ -387,7 +391,7 @@ test("new sources require a declared domain, supplier identity, and explicit mat
   db.close();
 });
 
-test("an unapproved redirect becomes a source error and skips AI", async () => {
+test("a private redirect becomes a source error and skips AI", async () => {
   let aiCalls = 0;
   const evidenceReader = { async analyze() { aiCalls += 1; return { ok: false }; } };
   const { db, provider, service } = setup({ evidenceReader });
@@ -395,13 +399,13 @@ test("an unapproved redirect becomes a source error and skips AI", async () => {
   provider.queue(source.url, [{
     ok: true,
     runId: "redirected",
-    url: "https://cdn.supplier.test/arc",
+    url: "https://127.0.0.1/arc",
     title: "Arc Floor Lamp",
     text: "SKU AFL-220. In stock",
   }]);
   const result = await service.checkSource("a.myshopify.com", source.id);
   assert.equal(result.observation.state, STATES.SOURCE_ERROR);
-  assert.match(result.observation.reason, /UNAPPROVED_SUPPLIER_REDIRECT/);
+  assert.match(result.observation.reason, /PRIVATE_SOURCE_FORBIDDEN/);
   assert.equal(aiCalls, 0);
   const decision = db.listDecisionRecords("a.myshopify.com")[0];
   assert.equal(decision.decision_source, "PROVIDER_ERROR");

@@ -1,11 +1,9 @@
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
-export const DEFAULT_SUPPORTED_DOMAINS = Object.freeze([
-  "books.toscrape.com",
-  "supplier.example",
-  "supplier.test",
-]);
+// An empty list accepts public HTTPS supplier hosts. Operators can optionally
+// restrict a pilot to specific hosts with SUPPORTED_SUPPLIER_DOMAINS.
+export const DEFAULT_SUPPORTED_DOMAINS = Object.freeze([]);
 
 function normalizeHost(value) {
   return String(value || "").trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -52,7 +50,8 @@ export function isPrivateHostname(hostname) {
 
 export function isSupportedHostname(hostname, supportedDomains = DEFAULT_SUPPORTED_DOMAINS) {
   const host = normalizeHost(hostname);
-  return normalizeSupportedDomains(supportedDomains).includes(host);
+  const declared = normalizeSupportedDomains(supportedDomains);
+  return !isPrivateHostname(host) && (!declared.length || declared.includes(host));
 }
 
 export function validateSupplierUrl(value, supportedDomains = DEFAULT_SUPPORTED_DOMAINS) {
@@ -99,7 +98,7 @@ export async function assertPublicHostnameDns(hostname, lookupImpl = lookup) {
 }
 
 export function validateSupplierRedirect(sourceUrl, resolvedUrl, supportedDomains = DEFAULT_SUPPORTED_DOMAINS) {
-  const source = validateSupplierUrl(sourceUrl, supportedDomains);
+  validateSupplierUrl(sourceUrl, supportedDomains);
   let resolved;
   try {
     resolved = validateSupplierUrl(resolvedUrl || sourceUrl, supportedDomains);
@@ -108,10 +107,6 @@ export function validateSupplierRedirect(sourceUrl, resolvedUrl, supportedDomain
       throw new Error("UNAPPROVED_SUPPLIER_REDIRECT");
     }
     throw error;
-  }
-  const declared = normalizeSupportedDomains(supportedDomains);
-  if (source.hostname !== resolved.hostname && !declared.includes(normalizeHost(resolved.hostname))) {
-    throw new Error("UNAPPROVED_SUPPLIER_REDIRECT");
   }
   return resolved;
 }

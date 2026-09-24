@@ -11,6 +11,7 @@
 .metricLabel { color: #65736a; display: block; font-size: 13px; margin-bottom: 8px; }
 .metric { font-size: 28px; }
 .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, .8fr); gap: 16px; }
+.emptyGrid { grid-template-columns: minmax(0, 640px); }
 .sectionTitle { margin: 0 0 14px; font-size: 17px; }
 .tableWrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; }
@@ -31,6 +32,10 @@
 .form label { color: #4e5d54; display: grid; font-size: 13px; gap: 5px; }
 .form input { border: 1px solid #cbd5ce; border-radius: 8px; font: inherit; padding: 10px; }
 .formHelp { color: #6c7971; font-size: 12px; line-height: 1.4; margin-top: -5px; }
+.setupField { display: grid; gap: 9px; }
+.setupField > strong { color: #4e5d54; font-size: 13px; }
+.setupField > button { justify-self: start; }
+.fieldError { color: #922b22; font-size: 12px; }
 .form .checkbox, .compactForm .checkbox { align-items: flex-start; display: flex; gap: 8px; line-height: 1.35; }
 .form .checkbox input, .compactForm .checkbox input { flex: 0 0 auto; margin-top: 2px; padding: 0; }
 .queueItem { border-top: 1px solid #edf1ee; padding: 12px 0; }

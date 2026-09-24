@@ -1,14 +1,9 @@
 # Supported source policy
 
-SupplierSignal does not accept arbitrary URLs. Production domains must be explicitly declared in `SUPPORTED_SUPPLIER_DOMAINS` as a comma-separated list and must be authorized for the pilot.
+SupplierSignal accepts public HTTPS product pages from any supplier domain, including Alibaba. The optional `SUPPORTED_SUPPLIER_DOMAINS` variable restricts a pilot to an exact, comma-separated list of hosts when desired. With no list configured, public HTTPS redirects to another host are permitted after the same URL and DNS checks.
 
-Current built-in defaults exist only for the existing demo and automated tests:
-
-- `books.toscrape.com`
-- `supplier.example`
-- `supplier.test`
-
-Production configuration should replace those defaults with the exact approved supplier hostnames. Redirects to a different hostname are accepted only when that hostname is also explicitly listed. URLs containing credentials, non-HTTPS schemes, nonstandard ports, localhost, local-network names, or literal private/reserved IP addresses are rejected before provider work begins.
+URLs containing credentials, non-HTTPS schemes, nonstandard ports, localhost, local-network names, or literal private/reserved IP addresses are rejected before provider work begins. DNS responses pointing to private or reserved addresses are rejected by direct and browser fetchers.
+Direct HTTP connects to the already checked public IP so a DNS answer cannot change between validation and connection. When unrestricted domains are enabled, the optional self-hosted Chromium tier is omitted; Apify remains the managed fallback for pages that need rendering.
 
 Each new source must include:
 

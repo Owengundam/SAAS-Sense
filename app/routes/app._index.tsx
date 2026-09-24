@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
+import { verifyShopifyVariant } from "../catalog.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -27,11 +28,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { service } = getSupplierSignal();
   try {
     if (intent === "add-source") {
+      const catalog = await verifyShopifyVariant(admin, String(form.get("selectedVariantId") || ""));
       service.addSource(session.shop, {
-        sku: String(form.get("sku") || "").trim(),
-        productTitle: String(form.get("productTitle") || "").trim(),
-        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
-        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+        ...catalog,
         supplierProductId: String(form.get("supplierProductId") || "").trim(),
         supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
         supplierSku: String(form.get("supplierSku") || "").trim(),
@@ -39,7 +38,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         matchTerms: String(form.get("matchTerms") || "").split(",").map((value) => value.trim()).filter(Boolean),
         matchConfirmed: form.get("matchConfirmed") === "on",
       });
-      return { ok: true, message: "Supplier source added." };
+      return { ok: true, added: true, message: "Product added. Run its first check to see the supplier's availability." };
     }
     if (intent === "check-all") {
       const results = await service.checkAll(session.shop);
@@ -117,9 +116,28 @@ export default function Index() {
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle";
+  const sourceForm = useRef<HTMLFormElement>(null);
+  const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
+  const [pickerError, setPickerError] = useState("");
+  const chooseVariant = async () => {
+    try {
+      const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: false });
+      const variant = selected?.[0];
+      if (variant) {
+        setSelectedVariant({ id: variant.id, label: variant.title || "Selected Shopify variant" });
+        setPickerError("");
+      }
+    } catch {
+      setPickerError("Could not open Shopify products. Try again.");
+    }
+  };
 
   useEffect(() => {
     if (fetcher.data?.message) shopify.toast.show(fetcher.data.message, { isError: !fetcher.data.ok });
+    if (fetcher.data?.ok && "added" in fetcher.data && fetcher.data.added) {
+      sourceForm.current?.reset();
+      setSelectedVariant(null);
+    }
   }, [fetcher.data, shopify]);
 
   const latest = new Map<string, any>();
@@ -156,10 +174,10 @@ export default function Index() {
           <h1 className={styles.title}>Know before an unavailable item sells.</h1>
           <p className={styles.subtitle}>We verify supplier pages, preserve evidence, and require two consistent observations before raising a stock-change alert.</p>
         </div>
-        <fetcher.Form method="post">
+        {data.sources.length > 0 && <fetcher.Form method="post">
           <input type="hidden" name="intent" value="check-all" />
           <button className={styles.button} disabled={busy}>Run all checks</button>
-        </fetcher.Form>
+        </fetcher.Form>}
       </div>
       {data.simulated && <div className={`${styles.notice} ${styles.error}`}>Demo provider is active. No live supplier pages are being checked.</div>}
       {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : fetcher.data.warning ? styles.warningNotice : ""}`}>{fetcher.data.message}</div>}
@@ -182,14 +200,14 @@ export default function Index() {
         </ol>
         {data.sources.length === 0 && <a className={styles.buttonLink} href="#add-source">Add your first source</a>}
       </section>}
-      <div className={styles.metrics}>
+      {data.sources.length > 0 && <div className={styles.metrics}>
         <div className={styles.card}><span className={styles.metricLabel}>Monitored links</span><strong className={styles.metric}>{data.tenant.sourceUsage}/{data.tenant.sourceLimit}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Confirmed baselines</span><strong className={styles.metric}>{confirmed}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Checks this month</span><strong className={styles.metric}>{data.tenant.monthlyCheckUsage}/{data.tenant.monthlyCheckLimit}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Needs review</span><strong className={styles.metric}>{review.length}</strong></div>
-      </div>
-      <div className={styles.grid}>
-        <section className={styles.card}>
+      </div>}
+      <div className={`${styles.grid} ${data.sources.length === 0 ? styles.emptyGrid : ""}`}>
+        {data.sources.length > 0 && <section className={styles.card}>
           <h2 className={styles.sectionTitle}>Supplier watchlist</h2>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
@@ -279,39 +297,44 @@ export default function Index() {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
         <aside className={styles.card} id="add-source">
-          <h2 className={styles.sectionTitle}>Add supplier source</h2>
-          <p className={styles.formIntro}>Start with one item whose supplier availability you normally check by hand.</p>
-          <Form method="post" className={styles.form}>
+          <h2 className={styles.sectionTitle}>{data.sources.length === 0 ? "Add your first product" : "Add another product"}</h2>
+          <p className={styles.formIntro}>Choose what you sell in Shopify, then link its supplier product page. Public pages from Alibaba and other suppliers can be added.</p>
+          <fetcher.Form method="post" className={styles.form} ref={sourceForm}>
             <input type="hidden" name="intent" value="add-source" />
-            <label>Shopify SKU<input name="sku" required maxLength={120} /></label>
-            <label>Product title<input name="productTitle" required maxLength={200} /></label>
-            <label>Supplier product URL<input name="url" required type="url" placeholder="https://supplier.example/product" /></label>
-            <label>Supplier SKU or model<input name="supplierSku" required placeholder="The exact identifier on the supplier page" /></label>
+            <div className={styles.setupField}>
+              <strong>1. Choose a Shopify product</strong>
+              <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={chooseVariant}>Choose product and variant</button>
+              <input type="hidden" name="selectedVariantId" value={selectedVariant?.id || ""} />
+              <span className={styles.formHelp}>{selectedVariant ? `Selected: ${selectedVariant.label}` : "We'll fill in its name and SKU from Shopify."}</span>
+              {pickerError && <span className={styles.fieldError} role="alert">{pickerError}</span>}
+            </div>
+            <label>2. Paste the supplier product URL<input name="url" required type="url" placeholder="https://www.alibaba.com/product-detail/..." /></label>
+            <label>3. What identifies this item on the supplier page?<input name="supplierSku" required placeholder="Supplier SKU, model number, or exact product name" /></label>
             <details className={styles.advancedFields}>
-              <summary>Advanced matching fields</summary>
+              <summary>Optional: improve matching</summary>
               <div>
-                <label>Shopify product ID<input name="shopifyProductId" placeholder="gid://shopify/Product/..." /></label>
-                <label>Shopify variant ID<input name="shopifyVariantId" placeholder="gid://shopify/ProductVariant/..." /></label>
                 <label>Supplier product ID<input name="supplierProductId" placeholder="Supplier catalog ID" /></label>
                 <label>Supplier variant ID<input name="supplierVariantId" placeholder="Color/size variant ID" /></label>
                 <label>Extra match terms<input name="matchTerms" placeholder="model number, brand" /></label>
               </div>
             </details>
-            <span className={styles.formHelp}>Use a public product page you are authorized to monitor. Logged-in portals and marketplaces are not supported.</span>
-            <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this page is the exact supplier product and variant.</label>
-            <button className={styles.button} disabled={busy}>Add source</button>
-          </Form>
+            <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />This supplier page matches the Shopify product and variant I selected.</label>
+            <span className={styles.formHelp}>The page must be public and authorized for you to monitor. Availability on some marketplace pages may need manual review.</span>
+            <button className={styles.button} disabled={busy || !selectedVariant}>{busy ? "Adding product…" : "Add product"}</button>
+          </fetcher.Form>
           {confirmed > 0 && <div className={styles.pilotPlan}>
             <span className={styles.eyebrow}>Founding pilot</span>
             <strong><del className={styles.regularPrice}>$49</del> $19/month</strong>
             <p>Founding price guaranteed for your first 6 months. 25 links, 1,500 checks, and one lightweight assisted setup. Cancel anytime.</p>
             {data.pricingEnabled && <a className={styles.buttonLink} href="/app/pricing">View your Shopify plan</a>}
           </div>}
-          <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Uncertainty queue</h2>
-          {review.length === 0 && <span className={styles.muted}>No ambiguous or failed checks.</span>}
-          {review.map((item: any) => <div className={styles.queueItem} key={item.id}><strong>{item.product_title}</strong><span className={styles.muted}>{item.reason}</span></div>)}
+          {data.sources.length > 0 && <>
+            <h2 className={styles.sectionTitle} style={{ marginTop: 24 }}>Needs review</h2>
+            {review.length === 0 && <span className={styles.muted}>No ambiguous or failed checks.</span>}
+            {review.map((item: any) => <div className={styles.queueItem} key={item.id}><strong>{item.product_title}</strong><span className={styles.muted}>{item.reason}</span></div>)}
+          </>}
         </aside>
       </div>
     </div>

@@ -10,7 +10,8 @@ import {
 
 const supported = ["supplier.example", "www.supplier.example"];
 
-test("supplier URLs must be HTTPS and on the declared domain list", () => {
+test("public HTTPS suppliers are accepted by default and operators can restrict hosts", () => {
+  assert.equal(validateSupplierUrl("https://www.alibaba.com/product-detail/example.html").hostname, "www.alibaba.com");
   assert.equal(validateSupplierUrl("https://supplier.example/product/1", supported).hostname, "supplier.example");
   assert.throws(() => validateSupplierUrl("http://supplier.example/product/1", supported), /HTTPS_REQUIRED/);
   assert.throws(() => validateSupplierUrl("https://other.example/product/1", supported), /UNSUPPORTED_SUPPLIER_DOMAIN/);
@@ -26,7 +27,9 @@ test("credentials, nonstandard ports, and private targets are rejected", () => {
   assert.throws(() => validateSupplierUrl("https://localhost/product", ["localhost"]), /PRIVATE_SOURCE_FORBIDDEN/);
 });
 
-test("redirects must remain on an explicitly declared supported hostname", () => {
+test("public redirects are accepted by default and restricted when hosts are configured", () => {
+  assert.equal(validateSupplierRedirect("https://www.alibaba.com/a", "https://detail.alibaba.com/b").hostname, "detail.alibaba.com");
+  assert.throws(() => validateSupplierRedirect("https://www.alibaba.com/a", "https://127.0.0.1/private"), /PRIVATE_SOURCE_FORBIDDEN/);
   assert.equal(
     validateSupplierRedirect("https://supplier.example/a", "https://www.supplier.example/a", supported).hostname,
     "www.supplier.example",
