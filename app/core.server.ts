@@ -19,6 +19,10 @@ function createCore(): Core {
   const databasePath = process.env.SUPPLIER_DATABASE_PATH ||
     join(process.cwd(), "data", "supplier-signal.db");
   const db = createDatabase(databasePath);
+  for (const tenant of db.listActiveTenants()) {
+    const count = db.quarantineConflictingSources(tenant.shop);
+    if (count) console.warn(`SupplierSignal revoked ${count} conflicting product status(es) for ${tenant.shop}`);
+  }
   const liveProvider = String(process.env.PROVIDER || "mock").toLowerCase() !== "mock";
   const provider = createPageProvider(process.env, { root: resolve(process.cwd()) });
   const evidenceReader = createEvidenceReader(process.env);
@@ -74,4 +78,6 @@ export function ensureTenant(shop: string) {
     sourceLimit: 25,
     monthlyCheckLimit: 1500,
   });
+  const quarantined = db.quarantineConflictingSources(shop);
+  if (quarantined) console.warn(`SupplierSignal revoked ${quarantined} conflicting product status(es) for ${shop}`);
 }

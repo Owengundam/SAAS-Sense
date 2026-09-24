@@ -1,4 +1,5 @@
 import { verifyEvidenceReference } from "./evidence.js";
+import { productIdentityConflict, IDENTITY_MISMATCH_REASON } from "./product-identity.js";
 
 const DEFAULT_IN_STOCK_TERMS = ["in stock", "available now", "ready to ship"];
 const DEFAULT_OUT_OF_STOCK_TERMS = ["out of stock", "sold out", "unavailable"];
@@ -71,6 +72,12 @@ function isAcceptedJevConflictResolution(aiResult) {
 }
 
 export function evaluateAiObservation(deterministic, providerResult, aiResult) {
+  if (deterministic.reason === IDENTITY_MISMATCH_REASON) return {
+    observation: deterministic,
+    accepted: false,
+    rejectionReason: "Shopify product title conflicts with the supplier page title",
+    influencedDecision: true,
+  };
   if (!aiResult?.ok) return {
     observation: deterministic,
     accepted: false,
@@ -214,6 +221,14 @@ export function classifyObservation(source, providerResult, now = new Date()) {
     };
   }
 
+  if (productIdentityConflict(source, providerResult.title)) return {
+    state: STATES.UNCERTAIN,
+    confidence: 0,
+    reason: IDENTITY_MISMATCH_REASON,
+    checkedAt: now.toISOString(),
+    factual: false,
+  };
+
   const title = normalize(providerResult.title);
   const text = normalize(providerResult.text);
   const expectedTerms = (source.matchTerms || []).map(normalize).filter(Boolean);
@@ -298,6 +313,12 @@ export function classifyObservation(source, providerResult, now = new Date()) {
 }
 
 export function decideTransition(source, observation, confirmationCount = 2) {
+  if (observation.reason === IDENTITY_MISMATCH_REASON) return {
+    confirmedState: null,
+    candidateState: null,
+    candidateCount: 0,
+    alert: null,
+  };
   if (!observation.factual || observation.confidence < 0.8) {
     return {
       confirmedState: source.lastState,

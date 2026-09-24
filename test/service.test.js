@@ -4,6 +4,7 @@ import { createDatabase } from "../src/db.js";
 import { MockProvider } from "../src/providers/mock.js";
 import { SupplierSignalService } from "../src/service.js";
 import { STATES } from "../src/domain.js";
+import { IDENTITY_MISMATCH_REASON } from "../src/product-identity.js";
 
 function setup(overrides = {}) {
   const db = createDatabase();
@@ -34,6 +35,55 @@ function add(service, shop = "a.myshopify.com") {
 const page = (runId, stockText) => ({
   ok: true, runId, url: "https://supplier.test/arc", title: "Arc Floor Lamp",
   text: `SKU AFL-220. ${stockText}`,
+});
+
+test("a dish-soap supplier page cannot confirm a Shopify snowboard, even if the AI says MATCH", async () => {
+  const evidenceReader = { async analyze() { return {
+    ok: true, provider: "siliconflow", productMatch: "MATCH", availability: "IN_STOCK",
+    evidenceQuote: "In Stock In Stock", confidence: 0.98,
+    reason: "Dawn Powerwash appears available",
+  }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = service.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/53157915099456",
+    shopifyVariantId: "gid://shopify/ProductVariant/53157915099456",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "Dawn Powerwash", matchTerms: ["Dawn Powerwash"],
+    url: "https://www.amazon.com/dp/B082DLGV3F", matchConfirmed: true,
+  });
+  provider.queue(source.url, [{
+    ok: true, runId: "mismatch-dawn", url: source.url,
+    title: "Dawn Powerwash Spray, Dish Soap", text: "Dawn Powerwash. In Stock In Stock.",
+  }]);
+  const result = await service.checkSource("a.myshopify.com", source.id);
+  assert.equal(result.observation.state, STATES.UNCERTAIN);
+  assert.equal(result.observation.reason, IDENTITY_MISMATCH_REASON);
+  assert.equal(result.source.lastState, null);
+  assert.equal(db.listDecisionRecords("a.myshopify.com")[0].decision_source, "SAFETY_GATE");
+  assert.equal(db.listDecisionRecords("a.myshopify.com")[0].ai_status, "REJECTED");
+  db.close();
+});
+
+test("existing false stock is revoked without removing the captured evidence", () => {
+  const { db, service } = setup();
+  const source = service.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/53157915099456",
+    shopifyVariantId: "gid://shopify/ProductVariant/53157915099456",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "Dawn Powerwash", matchTerms: ["Dawn Powerwash"],
+    url: "https://www.amazon.com/dp/B082DLGV3F", matchConfirmed: true,
+  });
+  const observation = { state: STATES.IN_STOCK, factual: true, confidence: 0.9,
+    reason: "AI verified In Stock In Stock", checkedAt: "2026-09-24T08:08:00.000Z" };
+  db.insertObservation("a.myshopify.com", source.id, "old-incorrect", observation,
+    "Dawn Powerwash Spray, Dish Soap, Dishwashing Liquid. In Stock In Stock.");
+  db.updateTransition("a.myshopify.com", source.id, { confirmedState: STATES.IN_STOCK }, observation, null, observation.checkedAt);
+  assert.equal(db.quarantineConflictingSources("a.myshopify.com"), 1);
+  assert.equal(db.quarantineConflictingSources("a.myshopify.com"), 0);
+  assert.equal(db.getSource("a.myshopify.com", source.id).lastState, null);
+  assert.equal(db.getSource("a.myshopify.com", source.id).lastAttemptStatus, "PRODUCT_MISMATCH");
+  assert.equal(db.listObservations("a.myshopify.com").length, 1);
+  db.close();
 });
 
 test("AI evidence reader participates before transition decisions", async () => {

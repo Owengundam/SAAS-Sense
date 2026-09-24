@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { productIdentityConflict, IDENTITY_MISMATCH_REASON } from "./product-identity.js";
 
 const JSON_FIELDS = ["matchTerms", "inStockTerms", "outOfStockTerms"];
 
@@ -394,6 +395,32 @@ export function createDatabase(path = ":memory:") {
     listSources(shop) {
       return db.prepare("SELECT * FROM sources WHERE shop = ? ORDER BY created_at").all(shop).map(mapSource);
     },
+    // Revoke previously confirmed stock only when the captured page opens with
+    // the descriptive supplier item but not the selected Shopify product.
+    // Keep the original evidence and decision record for audit.
+    quarantineConflictingSources(shop) {
+      const key = `identity-reconciliation-v1:${shop}`;
+      if (this.getAppState(key)) return 0;
+      const rows = db.prepare(`SELECT s.*,
+        (SELECT raw_excerpt FROM observations o WHERE o.source_id=s.id
+         ORDER BY o.checked_at DESC LIMIT 1) AS latest_excerpt
+        FROM sources s WHERE s.shop=? AND s.last_state IS NOT NULL
+        AND s.shopify_variant_id IS NOT NULL`).all(shop);
+      let count = 0;
+      for (const row of rows) {
+        const excerpt = String(row.latest_excerpt || "").slice(0, 180);
+        const supplierName = String(row.supplier_sku || "").trim();
+        if ((supplierName.match(/[a-z]{4,}/gi) || []).length < 2 ||
+          !excerpt.toLowerCase().includes(supplierName.toLowerCase()) ||
+          !productIdentityConflict(mapSource(row), excerpt)) continue;
+        db.prepare(`UPDATE sources SET last_state=NULL, candidate_state=NULL,
+          candidate_count=0, last_confirmed_at=NULL, next_recheck_at=NULL,
+          last_attempt_status='PRODUCT_MISMATCH' WHERE shop=? AND id=?`).run(shop, row.id);
+        count += 1;
+      }
+      this.setAppState(key, new Date().toISOString());
+      return count;
+    },
     listDueRechecks(shop, now = new Date(), limit = 25) {
       return db.prepare(`SELECT * FROM sources WHERE shop = ? AND enabled = 1
         AND next_recheck_at IS NOT NULL AND next_recheck_at <= ? ORDER BY next_recheck_at LIMIT ?`)
@@ -420,11 +447,12 @@ export function createDatabase(path = ":memory:") {
     updateTransition(shop, id, transition, observation, nextRecheckAt = null, confirmedAt = null) {
       db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?,
         last_checked_at=?, last_attempt_at=?, last_attempt_status=?,
-        last_confirmed_at=COALESCE(?, last_confirmed_at), next_recheck_at=?
+        last_confirmed_at=CASE WHEN ? THEN NULL ELSE COALESCE(?, last_confirmed_at) END, next_recheck_at=?
         WHERE shop=? AND id=?`).run(
         transition.confirmedState || null, transition.candidateState || null,
         transition.candidateCount || 0, observation.checkedAt, observation.checkedAt,
-        observation.state, confirmedAt, nextRecheckAt, shop, id,
+        observation.state, observation.reason === IDENTITY_MISMATCH_REASON ? 1 : 0,
+        confirmedAt, nextRecheckAt, shop, id,
       );
     },
     insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "") {

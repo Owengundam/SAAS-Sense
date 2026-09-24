@@ -54,11 +54,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: started, message: started ? "Checking the supplier page. Results will appear here automatically." : "A check is already running." };
     }
     if (intent === "edit-source") {
-      service.updateSource(session.shop, String(form.get("sourceId") || ""), {
-        sku: String(form.get("sku") || "").trim(),
-        productTitle: String(form.get("productTitle") || "").trim(),
-        shopifyProductId: String(form.get("shopifyProductId") || "").trim(),
-        shopifyVariantId: String(form.get("shopifyVariantId") || "").trim(),
+      const sourceId = String(form.get("sourceId") || "");
+      const existing = service.db.getSource(session.shop, sourceId);
+      if (!existing) return { ok: false, message: "Product not found." };
+      service.updateSource(session.shop, sourceId, {
+        sku: existing.sku,
+        productTitle: existing.productTitle,
+        shopifyProductId: existing.shopifyProductId,
+        shopifyVariantId: existing.shopifyVariantId,
         supplierProductId: String(form.get("supplierProductId") || "").trim(),
         supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
         supplierSku: String(form.get("supplierSku") || "").trim(),
@@ -128,7 +131,9 @@ export default function Index() {
       const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: false });
       const variant = selected?.[0];
       if (variant) {
-        setSelectedVariant({ id: variant.id, label: variant.title || "Selected Shopify variant" });
+        setSelectedVariant({ id: variant.id, label: variant.product?.title
+          ? `${variant.product.title}${variant.title && variant.title !== "Default Title" ? ` · ${variant.title}` : ""}`
+          : variant.displayName || variant.title || "Selected Shopify variant" });
         setPickerError("");
       }
     } catch {
@@ -231,25 +236,26 @@ export default function Index() {
                   const candidateObservation: any = latest.get(source.id);
                   const observation = candidateObservation?.checked_at === source.lastAttemptAt ? candidateObservation : null;
                   const decision = observation ? decisions.get(observation.id) : null;
-                  const latestUnverified = source.lastAttemptStatus === "SOURCE_ERROR" || source.lastAttemptStatus === "UNCERTAIN";
+                  const mismatched = source.lastAttemptStatus === "PRODUCT_MISMATCH" || observation?.reason?.startsWith("Supplier page describes a different product");
+                  const latestUnverified = mismatched || source.lastAttemptStatus === "SOURCE_ERROR" || source.lastAttemptStatus === "UNCERTAIN";
                   const modalId = `delete-source-${source.id}`;
                   return <tr key={source.id}>
-                    <td><span className={styles.product}>{source.productTitle}</span><span className={styles.sku}>{source.sku}</span></td>
+                    <td><span className={styles.product}>{source.productTitle}</span><span className={styles.sku}>{source.sku?.startsWith("gid://") ? "No Shopify SKU" : source.sku}</span></td>
                     <td>
                       <span className={latestUnverified ? `${styles.state} ${styles.warn}` : stateClass(source.lastState, source.stale)}>
-                        {latestUnverified ? "Unable to verify" : stateLabel(source.lastState, source.stale)}
+                        {mismatched ? "Wrong supplier product" : latestUnverified ? "Unable to verify" : stateLabel(source.lastState, source.stale)}
                       </span>
                       {source.lastState && <span className={styles.muted}>Last confirmed {stateLabel(source.lastState, false).toLowerCase()} {formatTime(source.lastConfirmedAt)}{source.stale ? " · stale" : ""}</span>}
                       {source.candidateState && <span className={styles.pending}>Possible change to {stateLabel(source.candidateState, false)}. Confirmation due {formatTime(source.nextRecheckAt)}.</span>}
                     </td>
                     <td className={styles.evidence}>
-                      <strong>{observation?.reason || "Run a check to establish a baseline"}</strong>
+                      <strong>{mismatched ? "Supplier page describes a different product than the selected Shopify product. Choose a matching supplier link or Shopify item." : observation?.reason || "Run a check to establish a baseline"}</strong>
                       {observation && <>
                         <span className={styles.muted}>Latest attempt {formatTime(source.lastAttemptAt)}</span>
                         <a href={source.url} target="_blank" rel="noreferrer">Open supplier page</a>
                         {observation.raw_excerpt && <details><summary>View captured evidence</summary><p>{observation.raw_excerpt}</p></details>}
                         {decision && <details className={styles.audit}>
-                          <summary>Decision audit · {decisionLabel(decision)}</summary>
+                          <summary>{mismatched && source.lastAttemptStatus === "PRODUCT_MISMATCH" ? "Previous decision · invalidated product match" : `Decision audit · ${decisionLabel(decision)}`}</summary>
                           <dl className={styles.auditGrid}>
                             <dt>Final source</dt><dd>{decision.decision_source}</dd>
                             <dt>Rules</dt><dd>{stateLabel(decision.rules_state, false)} · {Math.round(decision.rules_confidence * 100)}%</dd>
@@ -284,16 +290,18 @@ export default function Index() {
                           <Form method="post" className={styles.compactForm}>
                             <input type="hidden" name="intent" value="edit-source" />
                             <input type="hidden" name="sourceId" value={source.id} />
-                            <label>SKU<input name="sku" required defaultValue={source.sku} /></label>
-                            <label>Title<input name="productTitle" required defaultValue={source.productTitle} /></label>
-                            <label>Shopify product ID<input name="shopifyProductId" defaultValue={source.shopifyProductId || ""} /></label>
-                            <label>Shopify variant ID<input name="shopifyVariantId" defaultValue={source.shopifyVariantId || ""} /></label>
-                            <label>Supplier SKU<input name="supplierSku" defaultValue={source.supplierSku || ""} /></label>
-                            <label>Supplier product ID<input name="supplierProductId" defaultValue={source.supplierProductId || ""} /></label>
-                            <label>Supplier variant ID<input name="supplierVariantId" defaultValue={source.supplierVariantId || ""} /></label>
-                            <label>URL<input name="url" type="url" required defaultValue={source.url} /></label>
-                            <label>Match terms<input name="matchTerms" defaultValue={source.matchTerms.join(", ")} /></label>
+                            <span className={styles.formHelp}>Shopify product: {source.productTitle}</span>
+                            <label>Supplier product URL<input name="url" type="url" required defaultValue={source.url} /></label>
+                            <label>Supplier SKU, model or product name<input name="supplierSku" required defaultValue={source.supplierSku || ""} /></label>
+                            <details className={styles.advancedFields}><summary>Optional: improve matching</summary>
+                              <div>
+                                <label>Supplier product ID<input name="supplierProductId" defaultValue={source.supplierProductId || ""} /></label>
+                                <label>Supplier variant ID<input name="supplierVariantId" defaultValue={source.supplierVariantId || ""} /></label>
+                                <label>Extra match terms<input name="matchTerms" defaultValue={source.matchTerms.filter((term: string) => term !== source.supplierSku).join(", ")} /></label>
+                              </div>
+                            </details>
                             <label className={styles.checkbox}><input name="matchConfirmed" type="checkbox" required />I verified this exact supplier product/variant.</label>
+                            <span className={styles.formHelp}>To change the Shopify item, remove this link and add the right product.</span>
                             <button className={styles.button} disabled={busy}>Save changes</button>
                           </Form>
                         </details>

@@ -4,9 +4,13 @@ function configuredReaderMode(env: NodeJS.ProcessEnv) {
   return "deepseek";
 }
 
-export const loader = () => Response.json({
+export const loader = () => {
+  getSupplierSignal();
+  return Response.json({
   ok: true,
   service: "supplier-signal",
   readerMode: configuredReaderMode(process.env),
   revision: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || null,
-});
+  });
+};
+import { getSupplierSignal } from "../core.server";
