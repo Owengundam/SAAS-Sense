@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Form, useFetcher, useLoaderData } from "react-router";
+import { Form, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
 import { verifyShopifyVariant } from "../catalog.server";
+import { getCheckJob, startCheckJob } from "../check-jobs.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -14,6 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     ...getSupplierSignal().service.dashboard(session.shop),
     shop: session.shop,
+    checkJob: getCheckJob(session.shop),
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
   };
 };
@@ -41,14 +43,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: true, added: true, message: "Product added. Run its first check to see the supplier's availability." };
     }
     if (intent === "check-all") {
-      const results = await service.checkAll(session.shop);
-      return { ok: true, message: `Checked ${results.length} source${results.length === 1 ? "" : "s"}.` };
+      const sourceIds = service.dashboard(session.shop).sources.map((source: { id: string }) => source.id);
+      const started = startCheckJob(session.shop, sourceIds, service);
+      return { ok: started, message: started ? "Checking supplier pages. Results will appear here automatically." : "A check is already running, or there are no products to check." };
     }
     if (intent === "check-one") {
-      const result = await service.checkSource(session.shop, String(form.get("sourceId") || ""));
-      if (result.observation.state === "SOURCE_ERROR") return { ok: false, message: "Source check failed. Open the evidence for details." };
-      if (result.observation.state === "UNCERTAIN") return { ok: true, warning: true, message: "Checked, but availability needs review." };
-      return { ok: true, message: `Checked: ${stateLabel(result.observation.state, false)}.` };
+      const sourceId = String(form.get("sourceId") || "");
+      if (!service.db.getSource(session.shop, sourceId)) return { ok: false, message: "Product not found." };
+      const started = startCheckJob(session.shop, [sourceId], service);
+      return { ok: started, message: started ? "Checking the supplier page. Results will appear here automatically." : "A check is already running." };
     }
     if (intent === "edit-source") {
       service.updateSource(session.shop, String(form.get("sourceId") || ""), {
@@ -114,8 +117,9 @@ function decisionLabel(decision: any) {
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const revalidator = useRevalidator();
   const shopify = useAppBridge();
-  const busy = fetcher.state !== "idle";
+  const busy = fetcher.state !== "idle" || data.checkJob?.status === "running";
   const sourceForm = useRef<HTMLFormElement>(null);
   const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
   const [pickerError, setPickerError] = useState("");
@@ -139,6 +143,14 @@ export default function Index() {
       setSelectedVariant(null);
     }
   }, [fetcher.data, shopify]);
+
+  useEffect(() => {
+    if (data.checkJob?.status !== "running") return;
+    const timer = window.setInterval(() => {
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [data.checkJob?.status, revalidator]);
 
   const latest = new Map<string, any>();
   for (const item of data.observations as any[]) {
@@ -180,7 +192,8 @@ export default function Index() {
         </fetcher.Form>}
       </div>
       {data.simulated && <div className={`${styles.notice} ${styles.error}`}>Demo provider is active. No live supplier pages are being checked.</div>}
-      {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : fetcher.data.warning ? styles.warningNotice : ""}`}>{fetcher.data.message}</div>}
+      {fetcher.data?.message && <div className={`${styles.notice} ${!fetcher.data.ok ? styles.error : ""}`}>{fetcher.data.message}</div>}
+      {data.checkJob && <div className={styles.notice} role="status">{data.checkJob.status === "running" ? `Checking ${data.checkJob.completed} of ${data.checkJob.total} supplier pages. You can leave this page while it runs.` : data.checkJob.message}</div>}
       {!setupComplete && <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="setup-heading">
         <div className={styles.setupHeader}>
           <div>

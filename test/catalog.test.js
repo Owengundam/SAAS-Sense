@@ -21,3 +21,11 @@ test("a selected variant is resolved on Shopify before linking a supplier", asyn
   await assert.rejects(() => verifyShopifyVariant(admin, "gid://shopify/ProductVariant/999"), /unavailable/i);
   await assert.rejects(() => verifyShopifyVariant(admin, "arbitrary-merchant-id"), /Select a variant/i);
 });
+
+test("a slow Shopify API gives a retryable error before the embedded request hangs", async () => {
+  const admin = { graphql: () => new Promise(() => {}) };
+  await assert.rejects(
+    () => verifyShopifyVariant(admin, "gid://shopify/ProductVariant/123", 5),
+    /taking too long/i,
+  );
+});
