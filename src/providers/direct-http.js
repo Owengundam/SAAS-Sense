@@ -98,7 +98,7 @@ export class DirectHttpProvider {
         };
         const response = await (this.fetchImpl
           ? this.fetchImpl(currentUrl, options)
-          : fetchPinnedAddress(currentUrl, options, addresses[0]));
+          : fetchPinnedAddress(currentUrl, options, addresses.find((address) => isIP(address) === 4) || addresses[0]));
         if (REDIRECT_STATUSES.has(response.status)) {
           if (redirects === this.maxRedirects) throw new Error("Direct HTTP redirect limit exceeded");
           const location = response.headers.get("location");
