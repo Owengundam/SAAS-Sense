@@ -370,3 +370,13 @@ test("page provider factory assembles the configured cascade", () => {
     "apify",
   ]);
 });
+
+test("unrestricted suppliers use the pinned direct connection and managed fallback", () => {
+  const provider = createPageProvider({
+    PROVIDER: "cascade",
+    SELF_HOSTED_BROWSER_ENABLED: "true",
+    APIFY_API_TOKEN: "token",
+  });
+  assert.deepEqual(provider.providers.map((item) => item.providerName), ["direct-http", "apify"]);
+  assert.equal(provider.providers[0].fetchImpl, undefined);
+});

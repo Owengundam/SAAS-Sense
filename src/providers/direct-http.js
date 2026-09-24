@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { request } from "node:https";
+import { isIP } from "node:net";
+import { Readable } from "node:stream";
 import { assertPublicHostnameDns, validateSupplierRedirect } from "../source-policy.js";
 import { extractProductPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
 
@@ -15,6 +18,26 @@ const SECURITY_ERRORS = new Set([
   "UNSUPPORTED_SUPPLIER_DOMAIN",
   "UNSUPPORTED_SUPPLIER_PORT",
 ]);
+
+// Resolve once, reject private answers, and connect to the checked address.
+// Otherwise a hostname could change DNS answers between validation and fetch.
+function fetchPinnedAddress(url, options, address) {
+  return new Promise((resolve, reject) => {
+    const req = request(url, {
+      method: options.method,
+      headers: options.headers,
+      signal: options.signal,
+      lookup: (_hostname, _options, callback) => callback(null, address, isIP(address)),
+    }, (res) => {
+      resolve(new Response(Readable.toWeb(res), {
+        status: res.statusCode,
+        headers: res.headers,
+      }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
 
 async function readBoundedBody(response, maxBytes) {
   if (!response.body) return "";
@@ -38,7 +61,7 @@ async function readBoundedBody(response, maxBytes) {
 
 export class DirectHttpProvider {
   constructor({
-    fetchImpl = fetch,
+    fetchImpl,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxBytes = DEFAULT_MAX_BYTES,
     maxRedirects = 3,
@@ -61,8 +84,8 @@ export class DirectHttpProvider {
     let currentUrl = source.url;
     try {
       for (let redirects = 0; redirects <= this.maxRedirects; redirects += 1) {
-        await assertPublicHostnameDns(new URL(currentUrl).hostname, this.dnsLookup);
-        const response = await this.fetchImpl(currentUrl, {
+        const addresses = await assertPublicHostnameDns(new URL(currentUrl).hostname, this.dnsLookup);
+        const options = {
           method: "GET",
           redirect: "manual",
           headers: {
@@ -72,7 +95,10 @@ export class DirectHttpProvider {
             "user-agent": "SupplierSignal/0.2 (+supplier availability monitor)",
           },
           signal: controller.signal,
-        });
+        };
+        const response = await (this.fetchImpl
+          ? this.fetchImpl(currentUrl, options)
+          : fetchPinnedAddress(currentUrl, options, addresses[0]));
         if (REDIRECT_STATUSES.has(response.status)) {
           if (redirects === this.maxRedirects) throw new Error("Direct HTTP redirect limit exceeded");
           const location = response.headers.get("location");

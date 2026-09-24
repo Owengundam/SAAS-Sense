@@ -11,7 +11,7 @@ function integer(value, fallback) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-export function createPageProvider(env = process.env, { root = process.cwd(), fetchImpl = fetch } = {}) {
+export function createPageProvider(env = process.env, { root = process.cwd(), fetchImpl } = {}) {
   const mode = String(env.PROVIDER || "mock").trim().toLowerCase();
   const normalizedDomains = normalizeSupportedDomains(env.SUPPORTED_SUPPLIER_DOMAINS || "");
   const supportedDomains = normalizedDomains.length ? normalizedDomains : undefined;
@@ -19,7 +19,7 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
     return new MockProvider({ fixturePath: resolve(root, "fixtures", "mock-pages.json") });
   }
   if (mode === "apify") {
-    return new ApifyProvider({ token: env.APIFY_API_TOKEN, actorId: env.APIFY_ACTOR_ID, fetchImpl });
+    return new ApifyProvider({ token: env.APIFY_API_TOKEN, actorId: env.APIFY_ACTOR_ID, fetchImpl: fetchImpl || fetch });
   }
 
   const direct = new DirectHttpProvider({
@@ -32,7 +32,9 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
   if (mode !== "cascade") throw new Error("INVALID_PAGE_PROVIDER_MODE");
 
   const providers = [direct];
-  if (env.SELF_HOSTED_BROWSER_ENABLED === "true") {
+  // Chromium cannot pin DNS to a checked address like the direct HTTP client.
+  // Keep it scoped to explicitly listed hosts; other sources use Apify fallback.
+  if (env.SELF_HOSTED_BROWSER_ENABLED === "true" && normalizedDomains.length) {
     providers.push(new BrowserProvider({
       supportedDomains,
       executablePath: env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
@@ -47,7 +49,7 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
     providers.push(new ApifyProvider({
       token: env.APIFY_API_TOKEN,
       actorId: env.APIFY_ACTOR_ID,
-      fetchImpl,
+      fetchImpl: fetchImpl || fetch,
     }));
   }
   return new CascadingPageProvider({ providers });

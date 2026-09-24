@@ -169,7 +169,8 @@ AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
 JEV_PRIMARY_DOMAINS=
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
-SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
+# Optional: restrict a pilot to specific supplier hosts; unset to allow public HTTPS hosts.
+# SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
 SCOPES=read_products
 ```
