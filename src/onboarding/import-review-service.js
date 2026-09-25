@@ -114,7 +114,9 @@ export function approveReadyImportRows({
     return {
       rowId: row.id,
       expectedEvidenceVersion: selection.expectedEvidenceVersion,
-      source: approvalSource(batch, row, supportedDomains),
+      source: row.status === "APPROVED"
+        ? { shopifyVariantId: row.suggestedVariantId }
+        : approvalSource(batch, row, supportedDomains),
     };
   });
   return db.approveImportRows(shop, batchId, approvals, reviewer, now);
