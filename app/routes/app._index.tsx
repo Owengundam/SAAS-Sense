@@ -7,7 +7,9 @@ import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
 import { verifyShopifyVariant, verifyShopifyVariants } from "../catalog.server";
 import { stageImportBatch } from "../../src/onboarding/import-service.js";
+import { approveReadyImportRows } from "../../src/onboarding/import-review-service.js";
 import { getCheckJob, startCheckJob } from "../check-jobs.server";
+import { startImportJob } from "../import-jobs.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -58,6 +60,42 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         message: batch.reused
           ? "This exact onboarding draft already exists, so no duplicate was created."
           : `Saved ${batch.rowCount} supplier rows with ${batch.variantCount} Shopify variants. Nothing is monitored until a mapping is approved.`,
+      };
+    }
+    if (intent === "process-import-batch") {
+      const batchId = String(form.get("batchId") || "");
+      if (!service.db.getImportBatch(session.shop, batchId)) return { ok: false, message: "Onboarding draft not found." };
+      const started = startImportJob(session.shop, batchId, service);
+      return {
+        ok: started,
+        importStarted: started,
+        message: started
+          ? "Extracting supplier metadata. Progress is saved row by row."
+          : "This onboarding draft is already being processed.",
+      };
+    }
+    if (intent === "approve-import-rows") {
+      const batchId = String(form.get("batchId") || "");
+      const selections = form.getAll("approval").map((value) => {
+        const parsed = JSON.parse(String(value));
+        return {
+          rowId: String(parsed.rowId || ""),
+          expectedEvidenceVersion: String(parsed.expectedEvidenceVersion || ""),
+        };
+      }).filter((selection) => selection.rowId && selection.expectedEvidenceVersion);
+      if (!selections.length) return { ok: false, message: "Select at least one ready mapping to approve." };
+      const approved = approveReadyImportRows({
+        db: service.db,
+        shop: session.shop,
+        batchId,
+        selections,
+        reviewer: session.id || session.shop,
+        supportedDomains: service.supportedDomains,
+      });
+      return {
+        ok: true,
+        importApproved: true,
+        message: `Approved ${approved.length} mapping${approved.length === 1 ? "" : "s"}. Monitoring is enabled; stock remains unknown until a factual check establishes a baseline.`,
       };
     }
     if (intent === "add-source") {
@@ -207,12 +245,13 @@ export default function Index() {
   }, [fetcher.data, shopify]);
 
   useEffect(() => {
-    if (data.checkJob?.status !== "running") return;
+    const importRunning = data.latestImportBatch?.status === "PROCESSING";
+    if (data.checkJob?.status !== "running" && !importRunning) return;
     const timer = window.setInterval(() => {
       if (revalidator.state === "idle") revalidator.revalidate();
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [data.checkJob?.status, revalidator]);
+  }, [data.checkJob?.status, data.latestImportBatch?.status, revalidator]);
 
   const latest = new Map<string, any>();
   for (const item of data.observations as any[]) {
@@ -321,27 +360,82 @@ export default function Index() {
           <button className={styles.button} disabled={busy || batchVariants.length === 0}>{busy ? "Saving draft…" : "Save onboarding draft"}</button>
         </fetcher.Form>
         {data.latestImportBatch && <div style={{ marginTop: 20 }}>
-          <h3 className={styles.sectionTitle}>Latest draft</h3>
-          <span className={styles.muted}>
-            {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · created {formatTime(data.latestImportBatch.createdAt)}
-          </span>
-          <div className={styles.tableWrap} style={{ marginTop: 8 }}>
-            <table className={styles.table}>
-              <thead><tr><th>Row</th><th>Supplier URL</th><th>Shopify hint</th><th>Status</th></tr></thead>
-              <tbody>
-                {data.latestImportBatch.rows.map((row: any) => <tr key={row.id}>
-                  <td>{row.rowIndex}</td>
-                  <td className={styles.evidence}>{row.url || "Missing URL"}</td>
-                  <td><span className={styles.sku}>{row.shopifyVariantIdHint || row.merchantSkuHint || row.barcodeHint || "To be matched later"}</span></td>
-                  <td>
-                    <span className={row.status === "INVALID" ? `${styles.state} ${styles.bad}` : `${styles.state} ${styles.info}`}>{row.status}</span>
-                    {row.error && <span className={styles.muted}>{row.error}</span>}
-                  </td>
-                </tr>)}
-              </tbody>
-            </table>
+          <div className={styles.setupHeader}>
+            <div>
+              <h3 className={styles.sectionTitle}>Latest draft</h3>
+              <span className={styles.muted}>
+                {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · {data.latestImportBatch.status}
+              </span>
+            </div>
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="process-import-batch" />
+              <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
+              <button
+                className={`${styles.button} ${styles.secondary}`}
+                disabled={busy || data.latestImportBatch.status === "PROCESSING" || !data.latestImportBatch.rows.some((row: any) => row.status === "DRAFT")}
+              >
+                {data.latestImportBatch.status === "PROCESSING" ? "Extracting…" : "Extract supplier metadata"}
+              </button>
+            </fetcher.Form>
           </div>
-          <span className={styles.formHelp}>Drafts survive reloads and restarts. Approval and supplier metadata extraction come in the next onboarding step.</span>
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="approve-import-rows" />
+            <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
+            <div className={styles.tableWrap} style={{ marginTop: 8 }}>
+              <table className={styles.table}>
+                <thead><tr><th>Approve</th><th>Supplier item</th><th>Shopify match</th><th>Evidence</th><th>Status</th></tr></thead>
+                <tbody>
+                  {data.latestImportBatch.rows.map((row: any) => {
+                    const variant = data.latestImportBatch?.variants.find((item: any) => item.shopifyVariantId === row.suggestedVariantId);
+                    const candidate = row.suggestedCandidate;
+                    const statusTone = row.status === "APPROVED"
+                      ? `${styles.state} ${styles.good}`
+                      : ["INVALID", "BLOCKED", "NO_MATCH"].includes(row.status)
+                        ? `${styles.state} ${styles.bad}`
+                        : row.status === "NEEDS_REVIEW"
+                          ? `${styles.state} ${styles.warn}`
+                          : `${styles.state} ${styles.info}`;
+                    return <tr key={row.id}>
+                      <td>
+                        {row.status === "READY_FOR_REVIEW" && row.evidenceVersion
+                          ? <input
+                              type="checkbox"
+                              name="approval"
+                              value={JSON.stringify({ rowId: row.id, expectedEvidenceVersion: row.evidenceVersion })}
+                              aria-label={`Approve row ${row.rowIndex}`}
+                            />
+                          : "—"}
+                      </td>
+                      <td className={styles.evidence}>
+                        <strong>{candidate?.displayName || candidate?.title || row.metadata?.title || "Metadata not extracted"}</strong>
+                        <span className={styles.muted}>
+                          {candidate?.supplierSku || candidate?.sku || row.supplierSkuHint || "No supplier SKU captured"}
+                        </span>
+                        {row.resolvedUrl && <a href={row.resolvedUrl} target="_blank" rel="noreferrer">Open captured supplier page</a>}
+                      </td>
+                      <td>
+                        <span className={styles.product}>{variant ? `${variant.parentTitle}${variant.variantTitle ? ` · ${variant.variantTitle}` : ""}` : "Unresolved"}</span>
+                        <span className={styles.sku}>{variant?.merchantSku || row.shopifyVariantIdHint || row.merchantSkuHint || "No deterministic match"}</span>
+                      </td>
+                      <td>
+                        <strong>{row.matchReason || "Awaiting extraction"}</strong>
+                        {(row.matchEvidence || []).map((item: any, index: number) =>
+                          <span key={index} className={styles.muted}>{item.kind}: {String(item.value)}</span>)}
+                      </td>
+                      <td>
+                        <span className={statusTone}>{row.status}</span>
+                        {row.error && <span className={styles.muted}>{row.error}</span>}
+                      </td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {data.latestImportBatch.rows.some((row: any) => row.status === "READY_FOR_REVIEW") && <div style={{ marginTop: 12 }}>
+              <button className={styles.button} disabled={busy}>Approve selected ready mappings</button>
+              <span className={styles.formHelp}>Only rows backed by strong identifier evidence can be bulk-approved. Title-only suggestions stay out of this action.</span>
+            </div>}
+          </fetcher.Form>
         </div>}
       </section>
       <div className={`${styles.grid} ${data.sources.length === 0 ? styles.emptyGrid : ""}`}>
