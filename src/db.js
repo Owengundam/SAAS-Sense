@@ -216,12 +216,69 @@ export function createDatabase(path = ":memory:") {
       options_hint TEXT,
       status TEXT NOT NULL,
       error TEXT,
+      claim_token TEXT,
+      claimed_at TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      resolved_url TEXT,
+      fetched_at TEXT,
+      metadata_json TEXT,
+      evidence_version TEXT,
+      suggested_variant_id TEXT,
+      suggested_candidate_json TEXT,
+      match_reason TEXT,
+      match_evidence_json TEXT,
+      approved_source_id TEXT,
+      approved_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(batch_id, row_index)
     );
     CREATE INDEX IF NOT EXISTS import_rows_batch
       ON import_rows(batch_id, row_index);
+    CREATE TABLE IF NOT EXISTS import_attempts (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      role TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      provider_run_id TEXT,
+      latency_ms REAL,
+      attempted_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS import_attempts_batch
+      ON import_attempts(batch_id, attempted_at);
+    CREATE TABLE IF NOT EXISTS supplier_profiles (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      canonical_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(shop, domain)
+    );
+    CREATE TABLE IF NOT EXISTS confirmed_mappings (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      shopify_variant_id TEXT NOT NULL,
+      supplier_profile_id TEXT NOT NULL REFERENCES supplier_profiles(id) ON DELETE RESTRICT,
+      source_id TEXT NOT NULL,
+      supplier_product_id TEXT,
+      supplier_variant_id TEXT,
+      supplier_sku TEXT,
+      canonical_url TEXT NOT NULL,
+      evidence_version TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      reviewer TEXT NOT NULL,
+      approved_at TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(shop, shopify_variant_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS confirmed_mappings_variant
+      ON confirmed_mappings(shop, shopify_variant_id, active);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -256,6 +313,25 @@ export function createDatabase(path = ":memory:") {
   if (!decisionColumns.has("decision_details")) db.exec("ALTER TABLE decision_records ADD COLUMN decision_details TEXT");
   const attemptColumns = new Set(db.prepare("PRAGMA table_info(provider_attempts)").all().map((column) => column.name));
   if (!attemptColumns.has("latency_ms")) db.exec("ALTER TABLE provider_attempts ADD COLUMN latency_ms REAL");
+  const importRowColumns = new Set(db.prepare("PRAGMA table_info(import_rows)").all().map((column) => column.name));
+  const importRowMigrations = [
+    ["claim_token", "TEXT"],
+    ["claimed_at", "TEXT"],
+    ["attempt_count", "INTEGER NOT NULL DEFAULT 0"],
+    ["resolved_url", "TEXT"],
+    ["fetched_at", "TEXT"],
+    ["metadata_json", "TEXT"],
+    ["evidence_version", "TEXT"],
+    ["suggested_variant_id", "TEXT"],
+    ["suggested_candidate_json", "TEXT"],
+    ["match_reason", "TEXT"],
+    ["match_evidence_json", "TEXT"],
+    ["approved_source_id", "TEXT"],
+    ["approved_at", "TEXT"],
+  ];
+  for (const [name, definition] of importRowMigrations) {
+    if (!importRowColumns.has(name)) db.exec(`ALTER TABLE import_rows ADD COLUMN ${name} ${definition}`);
+  }
   db.exec(`
     UPDATE sources
       SET last_attempt_at = last_checked_at
