@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDatabase } from "../src/db.js";
 import {
   parseCsv,
@@ -89,6 +92,38 @@ test("repeated upload is idempotent and reloadable", () => {
   assert.equal(second.reused, true);
   assert.equal(db.listImportBatches("a.myshopify.com").length, 1);
   assert.equal(db.getImportBatch("a.myshopify.com", first.id).rows.length, 2);
+});
+
+test("staged batches survive a SQLite close and reopen", () => {
+  const directory = mkdtempSync(join(tmpdir(), "supplier-signal-import-"));
+  const path = join(directory, "supplier-signal.db");
+  try {
+    let db = createDatabase(path);
+    db.upsertTenant({
+      shop: "a.myshopify.com",
+      demoToken: "a",
+      sourceLimit: 25,
+      monthlyCheckLimit: 1500,
+    });
+    const created = stageImportBatch({
+      db,
+      shop: "a.myshopify.com",
+      variants: [variant(1)],
+      inputKind: "urls",
+      input: "https://supplier.example/persisted?variant=1",
+      supportedDomains: ["supplier.example"],
+      now: new Date("2026-09-25T12:00:00Z"),
+    });
+    db.close();
+
+    db = createDatabase(path);
+    const restored = db.getImportBatch("a.myshopify.com", created.id);
+    assert.equal(restored?.rows[0].url, "https://supplier.example/persisted?variant=1");
+    assert.equal(restored?.variants[0].merchantSku, "SKU-1");
+    db.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("invalid rows remain visible while valid rows are reviewable", () => {
