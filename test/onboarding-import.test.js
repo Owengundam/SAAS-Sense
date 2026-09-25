@@ -166,6 +166,29 @@ test("duplicate merchant SKUs require disambiguation instead of positional pairi
   assert.equal(batch.rows[0].shopifyVariantIdHint, null);
 });
 
+test("exact duplicate rows are flagged without collapsing meaningful URL variants", () => {
+  const db = setup();
+  const batch = stageImportBatch({
+    db,
+    shop: "a.myshopify.com",
+    variants: [variant(1)],
+    inputKind: "csv",
+    input: [
+      "url,merchant_sku,supplier_sku",
+      "https://supplier.example/item?variant=blue,SKU-1,SUP-1",
+      "https://supplier.example/item?variant=blue,SKU-1,SUP-1",
+      "https://supplier.example/item?variant=red,SKU-1,SUP-1",
+    ].join("\n"),
+    supportedDomains: ["supplier.example"],
+  });
+
+  assert.equal(batch.rows[0].status, "DRAFT");
+  assert.equal(batch.rows[1].status, "INVALID");
+  assert.equal(batch.rows[1].error, "DUPLICATE_IMPORT_ROW");
+  assert.equal(batch.rows[2].status, "DRAFT");
+  assert.match(batch.rows[2].url, /variant=red/);
+});
+
 test("a batch larger than 25 supplier rows is rejected explicitly", () => {
   const db = setup();
   const urls = Array.from({ length: 26 }, (_, index) => `https://supplier.example/p${index + 1}`).join("\n");
