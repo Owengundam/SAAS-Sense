@@ -37,6 +37,51 @@ function availabilityText(item) {
   return value;
 }
 
+function ecommerceProductCandidates(item, runId, sourceUrl) {
+  const identifiers = item.identifiers || item.productIdentifiers || {};
+  const gtins = [
+    item.gtin,
+    item.gtin8,
+    item.gtin12,
+    item.gtin13,
+    item.gtin14,
+    identifiers.gtin,
+    identifiers.gtin8,
+    identifiers.gtin12,
+    identifiers.gtin13,
+    identifiers.gtin14,
+  ].map((value) => firstText(value)).filter(Boolean);
+  const variants = Array.isArray(item.variants) ? item.variants.slice(0, 20) : [];
+  const base = {
+    title: firstText(item.name, item.title, item.productName, item.product?.title),
+    brand: firstText(item.brand, item.manufacturer?.name, item.manufacturer),
+    sku: firstText(item.sku, identifiers.sku),
+    mpn: firstText(item.mpn, identifiers.mpn),
+    gtins: [...new Set(gtins)],
+    productId: firstText(item.productId, item.id, identifiers.productId),
+    model: firstText(item.model, item.modelNumber),
+    color: firstText(item.color),
+    size: firstText(item.size),
+    material: firstText(item.material),
+    url: firstText(item.url, item.productUrl, sourceUrl),
+    imageUrls: [item.image, item.imageUrl, item.thumbnail].flat().filter((value) => typeof value === "string").slice(0, 8),
+    offers: variants.map((variant, index) => ({
+      name: firstText(variant.name, variant.title),
+      sku: firstText(variant.sku),
+      url: firstText(variant.url),
+      availability: firstText(variant.availability, variant.stockStatus),
+      price: variant.price == null ? "" : String(variant.price),
+      priceCurrency: firstText(variant.priceCurrency),
+      evidencePath: "variants[" + index + "]",
+    })),
+    evidencePath: "apify.product",
+    snapshotId: runId,
+    sourceUrl,
+  };
+  return [base].filter((candidate) =>
+    candidate.title || candidate.sku || candidate.mpn || candidate.productId || candidate.gtins.length);
+}
+
 function ecommerceEvidence(item) {
   const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
   const identifiers = item.identifiers || item.productIdentifiers || {};
@@ -237,6 +282,7 @@ export class ApifyProvider {
           : rawPageText
             ? [{ origin: "PAGE_TEXT", path: null, text: rawPageText, snapshotId: runId, sourceUrl }]
             : [],
+        productCandidates: ecommerce ? ecommerceProductCandidates(item, runId, sourceUrl) : [],
         availabilityState: ecommerce ? structuredAvailabilityState(item) : null,
       };
     } catch (error) {
@@ -251,8 +297,11 @@ export class ApifyProvider {
 
     const primary = await this.fetchFromActor(this.actorId, source);
     const attempts = [providerAttempt(primary, this.actorId, "primary")];
+    const discoveryMetadataReady = source?.discoveryMode === true &&
+      primary.ok &&
+      ((Array.isArray(primary.productCandidates) && primary.productCandidates.length > 0) || primary.title);
     const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
-      (!primary.ok || !primary.availabilityState);
+      (!primary.ok || (!discoveryMetadataReady && !primary.availabilityState));
     if (!shouldFallback) return { ...primary, providerAttempts: attempts };
 
     const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
@@ -272,6 +321,7 @@ export class ApifyProvider {
         ...(fallback.evidenceRecords || []),
         ...(primary.evidenceRecords || []),
       ],
+      productCandidates: primary.productCandidates || [],
       fallbackUsed: true,
       providerAttempts: attempts,
     };
