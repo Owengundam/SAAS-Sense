@@ -75,6 +75,81 @@ function parseJsonLd(html) {
   return values.flatMap((value) => collectProducts(value));
 }
 
+function scalar(value) {
+  if (["string", "number"].includes(typeof value)) return clean(value);
+  if (value && typeof value === "object") return clean(value.name || value.value || value["@id"]);
+  return "";
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map(scalar).filter(Boolean))];
+}
+
+function productImageUrls(product) {
+  const images = Array.isArray(product?.image) ? product.image : [product?.image];
+  return uniqueStrings(images.flatMap((image) => {
+    if (typeof image === "string") return [image];
+    if (!image || typeof image !== "object") return [];
+    return [image.url, image.contentUrl];
+  })).slice(0, 8);
+}
+
+function productCandidateRecords(products, snapshotId, sourceUrl) {
+  return products.slice(0, 10).map((product, productIndex) => {
+    const offers = (Array.isArray(product.offers) ? product.offers : [product.offers])
+      .filter(Boolean)
+      .slice(0, 20)
+      .map((offer, offerIndex) => ({
+        name: scalar(offer.name),
+        sku: scalar(offer.sku),
+        url: scalar(offer.url),
+        availability: scalar(offer.availability),
+        price: scalar(offer.price),
+        priceCurrency: scalar(offer.priceCurrency),
+        evidencePath: "jsonld.products[" + productIndex + "].offers[" + offerIndex + "]",
+      }));
+    return {
+      title: scalar(product.name),
+      brand: scalar(product.brand),
+      sku: scalar(product.sku),
+      mpn: scalar(product.mpn),
+      gtins: uniqueStrings([product.gtin, product.gtin8, product.gtin12, product.gtin13, product.gtin14]),
+      productId: scalar(product.productID),
+      model: scalar(product.model),
+      color: scalar(product.color),
+      size: scalar(product.size),
+      material: scalar(product.material),
+      url: scalar(product.url),
+      imageUrls: productImageUrls(product),
+      offers,
+      evidencePath: "jsonld.products[" + productIndex + "]",
+      snapshotId,
+      sourceUrl,
+    };
+  });
+}
+
+function metaContent(html, attribute, value) {
+  const escaped = value.replace(/[.*+?^$()|[\]\\{}]/g, "\\function productRecords(products, snapshotId, sourceUrl) {");
+  const before = new RegExp("<meta\\b[^>]*" + attribute + "\\s*=\\s*[\"\']" + escaped + "[\"\'][^>]*content\\s*=\\s*[\"\']([^\"\']+)[\"\'][^>]*>", "i")
+    .exec(String(html || ""))?.[1];
+  if (before) return clean(decodeEntities(before));
+  const after = new RegExp("<meta\\b[^>]*content\\s*=\\s*[\"\']([^\"\']+)[\"\'][^>]*" + attribute + "\\s*=\\s*[\"\']" + escaped + "[\"\'][^>]*>", "i")
+    .exec(String(html || ""))?.[1];
+  return clean(decodeEntities(after || ""));
+}
+
+function canonicalUrlFromHtml(html, sourceUrl) {
+  const match = String(html || "").match(/<link\b[^>]*rel\s*=\s*["\'][^"\']*canonical[^"\']*["\'][^>]*href\s*=\s*["\']([^"\']+)["\'][^>]*>/i)
+    || String(html || "").match(/<link\b[^>]*href\s*=\s*["\']([^"\']+)["\'][^>]*rel\s*=\s*["\'][^"\']*canonical[^"\']*["\'][^>]*>/i);
+  if (!match?.[1]) return "";
+  try {
+    return new URL(decodeEntities(match[1]), sourceUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
 function productRecords(products, snapshotId, sourceUrl) {
   const records = [];
   const add = (path, value) => {
@@ -142,8 +217,13 @@ export function extractProductPage({ html, url, runId }) {
   const structuredAvailabilityDeferred = Boolean(structuredState) && hasDeferredAvailabilityText(text);
   const structuredAvailabilityConflict = Boolean(structuredState) &&
     [...visibleStates].some((visibleState) => visibleState !== structuredState);
+  const productCandidates = productCandidateRecords(products, runId, url);
+  const pageTitle = products.map((product) => clean(product.name)).find(Boolean) || titleFromHtml(html);
   return {
-    title: products.map((product) => clean(product.name)).find(Boolean) || titleFromHtml(html),
+    title: pageTitle,
+    canonicalUrl: canonicalUrlFromHtml(html, url),
+    pageImageUrl: metaContent(html, "property", "og:image") || metaContent(html, "name", "twitter:image"),
+    productCandidates,
     text,
     rawPageText: text,
     pageSnapshotId: runId,
@@ -156,6 +236,17 @@ export function extractProductPage({ html, url, runId }) {
 
 function normalized(value) {
   return String(value || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function hasUsefulProductMetadata(_source, result) {
+  if (!result?.ok) return false;
+  if (Array.isArray(result.productCandidates) && result.productCandidates.some((candidate) =>
+    candidate?.title || candidate?.sku || candidate?.mpn || candidate?.productId ||
+    (Array.isArray(candidate?.gtins) && candidate.gtins.length))) return true;
+  const title = clean(result.title);
+  const text = clean(result.text);
+  if (!title || /^(?:home|homepage|access denied|captcha|just a moment)$/i.test(title)) return false;
+  return text.length >= 40;
 }
 
 export function hasUsefulAvailabilityEvidence(source, result) {
