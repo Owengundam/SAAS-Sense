@@ -28,7 +28,14 @@ function candidateIdentities(candidate) {
     supplierVariantId: "",
     displayName: clean(candidate.title),
   };
-  const offers = Array.isArray(candidate.offers) ? candidate.offers : [];
+  const offers = (Array.isArray(candidate.offers) ? candidate.offers : []).filter((offer) => {
+    const offerSku = clean(offer?.sku);
+    const offerName = clean(offer?.name);
+    const offerUrl = clean(offer?.url);
+    return (offerSku && normalized(offerSku) !== normalized(candidate.sku)) ||
+      (offerName && normalized(offerName) !== normalized(candidate.title)) ||
+      Boolean(offerUrl);
+  });
   return [
     base,
     ...offers.map((offer) => ({
