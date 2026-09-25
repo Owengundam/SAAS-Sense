@@ -769,26 +769,43 @@ export function createDatabase(path = ":memory:") {
           if (!variant) throw new Error("SHOPIFY_VARIANT_NOT_SELECTED");
           const expectedUrl = row.resolved_url || row.url;
           if (!expectedUrl || approval.source.url !== expectedUrl) throw new Error("STALE_IMPORT_PREVIEW");
-          pending.push({ row, variant, approval });
+          const priorMapping = db.prepare(`SELECT source_id FROM confirmed_mappings
+            WHERE shop=? AND shopify_variant_id=? AND active=1
+            ORDER BY version DESC LIMIT 1`).get(shop, variant.shopify_variant_id);
+          const priorSource = priorMapping?.source_id
+            ? db.prepare("SELECT id FROM sources WHERE shop=? AND id=?").get(shop, priorMapping.source_id)
+            : null;
+          pending.push({ row, variant, approval, priorSourceId: priorSource?.id || null });
         }
 
         const sourceCount = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=?").get(shop).count;
-        if (sourceCount + pending.length > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
+        const additionalSources = pending.filter((item) => !item.priorSourceId).length;
+        if (sourceCount + additionalSources > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
 
-        for (const { row, variant, approval } of pending) {
-          const sourceId = randomUUID();
+        for (const { row, variant, approval, priorSourceId } of pending) {
           const source = approval.source;
-          db.prepare(`INSERT INTO sources
-            (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
-             supplier_product_id, supplier_variant_id, supplier_sku, match_confirmed_at,
-             url, match_terms, in_stock_terms, out_of_stock_terms, stale_after_hours, enabled, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
-            sourceId, shop, source.sku, source.productTitle,
-            variant.shopify_product_id, variant.shopify_variant_id,
-            source.supplierProductId || null, source.supplierVariantId || null,
-            source.supplierSku || null, approvedAt, source.url,
-            JSON.stringify(source.matchTerms || []), "[]", "[]", source.staleAfterHours ?? 36, approvedAt,
-          );
+          const sourceId = priorSourceId || randomUUID();
+          if (priorSourceId) {
+            this.updateSource(shop, sourceId, {
+              ...source,
+              shopifyProductId: variant.shopify_product_id,
+              shopifyVariantId: variant.shopify_variant_id,
+              matchConfirmedAt: approvedAt,
+            });
+            db.prepare("UPDATE sources SET enabled=1 WHERE shop=? AND id=?").run(shop, sourceId);
+          } else {
+            db.prepare(`INSERT INTO sources
+              (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
+               supplier_product_id, supplier_variant_id, supplier_sku, match_confirmed_at,
+               url, match_terms, in_stock_terms, out_of_stock_terms, stale_after_hours, enabled, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
+              sourceId, shop, source.sku, source.productTitle,
+              variant.shopify_product_id, variant.shopify_variant_id,
+              source.supplierProductId || null, source.supplierVariantId || null,
+              source.supplierSku || null, approvedAt, source.url,
+              JSON.stringify(source.matchTerms || []), "[]", "[]", source.staleAfterHours ?? 36, approvedAt,
+            );
+          }
           const domain = new URL(source.url).hostname.toLowerCase();
           let profile = db.prepare("SELECT id FROM supplier_profiles WHERE shop=? AND domain=?").get(shop, domain);
           if (!profile) {
