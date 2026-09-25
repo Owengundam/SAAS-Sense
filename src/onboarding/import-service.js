@@ -178,6 +178,7 @@ export function stageImportBatch({
     throw new Error(`IMPORT_ROW_LIMIT_EXCEEDED: up to ${MAX_IMPORT_ROWS} supplier rows per batch`);
   }
 
+  const seenRows = new Set();
   const rows = parsed.map((raw, index) => {
     const row = normalizedRow(raw);
     const hint = resolveHint(row, variants);
@@ -192,11 +193,25 @@ export function stageImportBatch({
         error = error || (caught instanceof Error ? caught.message : String(caught));
       }
     }
+    const resolvedVariantId = hint.shopifyVariantIdHint || row.shopifyVariantIdHint || null;
+    if (!error) {
+      const duplicateKey = JSON.stringify([
+        url,
+        resolvedVariantId,
+        row.merchantSkuHint,
+        row.supplierSkuHint,
+        row.mpnHint,
+        row.barcodeHint,
+        row.optionsHint,
+      ]);
+      if (seenRows.has(duplicateKey)) error = "DUPLICATE_IMPORT_ROW";
+      else seenRows.add(duplicateKey);
+    }
     return {
       rowIndex: index + 1,
       ...row,
       url,
-      shopifyVariantIdHint: hint.shopifyVariantIdHint || row.shopifyVariantIdHint || null,
+      shopifyVariantIdHint: resolvedVariantId,
       status: error ? "INVALID" : "DRAFT",
       error,
     };
