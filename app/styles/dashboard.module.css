@@ -30,7 +30,8 @@
 .form { display: grid; gap: 12px; }
 .formIntro { color: #66746b; font-size: 13px; line-height: 1.5; margin: -4px 0 14px; }
 .form label { color: #4e5d54; display: grid; font-size: 13px; gap: 5px; }
-.form input { border: 1px solid #cbd5ce; border-radius: 8px; font: inherit; padding: 10px; }
+.form input:not([type="checkbox"]), .form textarea, .form select { border: 1px solid #cbd5ce; border-radius: 8px; box-sizing: border-box; font: inherit; padding: 10px; width: 100%; }
+.form textarea { min-height: 150px; resize: vertical; }
 .formHelp { color: #6c7971; font-size: 12px; line-height: 1.4; margin-top: -5px; }
 .setupField { display: grid; gap: 9px; }
 .setupField > strong { color: #4e5d54; font-size: 13px; }

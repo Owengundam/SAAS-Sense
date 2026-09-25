@@ -5,17 +5,22 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
-import { verifyShopifyVariant } from "../catalog.server";
+import { verifyShopifyVariant, verifyShopifyVariants } from "../catalog.server";
+import { stageImportBatch } from "../../src/onboarding/import-service.js";
 import { getCheckJob, startCheckJob } from "../check-jobs.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   ensureTenant(session.shop);
+  const { service } = getSupplierSignal();
+  const importBatches = service.db.listImportBatches(session.shop, 5);
   return {
-    ...getSupplierSignal().service.dashboard(session.shop),
+    ...service.dashboard(session.shop),
     shop: session.shop,
     checkJob: getCheckJob(session.shop),
+    importBatches,
+    latestImportBatch: importBatches[0] ? service.db.getImportBatch(session.shop, importBatches[0].id) : null,
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
   };
 };
@@ -29,6 +34,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") || "");
   const { service } = getSupplierSignal();
   try {
+    if (intent === "create-import-batch") {
+      let variantIds: string[];
+      try {
+        const parsed = JSON.parse(String(form.get("selectedVariantIds") || "[]"));
+        variantIds = Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+      } catch {
+        return { ok: false, message: "Selected Shopify products could not be read. Reopen the picker and try again." };
+      }
+      const variants = await verifyShopifyVariants(admin, variantIds);
+      const batch = stageImportBatch({
+        db: service.db,
+        shop: session.shop,
+        variants,
+        inputKind: String(form.get("inputKind") || "urls"),
+        input: String(form.get("mappingInput") || ""),
+        supportedDomains: service.supportedDomains,
+      });
+      return {
+        ok: true,
+        batchCreated: true,
+        batchId: batch.id,
+        message: batch.reused
+          ? "This exact onboarding draft already exists, so no duplicate was created."
+          : `Saved ${batch.rowCount} supplier rows with ${batch.variantCount} Shopify variants. Nothing is monitored until a mapping is approved.`,
+      };
+    }
     if (intent === "add-source") {
       const catalog = await verifyShopifyVariant(admin, String(form.get("selectedVariantId") || ""));
       service.addSource(session.shop, {
@@ -124,8 +155,30 @@ export default function Index() {
   const shopify = useAppBridge();
   const busy = fetcher.state !== "idle" || data.checkJob?.status === "running";
   const sourceForm = useRef<HTMLFormElement>(null);
+  const batchForm = useRef<HTMLFormElement>(null);
   const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
+  const [batchVariants, setBatchVariants] = useState<Array<{ id: string; label: string }>>([]);
   const [pickerError, setPickerError] = useState("");
+  const [batchPickerError, setBatchPickerError] = useState("");
+  const chooseBatchVariants = async () => {
+    try {
+      const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: true });
+      if (!selected?.length) return;
+      if (selected.length > 25) {
+        setBatchPickerError("Select up to 25 Shopify variants per onboarding batch.");
+        return;
+      }
+      setBatchVariants(selected.map((variant: any) => ({
+        id: variant.id,
+        label: variant.product?.title
+          ? `${variant.product.title}${variant.title && variant.title !== "Default Title" ? ` · ${variant.title}` : ""}`
+          : variant.displayName || variant.title || "Selected Shopify variant",
+      })));
+      setBatchPickerError("");
+    } catch {
+      setBatchPickerError("Could not open Shopify products. Try again.");
+    }
+  };
   const chooseVariant = async () => {
     try {
       const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: false });
@@ -146,6 +199,10 @@ export default function Index() {
     if (fetcher.data?.ok && "added" in fetcher.data && fetcher.data.added) {
       sourceForm.current?.reset();
       setSelectedVariant(null);
+    }
+    if (fetcher.data?.ok && "batchCreated" in fetcher.data && fetcher.data.batchCreated) {
+      batchForm.current?.reset();
+      setBatchVariants([]);
     }
   }, [fetcher.data, shopify]);
 
@@ -224,6 +281,69 @@ export default function Index() {
         <div className={styles.card}><span className={styles.metricLabel}>Checks this month</span><strong className={styles.metric}>{data.tenant.monthlyCheckUsage}/{data.tenant.monthlyCheckLimit}</strong></div>
         <div className={styles.card}><span className={styles.metricLabel}>Needs review</span><strong className={styles.metric}>{review.length}</strong></div>
       </div>}
+      <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="batch-onboarding-heading">
+        <div className={styles.setupHeader}>
+          <div>
+            <span className={styles.eyebrow}>Batch onboarding · draft only</span>
+            <h2 id="batch-onboarding-heading" className={styles.sectionTitle}>Link a group without retyping Shopify data</h2>
+            <p className={styles.formIntro}>Select up to 25 existing variants, then paste supplier URLs or a mapping CSV. We stage and validate the draft; no monitoring source is created yet.</p>
+          </div>
+          <strong>{batchVariants.length}/25 selected</strong>
+        </div>
+        <fetcher.Form method="post" className={styles.form} ref={batchForm}>
+          <input type="hidden" name="intent" value="create-import-batch" />
+          <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
+          <div className={styles.setupField}>
+            <strong>1. Select Shopify variants</strong>
+            <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={chooseBatchVariants}>Choose multiple variants</button>
+            <span className={styles.formHelp}>
+              {batchVariants.length
+                ? batchVariants.slice(0, 3).map((variant) => variant.label).join(" · ") + (batchVariants.length > 3 ? ` · +${batchVariants.length - 3} more` : "")
+                : "Titles, SKUs, barcodes, options, vendor, product type, and image references are read from Shopify server-side."}
+            </span>
+            {batchPickerError && <span className={styles.fieldError} role="alert">{batchPickerError}</span>}
+          </div>
+          <label>2. Supplier input format
+            <select name="inputKind" defaultValue="urls">
+              <option value="urls">URL list · one public product URL per line</option>
+              <option value="csv">CSV mapping · URL plus optional identifiers</option>
+            </select>
+          </label>
+          <label>3. Paste supplier rows
+            <textarea
+              name="mappingInput"
+              required
+              rows={7}
+              placeholder={"URL list:\nhttps://supplier.example/product-a\nhttps://supplier.example/product-b\n\nCSV:\nurl,merchant_sku,supplier_sku,barcode,options"}
+            />
+          </label>
+          <span className={styles.formHelp}>CSV accepts url, shopify_variant_id, merchant_sku, supplier_sku, mpn, barcode/gtin, and options. Rows are never paired to Shopify variants by position.</span>
+          <button className={styles.button} disabled={busy || batchVariants.length === 0}>{busy ? "Saving draft…" : "Save onboarding draft"}</button>
+        </fetcher.Form>
+        {data.latestImportBatch && <div style={{ marginTop: 20 }}>
+          <h3 className={styles.sectionTitle}>Latest draft</h3>
+          <span className={styles.muted}>
+            {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · created {formatTime(data.latestImportBatch.createdAt)}
+          </span>
+          <div className={styles.tableWrap} style={{ marginTop: 8 }}>
+            <table className={styles.table}>
+              <thead><tr><th>Row</th><th>Supplier URL</th><th>Shopify hint</th><th>Status</th></tr></thead>
+              <tbody>
+                {data.latestImportBatch.rows.map((row: any) => <tr key={row.id}>
+                  <td>{row.rowIndex}</td>
+                  <td className={styles.evidence}>{row.url || "Missing URL"}</td>
+                  <td><span className={styles.sku}>{row.shopifyVariantIdHint || row.merchantSkuHint || row.barcodeHint || "To be matched later"}</span></td>
+                  <td>
+                    <span className={row.status === "INVALID" ? `${styles.state} ${styles.bad}` : `${styles.state} ${styles.info}`}>{row.status}</span>
+                    {row.error && <span className={styles.muted}>{row.error}</span>}
+                  </td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+          <span className={styles.formHelp}>Drafts survive reloads and restarts. Approval and supplier metadata extraction come in the next onboarding step.</span>
+        </div>}
+      </section>
       <div className={`${styles.grid} ${data.sources.length === 0 ? styles.emptyGrid : ""}`}>
         {data.sources.length > 0 && <section className={styles.card}>
           <h2 className={styles.sectionTitle}>Supplier watchlist</h2>
