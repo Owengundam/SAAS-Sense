@@ -7,10 +7,12 @@ function variantNode(id, overrides = {}) {
     id,
     title: overrides.title ?? "Blue",
     sku: overrides.sku ?? " LAMP-3 ",
-    barcode: overrides.barcode ?? "0123456789012",
-    selectedOptions: overrides.selectedOptions ?? [{ name: "Color", value: "Blue" }],
-    image: overrides.image ?? { url: "https://cdn.example/variant.jpg" },
-    product: overrides.product ?? {
+    barcode: Object.hasOwn(overrides, "barcode") ? overrides.barcode : "0123456789012",
+    selectedOptions: Object.hasOwn(overrides, "selectedOptions")
+      ? overrides.selectedOptions
+      : [{ name: "Color", value: "Blue" }],
+    image: Object.hasOwn(overrides, "image") ? overrides.image : { url: "https://cdn.example/variant.jpg" },
+    product: Object.hasOwn(overrides, "product") ? overrides.product : {
       id: "gid://shopify/Product/4",
       title: "Lamp",
       vendor: "Acme",
