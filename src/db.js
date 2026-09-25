@@ -169,6 +169,59 @@ export function createDatabase(path = ":memory:") {
     );
     CREATE INDEX IF NOT EXISTS model_evaluations_observation
       ON model_evaluations(observation_id, created_at);
+    CREATE TABLE IF NOT EXISTS import_batches (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      fingerprint TEXT NOT NULL,
+      input_kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      row_count INTEGER NOT NULL DEFAULT 0,
+      variant_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(shop, fingerprint)
+    );
+    CREATE INDEX IF NOT EXISTS import_batches_shop_created
+      ON import_batches(shop, created_at);
+    CREATE TABLE IF NOT EXISTS import_variant_snapshots (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      shopify_product_id TEXT NOT NULL,
+      shopify_variant_id TEXT NOT NULL,
+      merchant_sku TEXT,
+      barcode TEXT,
+      parent_title TEXT NOT NULL,
+      variant_title TEXT,
+      vendor TEXT,
+      product_type TEXT,
+      selected_options TEXT NOT NULL,
+      image_url TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(batch_id, shopify_variant_id)
+    );
+    CREATE INDEX IF NOT EXISTS import_variant_snapshots_batch
+      ON import_variant_snapshots(batch_id, shopify_variant_id);
+    CREATE TABLE IF NOT EXISTS import_rows (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      row_index INTEGER NOT NULL,
+      url TEXT,
+      shopify_variant_id_hint TEXT,
+      merchant_sku_hint TEXT,
+      supplier_sku_hint TEXT,
+      mpn_hint TEXT,
+      barcode_hint TEXT,
+      options_hint TEXT,
+      status TEXT NOT NULL,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(batch_id, row_index)
+    );
+    CREATE INDEX IF NOT EXISTS import_rows_batch
+      ON import_rows(batch_id, row_index);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -370,6 +423,130 @@ export function createDatabase(path = ":memory:") {
           ORDER BY attempted_at, id`).all(shop, operationId);
       }
       return db.prepare("SELECT * FROM provider_attempts WHERE shop = ? ORDER BY attempted_at, id").all(shop);
+    },
+    createImportBatch(shop, input) {
+      const createdAt = input.createdAt || new Date().toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const existing = db.prepare("SELECT id FROM import_batches WHERE shop = ? AND fingerprint = ?")
+          .get(shop, input.fingerprint);
+        if (existing?.id) {
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return { ...this.getImportBatch(shop, existing.id), reused: true };
+        }
+
+        const batchId = input.id || randomUUID();
+        db.prepare(`INSERT INTO import_batches
+          (id, shop, fingerprint, input_kind, status, row_count, variant_count, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)`).run(
+          batchId, shop, input.fingerprint, input.inputKind,
+          input.rows.length, input.variants.length, createdAt, createdAt,
+        );
+        const variantStatement = db.prepare(`INSERT INTO import_variant_snapshots
+          (id, batch_id, shop, shopify_product_id, shopify_variant_id, merchant_sku, barcode,
+           parent_title, variant_title, vendor, product_type, selected_options, image_url, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const variant of input.variants) {
+          variantStatement.run(
+            randomUUID(), batchId, shop, variant.shopifyProductId, variant.shopifyVariantId,
+            variant.merchantSku || null, variant.barcode || null, variant.parentTitle,
+            variant.variantTitle || null, variant.vendor || null, variant.productType || null,
+            JSON.stringify(variant.selectedOptions || []), variant.imageUrl || null, createdAt,
+          );
+        }
+        const rowStatement = db.prepare(`INSERT INTO import_rows
+          (id, batch_id, shop, row_index, url, shopify_variant_id_hint, merchant_sku_hint,
+           supplier_sku_hint, mpn_hint, barcode_hint, options_hint, status, error, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const row of input.rows) {
+          rowStatement.run(
+            randomUUID(), batchId, shop, row.rowIndex, row.url || null,
+            row.shopifyVariantIdHint || null, row.merchantSkuHint || null,
+            row.supplierSkuHint || null, row.mpnHint || null, row.barcodeHint || null,
+            row.optionsHint || null, row.status || "DRAFT", row.error || null, createdAt, createdAt,
+          );
+        }
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return { ...this.getImportBatch(shop, batchId), reused: false };
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    getImportBatch(shop, batchId) {
+      const batch = db.prepare("SELECT * FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
+      if (!batch) return null;
+      const variants = db.prepare(`SELECT * FROM import_variant_snapshots
+        WHERE shop = ? AND batch_id = ? ORDER BY rowid`).all(shop, batchId).map((row) => ({
+          id: row.id,
+          shopifyProductId: row.shopify_product_id,
+          shopifyVariantId: row.shopify_variant_id,
+          merchantSku: row.merchant_sku,
+          barcode: row.barcode,
+          parentTitle: row.parent_title,
+          variantTitle: row.variant_title,
+          vendor: row.vendor,
+          productType: row.product_type,
+          selectedOptions: JSON.parse(row.selected_options || "[]"),
+          imageUrl: row.image_url,
+          createdAt: row.created_at,
+        }));
+      const rows = db.prepare(`SELECT * FROM import_rows
+        WHERE shop = ? AND batch_id = ? ORDER BY row_index`).all(shop, batchId).map((row) => ({
+          id: row.id,
+          rowIndex: row.row_index,
+          url: row.url,
+          shopifyVariantIdHint: row.shopify_variant_id_hint,
+          merchantSkuHint: row.merchant_sku_hint,
+          supplierSkuHint: row.supplier_sku_hint,
+          mpnHint: row.mpn_hint,
+          barcodeHint: row.barcode_hint,
+          optionsHint: row.options_hint,
+          status: row.status,
+          error: row.error,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+      return {
+        id: batch.id,
+        shop: batch.shop,
+        fingerprint: batch.fingerprint,
+        inputKind: batch.input_kind,
+        status: batch.status,
+        rowCount: batch.row_count,
+        variantCount: batch.variant_count,
+        createdAt: batch.created_at,
+        updatedAt: batch.updated_at,
+        variants,
+        rows,
+      };
+    },
+    listImportBatches(shop, limit = 5) {
+      return db.prepare(`SELECT b.*,
+        SUM(CASE WHEN r.status = 'DRAFT' THEN 1 ELSE 0 END) AS draft_rows,
+        SUM(CASE WHEN r.status = 'INVALID' THEN 1 ELSE 0 END) AS invalid_rows
+        FROM import_batches b
+        LEFT JOIN import_rows r ON r.batch_id = b.id
+        WHERE b.shop = ?
+        GROUP BY b.id
+        ORDER BY b.created_at DESC
+        LIMIT ?`).all(shop, limit).map((row) => ({
+          id: row.id,
+          inputKind: row.input_kind,
+          status: row.status,
+          rowCount: row.row_count,
+          variantCount: row.variant_count,
+          draftRows: Number(row.draft_rows || 0),
+          invalidRows: Number(row.invalid_rows || 0),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
     },
     addSource(shop, input) {
       const id = input.id || randomUUID();
