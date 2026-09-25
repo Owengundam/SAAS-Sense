@@ -11,9 +11,12 @@ function attemptFor(provider, result, index, latencyMs, usable) {
   };
 }
 
-function shouldEscalate(provider, result, usable) {
+function shouldEscalate(provider, result, usable, escalateInconclusive = false) {
   if (usable || result?.terminal) return false;
   if (result?.ok === false) return true;
+  if (escalateInconclusive && ["direct-http", "self-hosted-chromium"].includes(provider?.providerName)) {
+    return true;
+  }
   if (provider?.providerName === "direct-http") return result?.renderingLikelyRequired === true;
   if (provider?.providerName === "self-hosted-chromium") {
     return result?.managedFallbackRecommended === true;
@@ -29,7 +32,7 @@ export class CascadingPageProvider {
     this.providerName = "page-cascade";
   }
 
-  async fetchPage(source) {
+  async fetchPage(source, { evidenceGate = this.evidenceGate, escalateInconclusive = false } = {}) {
     const attempts = [];
     let bestSuccessful = null;
     let lastResult = null;
@@ -41,7 +44,7 @@ export class CascadingPageProvider {
       } catch (error) {
         result = { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-      const usable = this.evidenceGate(source, result);
+      const usable = evidenceGate(source, result);
       const latencyMs = performance.now() - started;
       const nested = Array.isArray(result?.providerAttempts) ? result.providerAttempts : [];
       attempts.push(attemptFor(provider, result, index, latencyMs, usable), ...nested);
@@ -55,7 +58,7 @@ export class CascadingPageProvider {
           providerAttempts: attempts,
         };
       }
-      if (!shouldEscalate(provider, result, usable)) {
+      if (!shouldEscalate(provider, result, usable, escalateInconclusive)) {
         return {
           ...result,
           fallbackUsed: index > 0,

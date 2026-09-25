@@ -216,12 +216,69 @@ export function createDatabase(path = ":memory:") {
       options_hint TEXT,
       status TEXT NOT NULL,
       error TEXT,
+      claim_token TEXT,
+      claimed_at TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      resolved_url TEXT,
+      fetched_at TEXT,
+      metadata_json TEXT,
+      evidence_version TEXT,
+      suggested_variant_id TEXT,
+      suggested_candidate_json TEXT,
+      match_reason TEXT,
+      match_evidence_json TEXT,
+      approved_source_id TEXT,
+      approved_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(batch_id, row_index)
     );
     CREATE INDEX IF NOT EXISTS import_rows_batch
       ON import_rows(batch_id, row_index);
+    CREATE TABLE IF NOT EXISTS import_attempts (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      role TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      provider_run_id TEXT,
+      latency_ms REAL,
+      attempted_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS import_attempts_batch
+      ON import_attempts(batch_id, attempted_at);
+    CREATE TABLE IF NOT EXISTS supplier_profiles (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      canonical_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(shop, domain)
+    );
+    CREATE TABLE IF NOT EXISTS confirmed_mappings (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      shopify_variant_id TEXT NOT NULL,
+      supplier_profile_id TEXT NOT NULL REFERENCES supplier_profiles(id) ON DELETE RESTRICT,
+      source_id TEXT NOT NULL,
+      supplier_product_id TEXT,
+      supplier_variant_id TEXT,
+      supplier_sku TEXT,
+      canonical_url TEXT NOT NULL,
+      evidence_version TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      reviewer TEXT NOT NULL,
+      approved_at TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(shop, shopify_variant_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS confirmed_mappings_variant
+      ON confirmed_mappings(shop, shopify_variant_id, active);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -256,6 +313,25 @@ export function createDatabase(path = ":memory:") {
   if (!decisionColumns.has("decision_details")) db.exec("ALTER TABLE decision_records ADD COLUMN decision_details TEXT");
   const attemptColumns = new Set(db.prepare("PRAGMA table_info(provider_attempts)").all().map((column) => column.name));
   if (!attemptColumns.has("latency_ms")) db.exec("ALTER TABLE provider_attempts ADD COLUMN latency_ms REAL");
+  const importRowColumns = new Set(db.prepare("PRAGMA table_info(import_rows)").all().map((column) => column.name));
+  const importRowMigrations = [
+    ["claim_token", "TEXT"],
+    ["claimed_at", "TEXT"],
+    ["attempt_count", "INTEGER NOT NULL DEFAULT 0"],
+    ["resolved_url", "TEXT"],
+    ["fetched_at", "TEXT"],
+    ["metadata_json", "TEXT"],
+    ["evidence_version", "TEXT"],
+    ["suggested_variant_id", "TEXT"],
+    ["suggested_candidate_json", "TEXT"],
+    ["match_reason", "TEXT"],
+    ["match_evidence_json", "TEXT"],
+    ["approved_source_id", "TEXT"],
+    ["approved_at", "TEXT"],
+  ];
+  for (const [name, definition] of importRowMigrations) {
+    if (!importRowColumns.has(name)) db.exec(`ALTER TABLE import_rows ADD COLUMN ${name} ${definition}`);
+  }
   db.exec(`
     UPDATE sources
       SET last_attempt_at = last_checked_at
@@ -510,6 +586,19 @@ export function createDatabase(path = ":memory:") {
           optionsHint: row.options_hint,
           status: row.status,
           error: row.error,
+          claimToken: row.claim_token,
+          claimedAt: row.claimed_at,
+          attemptCount: row.attempt_count,
+          resolvedUrl: row.resolved_url,
+          fetchedAt: row.fetched_at,
+          metadata: row.metadata_json ? JSON.parse(row.metadata_json) : null,
+          evidenceVersion: row.evidence_version,
+          suggestedVariantId: row.suggested_variant_id,
+          suggestedCandidate: row.suggested_candidate_json ? JSON.parse(row.suggested_candidate_json) : null,
+          matchReason: row.match_reason,
+          matchEvidence: row.match_evidence_json ? JSON.parse(row.match_evidence_json) : null,
+          approvedSourceId: row.approved_source_id,
+          approvedAt: row.approved_at,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));
@@ -530,6 +619,12 @@ export function createDatabase(path = ":memory:") {
     listImportBatches(shop, limit = 5) {
       return db.prepare(`SELECT b.*,
         SUM(CASE WHEN r.status = 'DRAFT' THEN 1 ELSE 0 END) AS draft_rows,
+        SUM(CASE WHEN r.status = 'PROCESSING' THEN 1 ELSE 0 END) AS processing_rows,
+        SUM(CASE WHEN r.status = 'READY_FOR_REVIEW' THEN 1 ELSE 0 END) AS ready_rows,
+        SUM(CASE WHEN r.status = 'NEEDS_REVIEW' THEN 1 ELSE 0 END) AS review_rows,
+        SUM(CASE WHEN r.status = 'NO_MATCH' THEN 1 ELSE 0 END) AS no_match_rows,
+        SUM(CASE WHEN r.status = 'BLOCKED' THEN 1 ELSE 0 END) AS blocked_rows,
+        SUM(CASE WHEN r.status = 'APPROVED' THEN 1 ELSE 0 END) AS approved_rows,
         SUM(CASE WHEN r.status = 'INVALID' THEN 1 ELSE 0 END) AS invalid_rows
         FROM import_batches b
         LEFT JOIN import_rows r ON r.batch_id = b.id
@@ -543,10 +638,217 @@ export function createDatabase(path = ":memory:") {
           rowCount: row.row_count,
           variantCount: row.variant_count,
           draftRows: Number(row.draft_rows || 0),
+          processingRows: Number(row.processing_rows || 0),
+          readyRows: Number(row.ready_rows || 0),
+          reviewRows: Number(row.review_rows || 0),
+          noMatchRows: Number(row.no_match_rows || 0),
+          blockedRows: Number(row.blocked_rows || 0),
+          approvedRows: Number(row.approved_rows || 0),
           invalidRows: Number(row.invalid_rows || 0),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));
+    },
+    getImportRow(shop, rowId) {
+      const row = db.prepare("SELECT batch_id FROM import_rows WHERE shop = ? AND id = ?").get(shop, rowId);
+      if (!row) return null;
+      return this.getImportBatch(shop, row.batch_id)?.rows.find((item) => item.id === rowId) || null;
+    },
+    claimImportRow(shop, batchId, now = new Date(), leaseMs = 10 * 60 * 1000) {
+      const claimedAt = now.toISOString();
+      const staleBefore = new Date(now.getTime() - leaseMs).toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const batch = db.prepare("SELECT id FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
+        if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+        const row = db.prepare(`SELECT * FROM import_rows
+          WHERE shop = ? AND batch_id = ? AND (
+            status = 'DRAFT' OR (status = 'PROCESSING' AND claimed_at <= ?)
+          )
+          ORDER BY row_index LIMIT 1`).get(shop, batchId, staleBefore);
+        if (!row) {
+          const outstanding = db.prepare(`SELECT COUNT(*) AS count FROM import_rows
+            WHERE shop = ? AND batch_id = ? AND status IN ('DRAFT', 'PROCESSING')`).get(shop, batchId).count;
+          if (!outstanding) {
+            db.prepare("UPDATE import_batches SET status = 'REVIEW', updated_at = ? WHERE shop = ? AND id = ?")
+              .run(claimedAt, shop, batchId);
+          }
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return null;
+        }
+        const claimToken = randomUUID();
+        db.prepare(`UPDATE import_rows SET status='PROCESSING', claim_token=?, claimed_at=?,
+          attempt_count=attempt_count+1, error=NULL, updated_at=?
+          WHERE shop=? AND id=?`).run(claimToken, claimedAt, claimedAt, shop, row.id);
+        db.prepare("UPDATE import_batches SET status='PROCESSING', updated_at=? WHERE shop=? AND id=?")
+          .run(claimedAt, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return this.getImportRow(shop, row.id);
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    completeImportRow(shop, rowId, claimToken, result, now = new Date()) {
+      const updatedAt = now.toISOString();
+      const update = db.prepare(`UPDATE import_rows SET status=?, error=?, claim_token=NULL, claimed_at=NULL,
+        resolved_url=?, fetched_at=?, metadata_json=?, evidence_version=?, suggested_variant_id=?,
+        suggested_candidate_json=?, match_reason=?, match_evidence_json=?, updated_at=?
+        WHERE shop=? AND id=? AND status='PROCESSING' AND claim_token=?`).run(
+        result.status,
+        result.error || null,
+        result.resolvedUrl || null,
+        result.fetchedAt || null,
+        result.metadata ? JSON.stringify(result.metadata) : null,
+        result.evidenceVersion || null,
+        result.suggestedVariantId || null,
+        result.suggestedCandidate ? JSON.stringify(result.suggestedCandidate) : null,
+        result.matchReason || null,
+        result.matchEvidence ? JSON.stringify(result.matchEvidence) : null,
+        updatedAt,
+        shop,
+        rowId,
+        claimToken,
+      );
+      return update.changes > 0 ? this.getImportRow(shop, rowId) : null;
+    },
+    recordImportAttempt(shop, batchId, rowId, attempt, now = new Date()) {
+      const id = randomUUID();
+      db.prepare(`INSERT INTO import_attempts
+        (id, shop, batch_id, row_id, provider, role, outcome, provider_run_id, latency_ms, attempted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, shop, batchId, rowId, attempt.provider || "provider", attempt.role || "discovery",
+        attempt.outcome || "UNKNOWN", attempt.providerRunId || null,
+        Number.isFinite(attempt.latencyMs) ? attempt.latencyMs : null, now.toISOString(),
+      );
+      return id;
+    },
+    countImportAttempts(shop, batchId) {
+      return db.prepare("SELECT COUNT(*) AS count FROM import_attempts WHERE shop=? AND batch_id=?")
+        .get(shop, batchId).count;
+    },
+    approveImportRows(shop, batchId, approvals, reviewer, now = new Date()) {
+      if (!Array.isArray(approvals) || !approvals.length) throw new Error("APPROVAL_ROWS_REQUIRED");
+      const approvedAt = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active, source_limit FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const batch = db.prepare("SELECT id FROM import_batches WHERE shop=? AND id=?").get(shop, batchId);
+        if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+
+        const pending = [];
+        const sourceIds = [];
+        for (const approval of approvals) {
+          const row = db.prepare("SELECT * FROM import_rows WHERE shop=? AND batch_id=? AND id=?")
+            .get(shop, batchId, approval.rowId);
+          if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+          if (row.status === "APPROVED" && row.approved_source_id) {
+            if (row.evidence_version !== approval.expectedEvidenceVersion) throw new Error("STALE_IMPORT_PREVIEW");
+            sourceIds.push(row.approved_source_id);
+            continue;
+          }
+          if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
+          if (!row.evidence_version || row.evidence_version !== approval.expectedEvidenceVersion) {
+            throw new Error("STALE_IMPORT_PREVIEW");
+          }
+          if (!row.suggested_variant_id || row.suggested_variant_id !== approval.source.shopifyVariantId) {
+            throw new Error("STALE_IMPORT_PREVIEW");
+          }
+          const variant = db.prepare(`SELECT * FROM import_variant_snapshots
+            WHERE shop=? AND batch_id=? AND shopify_variant_id=?`)
+            .get(shop, batchId, row.suggested_variant_id);
+          if (!variant) throw new Error("SHOPIFY_VARIANT_NOT_SELECTED");
+          const expectedUrl = row.resolved_url || row.url;
+          if (!expectedUrl || approval.source.url !== expectedUrl) throw new Error("STALE_IMPORT_PREVIEW");
+          const priorMapping = db.prepare(`SELECT source_id FROM confirmed_mappings
+            WHERE shop=? AND shopify_variant_id=? AND active=1
+            ORDER BY version DESC LIMIT 1`).get(shop, variant.shopify_variant_id);
+          const priorSource = priorMapping?.source_id
+            ? db.prepare("SELECT id FROM sources WHERE shop=? AND id=?").get(shop, priorMapping.source_id)
+            : null;
+          pending.push({ row, variant, approval, priorSourceId: priorSource?.id || null });
+        }
+
+        const sourceCount = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=?").get(shop).count;
+        const additionalSources = pending.filter((item) => !item.priorSourceId).length;
+        if (sourceCount + additionalSources > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
+
+        for (const { row, variant, approval, priorSourceId } of pending) {
+          const source = approval.source;
+          const sourceId = priorSourceId || randomUUID();
+          if (priorSourceId) {
+            this.updateSource(shop, sourceId, {
+              ...source,
+              shopifyProductId: variant.shopify_product_id,
+              shopifyVariantId: variant.shopify_variant_id,
+              matchConfirmedAt: approvedAt,
+            });
+            db.prepare("UPDATE sources SET enabled=1 WHERE shop=? AND id=?").run(shop, sourceId);
+          } else {
+            db.prepare(`INSERT INTO sources
+              (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
+               supplier_product_id, supplier_variant_id, supplier_sku, match_confirmed_at,
+               url, match_terms, in_stock_terms, out_of_stock_terms, stale_after_hours, enabled, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
+              sourceId, shop, source.sku, source.productTitle,
+              variant.shopify_product_id, variant.shopify_variant_id,
+              source.supplierProductId || null, source.supplierVariantId || null,
+              source.supplierSku || null, approvedAt, source.url,
+              JSON.stringify(source.matchTerms || []), "[]", "[]", source.staleAfterHours ?? 36, approvedAt,
+            );
+          }
+          const domain = new URL(source.url).hostname.toLowerCase();
+          let profile = db.prepare("SELECT id FROM supplier_profiles WHERE shop=? AND domain=?").get(shop, domain);
+          if (!profile) {
+            const profileId = randomUUID();
+            db.prepare(`INSERT INTO supplier_profiles
+              (id, shop, domain, canonical_url, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?)`).run(profileId, shop, domain, source.url, approvedAt, approvedAt);
+            profile = { id: profileId };
+          } else {
+            db.prepare("UPDATE supplier_profiles SET canonical_url=?, updated_at=? WHERE shop=? AND id=?")
+              .run(source.url, approvedAt, shop, profile.id);
+          }
+
+          db.prepare("UPDATE confirmed_mappings SET active=0 WHERE shop=? AND shopify_variant_id=?")
+            .run(shop, variant.shopify_variant_id);
+          const version = Number(db.prepare(`SELECT MAX(version) AS version FROM confirmed_mappings
+            WHERE shop=? AND shopify_variant_id=?`).get(shop, variant.shopify_variant_id)?.version || 0) + 1;
+          db.prepare(`INSERT INTO confirmed_mappings
+            (id, shop, batch_id, row_id, shopify_variant_id, supplier_profile_id, source_id,
+             supplier_product_id, supplier_variant_id, supplier_sku, canonical_url,
+             evidence_version, version, reviewer, approved_at, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`).run(
+            randomUUID(), shop, batchId, row.id, variant.shopify_variant_id, profile.id, sourceId,
+            source.supplierProductId || null, source.supplierVariantId || null, source.supplierSku || null,
+            source.url, row.evidence_version, version, reviewer, approvedAt,
+          );
+          db.prepare(`UPDATE import_rows SET status='APPROVED', approved_source_id=?, approved_at=?,
+            updated_at=? WHERE shop=? AND id=?`).run(sourceId, approvedAt, approvedAt, shop, row.id);
+          sourceIds.push(sourceId);
+        }
+        db.prepare("UPDATE import_batches SET status='REVIEW', updated_at=? WHERE shop=? AND id=?")
+          .run(approvedAt, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return sourceIds.map((id) => this.getSource(shop, id)).filter(Boolean);
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    listConfirmedMappings(shop, limit = 100) {
+      return db.prepare(`SELECT * FROM confirmed_mappings
+        WHERE shop=? ORDER BY approved_at DESC, version DESC LIMIT ?`).all(shop, limit);
     },
     addSource(shop, input) {
       const id = input.id || randomUUID();
