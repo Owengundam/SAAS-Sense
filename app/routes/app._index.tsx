@@ -372,9 +372,9 @@ export default function Index() {
               <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
               <button
                 className={`${styles.button} ${styles.secondary}`}
-                disabled={busy || data.latestImportBatch.status === "PROCESSING" || !data.latestImportBatch.rows.some((row: any) => row.status === "DRAFT")}
+                disabled={busy || (!data.latestImportBatch.rows.some((row: any) => row.status === "DRAFT") && data.latestImportBatch.status !== "PROCESSING")}
               >
-                {data.latestImportBatch.status === "PROCESSING" ? "Extracting…" : "Extract supplier metadata"}
+                {data.latestImportBatch.status === "PROCESSING" ? "Resume extraction" : "Extract supplier metadata"}
               </button>
             </fetcher.Form>
           </div>
