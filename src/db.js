@@ -774,13 +774,23 @@ export function createDatabase(path = ":memory:") {
         transactionOpen = true;
         const tenant = db.prepare("SELECT active, source_limit FROM tenants WHERE shop=?").get(shop);
         if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
-        const existingSources = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=?").get(shop).count;
-        if (existingSources + approvals.length > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
         const created = [];
+        const pending = [];
         for (const approval of approvals) {
           const row = db.prepare(`SELECT * FROM import_rows
             WHERE shop=? AND batch_id=? AND id=?`).get(shop, batchId, approval.rowId);
           if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+          if (row.status === "APPROVED") {
+            if (
+              Number(row.approved_review_version) !== Number(approval.expectedReviewVersion) ||
+              row.suggested_variant_id !== approval.source.shopifyVariantId ||
+              !row.approved_source_id
+            ) {
+              throw new Error("IMPORT_REVIEW_STALE");
+            }
+            created.push(row.approved_source_id);
+            continue;
+          }
           if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
           if (Number(row.review_version || 0) !== Number(approval.expectedReviewVersion)) {
             throw new Error("IMPORT_REVIEW_STALE");
@@ -788,6 +798,11 @@ export function createDatabase(path = ":memory:") {
           if (row.suggested_variant_id !== approval.source.shopifyVariantId) {
             throw new Error("IMPORT_MAPPING_CHANGED");
           }
+          pending.push({ approval, row });
+        }
+        const existingSources = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=?").get(shop).count;
+        if (existingSources + pending.length > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
+        for (const { approval } of pending) {
           const sourceId = randomUUID();
           db.prepare(`INSERT INTO sources
             (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
