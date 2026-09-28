@@ -203,7 +203,7 @@ export class ImportProcessor {
           shopifyProductId: variant.shopifyProductId,
           shopifyVariantId: variant.shopifyVariantId,
           supplierProductId: candidate.productIds?.[0] || null,
-          supplierVariantId: candidate.scope?.startsWith("variants[") ? candidate.key : null,
+          supplierVariantId: null,
           supplierSku: suggestion.primaryIdentifier,
           url,
           matchTerms: suggestion.matchTerms,
