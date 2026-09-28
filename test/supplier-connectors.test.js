@@ -181,3 +181,39 @@ test("supplier discovery enforces a durable tenant monthly request cap", async (
     /SUPPLIER_DISCOVERY_MONTHLY_LIMIT_EXCEEDED/,
   );
 });
+
+
+test("blocked supplier discovery can be retried without creating a new batch", async () => {
+  const db = setup();
+  const batch = stageSupplierConnectionBatch({
+    db,
+    shop: "a.myshopify.com",
+    domain: "lightingsupply.com",
+    variants: [variant(1, { merchantSku: "S1100622" })],
+  });
+  const failing = new SupplierDiscoveryProcessor({
+    db,
+    connectorOptions: { fetchJson: async () => { throw new Error("network failed"); } },
+  });
+  const blocked = await failing.processNext("a.myshopify.com", batch.id);
+  assert.equal(blocked.status, "BLOCKED");
+
+  assert.equal(db.retryBlockedSupplierDiscoveryRows("a.myshopify.com", batch.id), 1);
+  const retriedBatch = db.getImportBatch("a.myshopify.com", batch.id);
+  assert.equal(retriedBatch.rows[0].status, "DISCOVERY_PENDING");
+
+  const succeeding = new SupplierDiscoveryProcessor({
+    db,
+    connectorOptions: {
+      fetchJson: async () => ({
+        resources: { results: { products: [
+          { title: "Broan Light Fixture", url: "/products/broan-nutone-s1100622" },
+        ] } },
+      }),
+    },
+  });
+  const retried = await succeeding.processNext("a.myshopify.com", batch.id);
+  assert.equal(retried.status, "DRAFT");
+  assert.equal(retried.url, "https://lightingsupply.com/products/broan-nutone-s1100622");
+  assert.equal(db.countSources("a.myshopify.com"), 0);
+});
