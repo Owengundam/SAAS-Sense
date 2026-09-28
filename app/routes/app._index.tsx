@@ -373,6 +373,16 @@ export default function Index() {
           </div>
           <strong>{batchVariants.length}/25 selected</strong>
         </div>
+        <div className={styles.setupField}>
+          <strong>1. Choose Shopify variants</strong>
+          <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={chooseBatchVariants}>Choose multiple variants</button>
+          <span className={styles.formHelp}>
+            {batchVariants.length
+              ? `Selected ${batchVariants.length}: ${batchVariants.slice(0, 3).map((variant) => variant.label).join(" · ")}${batchVariants.length > 3 ? ` · +${batchVariants.length - 3} more` : ""}`
+              : "Select at least one Shopify variant before connecting a supplier or importing mappings."}
+          </span>
+          {batchPickerError && <span className={styles.fieldError} role="alert">{batchPickerError}</span>}
+        </div>
         <div className={styles.connectorPanel}>
           <div>
             <span className={styles.eyebrow}>Connect once · pilot adapter</span>
@@ -386,8 +396,16 @@ export default function Index() {
               <input name="supplierDomain" required defaultValue="lightingsupply.com" />
             </label>
             <span className={styles.formHelp}>Current pilot support: Lighting Supply only. Search results are candidate URLs, not stock or identity evidence.</span>
-            <button className={styles.button} disabled={busy || batchVariants.length === 0}>
-              {data.supplierDiscoveryJob?.status === "running" ? "Searching supplier…" : "Connect supplier & find pages"}
+            <button
+              className={styles.button}
+              disabled={batchVariants.length === 0 || fetcher.state !== "idle" || data.supplierDiscoveryJob?.status === "running"}
+              title={batchVariants.length === 0 ? "Choose at least one Shopify variant first." : undefined}
+            >
+              {data.supplierDiscoveryJob?.status === "running"
+                ? "Searching supplier…"
+                : batchVariants.length === 0
+                  ? "Choose variants first"
+                  : "Connect supplier & find pages"}
             </button>
           </fetcher.Form>
           {data.supplierConnections?.length > 0 && <span className={styles.formHelp}>
@@ -398,16 +416,6 @@ export default function Index() {
         <fetcher.Form method="post" className={styles.form} ref={batchForm}>
           <input type="hidden" name="intent" value="create-import-batch" />
           <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
-          <div className={styles.setupField}>
-            <strong>1. Select Shopify variants</strong>
-            <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={chooseBatchVariants}>Choose multiple variants</button>
-            <span className={styles.formHelp}>
-              {batchVariants.length
-                ? batchVariants.slice(0, 3).map((variant) => variant.label).join(" · ") + (batchVariants.length > 3 ? ` · +${batchVariants.length - 3} more` : "")
-                : "Titles, SKUs, barcodes, options, vendor, product type, and image references are read from Shopify server-side."}
-            </span>
-            {batchPickerError && <span className={styles.fieldError} role="alert">{batchPickerError}</span>}
-          </div>
           <label>2. Supplier input format
             <select name="inputKind" defaultValue="urls">
               <option value="urls">URL list · one public product URL per line</option>
