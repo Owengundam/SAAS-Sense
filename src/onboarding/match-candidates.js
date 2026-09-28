@@ -215,3 +215,72 @@ export function suggestImportMapping(row, variants, metadata, result = {}) {
     primaryIdentifier: identifier,
   };
 }
+
+
+export function validateManualMapping(row, variants, metadata, selection, result = {}) {
+  const targetVariant = variantById(variants, clean(selection?.variantId));
+  if (!targetVariant) {
+    return { ok: false, code: "MANUAL_VARIANT_NOT_FOUND", reason: "Choose one of the selected Shopify variants." };
+  }
+  const candidate = metadata?.candidates?.find(
+    (item) => item.key === clean(selection?.candidateKey),
+  ) || null;
+  if (!candidate) {
+    return { ok: false, code: "MANUAL_CANDIDATE_NOT_FOUND", reason: "Choose a captured supplier product candidate." };
+  }
+
+  const targetBarcode = normalizedGtin(targetVariant.barcode);
+  if (targetBarcode && candidate.gtins.length && !candidate.gtins.includes(targetBarcode)) {
+    return {
+      ok: false,
+      code: "MANUAL_BARCODE_CONFLICT",
+      reason: "This supplier candidate has barcode evidence that conflicts with the selected Shopify variant.",
+    };
+  }
+
+  const options = optionCompatibility(
+    targetVariant,
+    candidate,
+    row,
+    result?.text || metadata?.pageTextSample || "",
+  );
+  if (!options.compatible) {
+    return {
+      ok: false,
+      code: "MANUAL_VARIANT_CONFLICT",
+      reason: options.reasons.join(" "),
+    };
+  }
+
+  const identifier = primaryIdentifier(candidate, row) || clean(candidate.title);
+  if (!identifier) {
+    return {
+      ok: false,
+      code: "MANUAL_IDENTITY_MISSING",
+      reason: "The captured supplier candidate has no stable identifier or title to monitor.",
+    };
+  }
+
+  const verifiedHints = [row?.supplierSkuHint, row?.mpnHint, row?.barcodeHint]
+    .map(clean)
+    .filter((value) => value && (
+      candidate.identityValues.includes(value) ||
+      candidate.gtins.includes(normalizedGtin(value))
+    ));
+  const matchTerms = [...new Set([
+    ...verifiedHints,
+    identifier,
+    clean(candidate.title),
+  ].filter(Boolean))];
+
+  return {
+    ok: true,
+    status: "READY_FOR_REVIEW",
+    reason: `Merchant selected supplier candidate “${candidate.title || identifier}” for ${targetVariant.parentTitle}${targetVariant.variantTitle ? ` · ${targetVariant.variantTitle}` : ""}.`,
+    resolutionMethod: "MERCHANT_CONFIRMED",
+    suggestedVariantId: targetVariant.shopifyVariantId,
+    candidateKey: candidate.key,
+    matchTerms,
+    primaryIdentifier: identifier,
+  };
+}
