@@ -32,6 +32,7 @@ export class CascadingPageProvider {
   async fetchWithPolicy(source, {
     evidenceGate = this.evidenceGate,
     escalateOnMissingEvidence = false,
+    providerMethod = "fetchPage",
   } = {}) {
     const attempts = [];
     let bestSuccessful = null;
@@ -40,7 +41,10 @@ export class CascadingPageProvider {
       const started = performance.now();
       let result;
       try {
-        result = await provider.fetchPage(source);
+        const fetcher = typeof provider?.[providerMethod] === "function"
+          ? provider[providerMethod].bind(provider)
+          : provider.fetchPage.bind(provider);
+        result = await fetcher(source, evidenceGate);
       } catch (error) {
         result = { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
@@ -90,6 +94,7 @@ export class CascadingPageProvider {
     return this.fetchWithPolicy(source, {
       evidenceGate,
       escalateOnMissingEvidence: true,
+      providerMethod: "fetchPageForMetadata",
     });
   }
 }
