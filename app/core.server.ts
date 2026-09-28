@@ -3,10 +3,12 @@ import { createDatabase } from "../src/db.js";
 import { createPageProvider } from "../src/providers/create-page-provider.js";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
+import { ImportProcessor } from "../src/onboarding/import-processor.js";
 
 type Core = {
   db: ReturnType<typeof createDatabase>;
   service: SupplierSignalService;
+  importProcessor: ImportProcessor;
   liveProvider: boolean;
 };
 
@@ -41,7 +43,12 @@ function createCore(): Core {
     ...(supportedDomains?.length ? { supportedDomains } : {}),
     simulated: !liveProvider,
   });
-  return { db, service, liveProvider };
+  const importProcessor = new ImportProcessor({
+    db,
+    provider,
+    ...(supportedDomains?.length ? { supportedDomains } : {}),
+  });
+  return { db, service, importProcessor, liveProvider };
 }
 
 async function runScheduledChecks(core: Core) {
