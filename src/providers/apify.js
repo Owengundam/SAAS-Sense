@@ -251,6 +251,26 @@ export class ApifyProvider {
     }
   }
 
+  async fetchPageForMetadata(source, evidenceGate = () => false) {
+    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
+
+    const primary = await this.fetchFromActor(this.actorId, source);
+    const attempts = [providerAttempt(primary, this.actorId, "primary")];
+    if (this.actorId !== ECOMMERCE_ACTOR_ID || evidenceGate(source, primary) || primary?.terminal) {
+      return { ...primary, providerAttempts: attempts };
+    }
+
+    const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
+    attempts.push(providerAttempt(fallback, CONTENT_CRAWLER_ACTOR_ID, "fallback"));
+    if (!fallback.ok) return { ...primary, fallbackError: fallback.error, providerAttempts: attempts };
+    return {
+      ...fallback,
+      providerAttempts: attempts,
+      fallbackUsed: true,
+      structuredPrimary: primary.ok ? primary : null,
+    };
+  }
+
   async fetchPage(source) {
     if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
 
