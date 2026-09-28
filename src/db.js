@@ -557,12 +557,15 @@ export function createDatabase(path = ":memory:") {
         WHERE shop=? AND substr(attempted_at,1,7)=?`).get(shop, month).count || 0);
     },
     recordSupplierDiscoveryAttempt(shop, connectionId, input, now = new Date()) {
+      if (!input.batchId || !input.rowId) throw new Error("SUPPLIER_DISCOVERY_ROW_REQUIRED");
       const id = randomUUID();
       db.prepare(`INSERT INTO supplier_discovery_attempts
-        (id, connection_id, shop, shopify_variant_id, query_identifier, status, candidate_count, attempted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        id, connectionId, shop, input.shopifyVariantId, input.queryIdentifier || null,
-        input.status, Number(input.candidateCount || 0), now.toISOString(),
+        (id, connection_id, batch_id, row_id, shop, shopify_variant_id, query_identifier,
+         status, candidate_count, attempted_at, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, connectionId, input.batchId, input.rowId, shop, input.shopifyVariantId,
+        input.queryIdentifier || null, input.status, Number(input.candidateCount || 0),
+        now.toISOString(), input.completedAt ? new Date(input.completedAt).toISOString() : null,
       );
       return id;
     },
