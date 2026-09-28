@@ -275,7 +275,7 @@ export default function Index() {
   const [pickerError, setPickerError] = useState("");
   const [batchPickerError, setBatchPickerError] = useState("");
   const [clientTimeZone, setClientTimeZone] = useState<string | null>(null);
-  const displayTime = (value: string | null | undefined) => displayTime(value, clientTimeZone);
+  const displayTime = (value: string | null | undefined) => formatTime(value, clientTimeZone);
   const chooseBatchVariants = async () => {
     try {
       const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: true });
