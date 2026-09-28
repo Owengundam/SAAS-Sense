@@ -269,6 +269,48 @@ test("stale review version cannot approve a changed mapping", async () => {
   assert.equal(db.countSources("a.myshopify.com"), 0);
 });
 
+test("tenant discovery budget blocks new external setup work before provider calls", async () => {
+  const db = setup();
+  const batch = createBatch(db);
+  let calls = 0;
+  const processor = new ImportProcessor({
+    db,
+    provider: { fetchPageForMetadata: async () => { calls += 1; return resultFor(); } },
+    supportedDomains: ["supplier.example"],
+    monthlyDiscoveryLimit: 0,
+  });
+  await assert.rejects(
+    () => processor.processBatch("a.myshopify.com", batch.id),
+    /IMPORT_MONTHLY_DISCOVERY_BUDGET_EXCEEDED/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("each batch is bounded to two discovery attempts per staged row", () => {
+  const db = setup();
+  const batch = createBatch(db);
+  const first = db.claimImportRow("a.myshopify.com", batch.id, new Date("2026-09-28T00:00:00Z"), 50);
+  db.completeImportRow("a.myshopify.com", batch.id, first.row.id, first.operationId, {
+    status: "BLOCKED",
+    error: "temporary",
+    providerAttempts: [],
+  }, new Date("2026-09-28T00:00:01Z"));
+  db.raw.prepare("UPDATE import_rows SET status='DRAFT' WHERE id=?").run(first.row.id);
+
+  const second = db.claimImportRow("a.myshopify.com", batch.id, new Date("2026-09-28T00:01:00Z"), 50);
+  db.completeImportRow("a.myshopify.com", batch.id, second.row.id, second.operationId, {
+    status: "BLOCKED",
+    error: "temporary",
+    providerAttempts: [],
+  }, new Date("2026-09-28T00:01:01Z"));
+  db.raw.prepare("UPDATE import_rows SET status='DRAFT' WHERE id=?").run(second.row.id);
+
+  assert.throws(
+    () => db.claimImportRow("a.myshopify.com", batch.id, new Date("2026-09-28T00:02:00Z"), 50),
+    /IMPORT_BATCH_DISCOVERY_BUDGET_EXCEEDED/,
+  );
+});
+
 test("invalid staging rows are never claimed for external discovery", async () => {
   const db = setup();
   const batch = createBatch(
