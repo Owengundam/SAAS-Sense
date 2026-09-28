@@ -262,6 +262,8 @@ export function createDatabase(path = ":memory:") {
     CREATE TABLE IF NOT EXISTS supplier_discovery_attempts (
       id TEXT PRIMARY KEY,
       connection_id TEXT NOT NULL REFERENCES supplier_connections(id) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
       shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
       shopify_variant_id TEXT NOT NULL,
       query_identifier TEXT,
@@ -665,9 +667,8 @@ export function createDatabase(path = ":memory:") {
             error='Previous supplier discovery worker stopped; safe to resume.', updated_at=?
             WHERE shop=? AND id IN (${placeholders})`).run(timestamp, shop, ...ids);
           db.prepare(`UPDATE supplier_discovery_attempts SET status='FAILED', completed_at=?
-            WHERE shop=? AND status='RESERVED' AND shopify_variant_id IN (
-              SELECT shopify_variant_id_hint FROM import_rows WHERE shop=? AND id IN (${placeholders})
-            )`).run(timestamp, shop, shop, ...ids);
+            WHERE shop=? AND batch_id=? AND status='RESERVED' AND row_id IN (${placeholders})`)
+            .run(timestamp, shop, batchId, ...ids);
         }
         db.exec("COMMIT");
         transactionOpen = false;
