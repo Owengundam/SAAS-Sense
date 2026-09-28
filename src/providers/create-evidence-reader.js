@@ -10,15 +10,18 @@ import { normalizeSupportedDomains } from "../source-policy.js";
 
 export function createFallbackEvidenceReader(env = process.env, overrides = {}) {
   const explicitlyConfigured = String(env.AI_FALLBACK_PROVIDER || "").trim().toLowerCase();
-  const provider = explicitlyConfigured || (env.OPENROUTER_API_KEY
+  if (explicitlyConfigured && !["openrouter", "siliconflow"].includes(explicitlyConfigured)) {
+    throw new Error("INVALID_AI_FALLBACK_PROVIDER");
+  }
+
+  // OpenRouter is authoritative whenever its key is present. SiliconFlow is
+  // fallback-only and cannot override OpenRouter through AI_FALLBACK_PROVIDER.
+  const provider = env.OPENROUTER_API_KEY
     ? "openrouter"
     : env.SILICONFLOW_API_KEY
       ? "siliconflow"
-      : "openrouter");
+      : explicitlyConfigured || "openrouter";
 
-  if (!["openrouter", "siliconflow"].includes(provider)) {
-    throw new Error("INVALID_AI_FALLBACK_PROVIDER");
-  }
   if (provider === "siliconflow") {
     return env.SILICONFLOW_API_KEY
       ? new SiliconFlowEvidenceReader({
