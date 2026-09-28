@@ -26,7 +26,11 @@ function optionCompatibility(variant, candidate, row, pageText = "") {
     const structuredMatch = structured.has(value);
     const explicitMatch = explicit && explicit.includes(value);
     const textMatch = value.length >= 3 && text.includes(value);
-    if (!structuredMatch && !explicitMatch && !textMatch) missing.push(`${option.name}: ${option.value}`);
+    if (structured.size) {
+      if (!structuredMatch && !explicitMatch) missing.push(`${option.name}: ${option.value}`);
+      continue;
+    }
+    if (!explicitMatch && !textMatch) missing.push(`${option.name}: ${option.value}`);
   }
   return {
     compatible: missing.length === 0,
