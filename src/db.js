@@ -633,7 +633,7 @@ export function createDatabase(path = ":memory:") {
           updatedAt: row.updated_at,
         }));
     },
-    claimImportRow(shop, batchId, now = new Date()) {
+    claimImportRow(shop, batchId, now = new Date(), tenantMonthlyLimit = 50) {
       const timestamp = now.toISOString();
       let transactionOpen = false;
       try {
@@ -641,8 +641,19 @@ export function createDatabase(path = ":memory:") {
         transactionOpen = true;
         const tenant = db.prepare("SELECT active FROM tenants WHERE shop = ?").get(shop);
         if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
-        const batch = db.prepare("SELECT id FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
+        const batch = db.prepare("SELECT id, row_count FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
         if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+        const batchAttempts = db.prepare("SELECT COUNT(*) AS count FROM import_attempts WHERE shop=? AND batch_id=?")
+          .get(shop, batchId).count;
+        if (batchAttempts >= Math.max(Number(batch.row_count || 0) * 2, 1)) {
+          throw new Error("IMPORT_BATCH_DISCOVERY_BUDGET_EXCEEDED");
+        }
+        if (Number.isInteger(tenantMonthlyLimit) && tenantMonthlyLimit >= 0) {
+          const month = timestamp.slice(0, 7);
+          const tenantAttempts = db.prepare(`SELECT COUNT(*) AS count FROM import_attempts
+            WHERE shop=? AND substr(reserved_at, 1, 7)=?`).get(shop, month).count;
+          if (tenantAttempts >= tenantMonthlyLimit) throw new Error("IMPORT_MONTHLY_DISCOVERY_BUDGET_EXCEEDED");
+        }
         const row = db.prepare(`SELECT * FROM import_rows
           WHERE shop = ? AND batch_id = ? AND status = 'DRAFT'
           ORDER BY row_index LIMIT 1`).get(shop, batchId);
