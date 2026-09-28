@@ -412,10 +412,12 @@ export default function Index() {
           <fetcher.Form method="post" className={styles.form}>
             <input type="hidden" name="intent" value="connect-supplier" />
             <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
-            <label>Supplier domain
-              <input name="supplierDomain" required defaultValue="lightingsupply.com" />
-            </label>
-            <span className={styles.formHelp}>Current pilot support: Lighting Supply only. Search results are candidate URLs, not stock or identity evidence.</span>
+            <input type="hidden" name="supplierDomain" value="lightingsupply.com" />
+            <div className={styles.setupField}>
+              <strong>Supported automatic supplier</strong>
+              <span>Lighting Supply</span>
+              <span className={styles.formHelp}>Automatic supplier search currently supports Lighting Supply only. For any other supplier, use the exact supplier product URL option below.</span>
+            </div>
             <button
               className={styles.button}
               disabled={batchVariants.length === 0 || fetcher.state !== "idle" || data.supplierDiscoveryJob?.status === "running"}
@@ -433,7 +435,7 @@ export default function Index() {
           </span>}
         </div>
         <details className={styles.advancedFields}>
-          <summary>I already have supplier URLs or a mapping CSV</summary>
+          <summary>Use another supplier or paste exact product URLs</summary>
           <div>
             <fetcher.Form method="post" className={styles.form} ref={batchForm}>
           <input type="hidden" name="intent" value="create-import-batch" />
