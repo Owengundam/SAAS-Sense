@@ -494,3 +494,70 @@ test("disabled subscription blocks further checks", async () => {
   await assert.rejects(service.checkSource("a.myshopify.com", source.id), /TENANT_DISABLED/);
   db.close();
 });
+
+
+test("adding a new supplier mapping for the same Shopify variant replaces the active source", () => {
+  const { db, service } = setup();
+  const first = service.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/1",
+    shopifyProductId: "gid://shopify/Product/1",
+    shopifyVariantId: "gid://shopify/ProductVariant/1",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "Wrong Product",
+    url: "https://supplier.test/wrong",
+    matchConfirmed: true,
+  });
+  const second = service.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/1",
+    shopifyProductId: "gid://shopify/Product/1",
+    shopifyVariantId: "gid://shopify/ProductVariant/1",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "The Complete Snowboard",
+    url: "https://supplier.test/correct",
+    matchConfirmed: true,
+  });
+
+  assert.equal(second.id, first.id);
+  assert.equal(second.replacedExisting, true);
+  assert.equal(db.countSources("a.myshopify.com"), 1);
+  assert.equal(service.dashboard("a.myshopify.com").sources.length, 1);
+  assert.equal(service.dashboard("a.myshopify.com").sources[0].url, "https://supplier.test/correct");
+  assert.equal(service.dashboard("a.myshopify.com").sources[0].lastState, null);
+  db.close();
+});
+
+test("duplicate active Shopify variant sources are reconciled without deleting history", () => {
+  const { db, service } = setup();
+  const wrong = db.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/1",
+    shopifyProductId: "gid://shopify/Product/1",
+    shopifyVariantId: "gid://shopify/ProductVariant/1",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "Wrong Product",
+    url: "https://supplier.test/wrong",
+    matchTerms: ["Wrong Product"],
+    inStockTerms: [],
+    outOfStockTerms: [],
+    matchConfirmedAt: "2026-09-15T12:00:00.000Z",
+  });
+  db.raw.prepare("UPDATE sources SET last_attempt_status='PRODUCT_MISMATCH' WHERE id=?").run(wrong.id);
+  const correct = db.addSource("a.myshopify.com", {
+    sku: "gid://shopify/ProductVariant/1",
+    shopifyProductId: "gid://shopify/Product/1",
+    shopifyVariantId: "gid://shopify/ProductVariant/1",
+    productTitle: "The Complete Snowboard · Dawn",
+    supplierSku: "The Complete Snowboard",
+    url: "https://supplier.test/correct",
+    matchTerms: ["The Complete Snowboard"],
+    inStockTerms: [],
+    outOfStockTerms: [],
+    matchConfirmedAt: "2026-09-16T12:00:00.000Z",
+  });
+
+  assert.equal(db.reconcileDuplicateShopifyVariantSources("a.myshopify.com"), 1);
+  assert.equal(db.getSource("a.myshopify.com", wrong.id).enabled, false);
+  assert.equal(db.getSource("a.myshopify.com", correct.id).enabled, true);
+  assert.equal(service.dashboard("a.myshopify.com").sources.length, 1);
+  assert.equal(db.listSources("a.myshopify.com").length, 2);
+  db.close();
+});
