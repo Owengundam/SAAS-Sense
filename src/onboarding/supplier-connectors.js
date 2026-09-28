@@ -18,12 +18,11 @@ function clean(value) {
 function normalizeDomain(value) {
   let url;
   try {
-    url = new URL(value.includes("://") ? value : `https://${value}`);
+    url = new URL(String(value || "").includes("://") ? value : `https://${value}`);
   } catch {
     throw new Error("INVALID_SUPPLIER_DOMAIN");
   }
-  const validated = validateSupplierUrl(url.origin);
-  return validated.hostname.toLowerCase();
+  return validateSupplierUrl(url.origin).hostname.toLowerCase();
 }
 
 function productUrl(base, value) {
@@ -67,9 +66,7 @@ async function fetchPinnedJson(url, {
     });
 
     const status = Number(response.statusCode || 0);
-    if (status < 200 || status >= 300) {
-      throw new Error(`SUPPLIER_DISCOVERY_HTTP_${status || "ERROR"}`);
-    }
+    if (status < 200 || status >= 300) throw new Error(`SUPPLIER_DISCOVERY_HTTP_${status || "ERROR"}`);
     const type = String(response.headers["content-type"] || "");
     if (!/application\/json/i.test(type)) throw new Error("SUPPLIER_DISCOVERY_NON_JSON");
 
@@ -111,23 +108,17 @@ export class LightingSupplyConnector {
     const payload = await this.fetchJson(endpoint.toString());
     const products = payload?.resources?.results?.products;
     if (!Array.isArray(products)) return [];
-    const candidates = [];
-    for (const product of products.slice(0, 5)) {
+    return [...new Map(products.slice(0, 5).flatMap((product) => {
       const url = productUrl(endpoint.origin, product?.url);
-      if (!url) continue;
-      candidates.push({
-        url,
-        title: clean(product?.title),
-      });
-    }
-    return [...new Map(candidates.map((item) => [item.url, item])).values()];
+      return url ? [[url, { url, title: clean(product?.title) }]] : [];
+    })).values()];
   }
 }
 
 export function createSupplierConnector(domain, options = {}) {
   const normalized = normalizeDomain(domain);
-  const lighting = new LightingSupplyConnector(options);
-  if (lighting.supports(normalized)) return lighting;
+  const connector = new LightingSupplyConnector(options);
+  if (connector.supports(normalized)) return connector;
   throw new Error("SUPPLIER_CONNECTION_NOT_SUPPORTED");
 }
 
@@ -148,107 +139,40 @@ function fingerprint(shop, connector, variants) {
   })).digest("hex");
 }
 
-export async function stageSupplierConnectionBatch({
+export function stageSupplierConnectionBatch({
   db,
   shop,
   domain,
   variants,
-  monthlyAttemptLimit = 50,
-  connectorOptions,
   now = new Date(),
 }) {
   if (!Array.isArray(variants) || !variants.length) throw new Error("SELECT_SHOPIFY_VARIANTS");
   if (variants.length > MAX_DISCOVERY_ROWS) throw new Error("SUPPLIER_DISCOVERY_VARIANT_LIMIT_EXCEEDED");
-
-  const connector = createSupplierConnector(domain, connectorOptions);
+  const connector = createSupplierConnector(domain);
   const tenant = db.getTenant(shop);
   if (!tenant?.active) throw new Error("TENANT_DISABLED");
-  const used = db.countSupplierDiscoveryAttemptsThisMonth(shop, now);
-  if (used + variants.length > monthlyAttemptLimit) {
-    throw new Error("SUPPLIER_DISCOVERY_MONTHLY_LIMIT_EXCEEDED");
-  }
 
-  const connection = db.upsertSupplierConnection(shop, {
+  db.upsertSupplierConnection(shop, {
     domain: connector.domain,
     adapter: connector.adapterName,
     now,
   });
 
-  const rows = [];
-  for (const [index, variant] of variants.entries()) {
+  const rows = variants.map((variant, index) => {
     const identifier = chooseIdentifier(variant);
-    if (!identifier) {
-      db.recordSupplierDiscoveryAttempt(shop, connection.id, {
-        shopifyVariantId: variant.shopifyVariantId,
-        queryIdentifier: null,
-        status: "NO_IDENTIFIER",
-        candidateCount: 0,
-      }, now);
-      rows.push({
-        rowIndex: index + 1,
-        url: null,
-        shopifyVariantIdHint: variant.shopifyVariantId,
-        merchantSkuHint: variant.merchantSku || null,
-        supplierSkuHint: null,
-        mpnHint: null,
-        barcodeHint: variant.barcode || null,
-        optionsHint: (variant.selectedOptions || []).map((option) => `${option.name}: ${option.value}`).join(", "),
-        status: "INVALID",
-        error: "SUPPLIER_DISCOVERY_IDENTIFIER_REQUIRED",
-      });
-      continue;
-    }
-
-    let candidates;
-    try {
-      candidates = await connector.findCandidates(identifier.value);
-    } catch (error) {
-      db.recordSupplierDiscoveryAttempt(shop, connection.id, {
-        shopifyVariantId: variant.shopifyVariantId,
-        queryIdentifier: identifier.value,
-        status: "FAILED",
-        candidateCount: 0,
-      }, now);
-      rows.push({
-        rowIndex: index + 1,
-        url: null,
-        shopifyVariantIdHint: variant.shopifyVariantId,
-        merchantSkuHint: variant.merchantSku || null,
-        supplierSkuHint: identifier.kind === "merchant_sku" ? identifier.value : null,
-        mpnHint: null,
-        barcodeHint: identifier.kind === "barcode" ? identifier.value : variant.barcode || null,
-        optionsHint: (variant.selectedOptions || []).map((option) => `${option.name}: ${option.value}`).join(", "),
-        status: "INVALID",
-        error: error instanceof Error ? error.message : "SUPPLIER_DISCOVERY_FAILED",
-      });
-      continue;
-    }
-
-    const status = candidates.length === 1 ? "FOUND" : candidates.length ? "AMBIGUOUS" : "NOT_FOUND";
-    db.recordSupplierDiscoveryAttempt(shop, connection.id, {
-      shopifyVariantId: variant.shopifyVariantId,
-      queryIdentifier: identifier.value,
-      status,
-      candidateCount: candidates.length,
-    }, now);
-
-    rows.push({
+    return {
       rowIndex: index + 1,
-      url: candidates.length === 1 ? candidates[0].url : null,
+      url: null,
       shopifyVariantIdHint: variant.shopifyVariantId,
       merchantSkuHint: variant.merchantSku || null,
-      supplierSkuHint: identifier.kind === "merchant_sku" ? identifier.value : null,
+      supplierSkuHint: identifier?.kind === "merchant_sku" ? identifier.value : null,
       mpnHint: null,
-      barcodeHint: identifier.kind === "barcode" ? identifier.value : variant.barcode || null,
+      barcodeHint: identifier?.kind === "barcode" ? identifier.value : variant.barcode || null,
       optionsHint: (variant.selectedOptions || []).map((option) => `${option.name}: ${option.value}`).join(", "),
-      status: candidates.length === 1 ? "DRAFT" : "INVALID",
-      error: candidates.length > 1
-        ? `SUPPLIER_DISCOVERY_AMBIGUOUS:${candidates.length}`
-        : candidates.length === 0
-          ? "SUPPLIER_DISCOVERY_NOT_FOUND"
-          : null,
-    });
-  }
+      status: identifier ? "DISCOVERY_PENDING" : "INVALID",
+      error: identifier ? null : "SUPPLIER_DISCOVERY_IDENTIFIER_REQUIRED",
+    };
+  });
 
   return db.createImportBatch(shop, {
     fingerprint: fingerprint(shop, connector, variants),
@@ -257,6 +181,83 @@ export async function stageSupplierConnectionBatch({
     rows,
     createdAt: now.toISOString(),
   });
+}
+
+function rowIdentifier(row) {
+  return clean(row.supplierSkuHint) || clean(row.barcodeHint) || null;
+}
+
+export class SupplierDiscoveryProcessor {
+  constructor({
+    db,
+    monthlyAttemptLimit = 50,
+    connectorOptions,
+    now = () => new Date(),
+  }) {
+    this.db = db;
+    this.monthlyAttemptLimit = monthlyAttemptLimit;
+    this.connectorOptions = connectorOptions;
+    this.now = now;
+  }
+
+  async processNext(shop, batchId) {
+    const batch = this.db.getImportBatch(shop, batchId);
+    if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+    if (!String(batch.inputKind).startsWith("supplier:")) throw new Error("IMPORT_BATCH_NOT_SUPPLIER_DISCOVERY");
+
+    const claim = this.db.claimSupplierDiscoveryRow(shop, batchId, this.now(), this.monthlyAttemptLimit);
+    if (!claim) return null;
+    const connectorName = String(batch.inputKind).slice("supplier:".length);
+    const connection = this.db.listSupplierConnections(shop).find((item) => item.adapter === connectorName);
+    if (!connection) throw new Error("SUPPLIER_CONNECTION_NOT_FOUND");
+    const connector = createSupplierConnector(connection.domain, this.connectorOptions);
+    const identifier = rowIdentifier(claim.row);
+
+    if (!identifier) {
+      return this.db.completeSupplierDiscoveryRow(shop, batchId, claim.row.id, claim.attemptId, {
+        status: "INVALID",
+        error: "SUPPLIER_DISCOVERY_IDENTIFIER_REQUIRED",
+        candidateCount: 0,
+      }, this.now());
+    }
+
+    try {
+      const candidates = await connector.findCandidates(identifier);
+      if (candidates.length === 1) {
+        return this.db.completeSupplierDiscoveryRow(shop, batchId, claim.row.id, claim.attemptId, {
+          status: "DRAFT",
+          url: candidates[0].url,
+          error: null,
+          candidateCount: 1,
+        }, this.now());
+      }
+      return this.db.completeSupplierDiscoveryRow(shop, batchId, claim.row.id, claim.attemptId, {
+        status: candidates.length ? "NEEDS_REVIEW" : "NO_MATCH",
+        url: null,
+        error: candidates.length
+          ? `Supplier search returned ${candidates.length} candidate URLs; paste the exact URL to resolve this row.`
+          : "No supplier product URL was found for this exact identifier.",
+        candidateCount: candidates.length,
+      }, this.now());
+    } catch (error) {
+      return this.db.completeSupplierDiscoveryRow(shop, batchId, claim.row.id, claim.attemptId, {
+        status: "BLOCKED",
+        url: null,
+        error: error instanceof Error ? error.message : "SUPPLIER_DISCOVERY_FAILED",
+        candidateCount: 0,
+      }, this.now());
+    }
+  }
+
+  async processBatch(shop, batchId, limit = MAX_DISCOVERY_ROWS) {
+    const processed = [];
+    for (let index = 0; index < limit; index += 1) {
+      const row = await this.processNext(shop, batchId);
+      if (!row) break;
+      processed.push(row);
+    }
+    return processed;
+  }
 }
 
 export { MAX_DISCOVERY_ROWS };
