@@ -8,6 +8,7 @@ import { requirePaidPlan } from "../billing-gate.server";
 import { verifyShopifyVariant, verifyShopifyVariants } from "../catalog.server";
 import { stageImportBatch } from "../../src/onboarding/import-service.js";
 import { getCheckJob, startCheckJob } from "../check-jobs.server";
+import { getImportJob, startImportJob } from "../import-jobs.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -15,12 +16,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   ensureTenant(session.shop);
   const { service } = getSupplierSignal();
   const importBatches = service.db.listImportBatches(session.shop, 5);
+  const latestImportBatch = importBatches[0] ? service.db.getImportBatch(session.shop, importBatches[0].id) : null;
   return {
     ...service.dashboard(session.shop),
     shop: session.shop,
     checkJob: getCheckJob(session.shop),
     importBatches,
-    latestImportBatch: importBatches[0] ? service.db.getImportBatch(session.shop, importBatches[0].id) : null,
+    latestImportBatch,
+    importJob: latestImportBatch ? getImportJob(session.shop, latestImportBatch.id) : null,
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
   };
 };
@@ -32,7 +35,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   ensureTenant(session.shop);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
-  const { service } = getSupplierSignal();
+  const { service, importProcessor } = getSupplierSignal();
   try {
     if (intent === "create-import-batch") {
       let variantIds: string[];
@@ -58,6 +61,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         message: batch.reused
           ? "This exact onboarding draft already exists, so no duplicate was created."
           : `Saved ${batch.rowCount} supplier rows with ${batch.variantCount} Shopify variants. Nothing is monitored until a mapping is approved.`,
+      };
+    }
+    if (intent === "process-import-batch") {
+      const batchId = String(form.get("batchId") || "");
+      if (!service.db.getImportBatch(session.shop, batchId)) {
+        return { ok: false, message: "Onboarding draft not found." };
+      }
+      const started = startImportJob(session.shop, batchId, importProcessor);
+      return {
+        ok: started,
+        importStarted: started,
+        message: started
+          ? "Extracting supplier metadata. You can leave this page while it runs."
+          : "No draft rows are waiting for extraction, or this batch is already running.",
+      };
+    }
+    if (intent === "approve-import-rows") {
+      const batchId = String(form.get("batchId") || "");
+      const selections = form.getAll("approval").map((value) => {
+        try {
+          const parsed = JSON.parse(String(value));
+          return {
+            rowId: String(parsed.rowId || ""),
+            expectedReviewVersion: Number(parsed.expectedReviewVersion),
+          };
+        } catch {
+          return null;
+        }
+      }).filter((value): value is { rowId: string; expectedReviewVersion: number } =>
+        Boolean(value?.rowId) && Number.isInteger(value?.expectedReviewVersion));
+      const approved = importProcessor.approveRows(
+        session.shop,
+        batchId,
+        selections,
+        String((session as any).id || session.shop),
+      );
+      const baselineStarted = approved.sourceIds.length
+        ? startCheckJob(session.shop, approved.sourceIds, service)
+        : false;
+      return {
+        ok: true,
+        mappingsApproved: approved.approved,
+        message: `Approved ${approved.approved} mapping${approved.approved === 1 ? "" : "s"}. ${baselineStarted ? "Baseline checks are running separately." : "Stock remains unknown until the normal availability checker runs."}`,
       };
     }
     if (intent === "add-source") {
@@ -153,7 +199,7 @@ export default function Index() {
   const fetcher = useFetcher<typeof action>();
   const revalidator = useRevalidator();
   const shopify = useAppBridge();
-  const busy = fetcher.state !== "idle" || data.checkJob?.status === "running";
+  const busy = fetcher.state !== "idle" || data.checkJob?.status === "running" || data.importJob?.status === "running";
   const sourceForm = useRef<HTMLFormElement>(null);
   const batchForm = useRef<HTMLFormElement>(null);
   const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
@@ -207,12 +253,12 @@ export default function Index() {
   }, [fetcher.data, shopify]);
 
   useEffect(() => {
-    if (data.checkJob?.status !== "running") return;
+    if (data.checkJob?.status !== "running" && data.importJob?.status !== "running") return;
     const timer = window.setInterval(() => {
       if (revalidator.state === "idle") revalidator.revalidate();
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [data.checkJob?.status, revalidator]);
+  }, [data.checkJob?.status, data.importJob?.status, revalidator]);
 
   const latest = new Map<string, any>();
   for (const item of data.observations as any[]) {
@@ -284,9 +330,9 @@ export default function Index() {
       <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="batch-onboarding-heading">
         <div className={styles.setupHeader}>
           <div>
-            <span className={styles.eyebrow}>Batch onboarding · draft only</span>
-            <h2 id="batch-onboarding-heading" className={styles.sectionTitle}>Link a group without retyping Shopify data</h2>
-            <p className={styles.formIntro}>Select up to 25 existing variants, then paste supplier URLs or a mapping CSV. We stage and validate the draft; no monitoring source is created yet.</p>
+            <span className={styles.eyebrow}>Batch-assisted onboarding</span>
+            <h2 id="batch-onboarding-heading" className={styles.sectionTitle}>Connect supplier pages without retyping Shopify data</h2>
+            <p className={styles.formIntro}>Select up to 25 existing variants, then paste supplier URLs or a mapping CSV. SupplierSignal extracts identity metadata first, proposes only evidence-backed mappings, and leaves ambiguous rows unresolved.</p>
           </div>
           <strong>{batchVariants.length}/25 selected</strong>
         </div>
@@ -318,30 +364,80 @@ export default function Index() {
             />
           </label>
           <span className={styles.formHelp}>CSV accepts url, shopify_variant_id, merchant_sku, supplier_sku, mpn, barcode/gtin, and options. Rows are never paired to Shopify variants by position.</span>
-          <button className={styles.button} disabled={busy || batchVariants.length === 0}>{busy ? "Saving draft…" : "Save onboarding draft"}</button>
+          <button className={styles.button} disabled={busy || batchVariants.length === 0}>{fetcher.state !== "idle" ? "Saving draft…" : "Save onboarding draft"}</button>
         </fetcher.Form>
         {data.latestImportBatch && <div style={{ marginTop: 20 }}>
-          <h3 className={styles.sectionTitle}>Latest draft</h3>
-          <span className={styles.muted}>
-            {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · created {formatTime(data.latestImportBatch.createdAt)}
-          </span>
-          <div className={styles.tableWrap} style={{ marginTop: 8 }}>
-            <table className={styles.table}>
-              <thead><tr><th>Row</th><th>Supplier URL</th><th>Shopify hint</th><th>Status</th></tr></thead>
-              <tbody>
-                {data.latestImportBatch.rows.map((row: any) => <tr key={row.id}>
-                  <td>{row.rowIndex}</td>
-                  <td className={styles.evidence}>{row.url || "Missing URL"}</td>
-                  <td><span className={styles.sku}>{row.shopifyVariantIdHint || row.merchantSkuHint || row.barcodeHint || "To be matched later"}</span></td>
-                  <td>
-                    <span className={row.status === "INVALID" ? `${styles.state} ${styles.bad}` : `${styles.state} ${styles.info}`}>{row.status}</span>
-                    {row.error && <span className={styles.muted}>{row.error}</span>}
-                  </td>
-                </tr>)}
-              </tbody>
-            </table>
+          <div className={styles.setupHeader}>
+            <div>
+              <h3 className={styles.sectionTitle}>Latest batch</h3>
+              <span className={styles.muted}>
+                {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · {data.latestImportBatch.status} · created {formatTime(data.latestImportBatch.createdAt)}
+              </span>
+            </div>
+            {data.latestImportBatch.rows.some((row: any) => row.status === "DRAFT") &&
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="process-import-batch" />
+                <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
+                <button className={styles.button} disabled={busy}>{data.importJob?.status === "running" ? "Extracting…" : "Extract supplier metadata"}</button>
+              </fetcher.Form>}
           </div>
-          <span className={styles.formHelp}>Drafts survive reloads and restarts. Approval and supplier metadata extraction come in the next onboarding step.</span>
+          {data.importJob && <div className={styles.notice} role="status" style={{ marginTop: 10 }}>
+            {data.importJob.status === "running"
+              ? `Extracting ${data.importJob.completed} of ${data.importJob.total} supplier rows.`
+              : data.importJob.message}
+          </div>}
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="approve-import-rows" />
+            <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
+            <div className={styles.tableWrap} style={{ marginTop: 8 }}>
+              <table className={styles.table}>
+                <thead><tr><th>Approve</th><th>Supplier item</th><th>Proposed Shopify variant</th><th>Status / evidence</th></tr></thead>
+                <tbody>
+                  {data.latestImportBatch.rows.map((row: any) => {
+                    const variant = data.latestImportBatch.variants.find((item: any) => item.shopifyVariantId === row.suggestedVariantId);
+                    const candidate = row.extractedMetadata?.candidates?.find((item: any) => item.key === row.suggestedCandidateKey);
+                    const ready = row.status === "READY_FOR_REVIEW";
+                    const statusClass = row.status === "APPROVED"
+                      ? `${styles.state} ${styles.good}`
+                      : ["INVALID", "NO_MATCH", "BLOCKED"].includes(row.status)
+                        ? `${styles.state} ${styles.bad}`
+                        : row.status === "NEEDS_REVIEW"
+                          ? `${styles.state} ${styles.warn}`
+                          : `${styles.state} ${styles.info}`;
+                    return <tr key={row.id}>
+                      <td>
+                        {ready
+                          ? <input
+                              type="checkbox"
+                              name="approval"
+                              value={JSON.stringify({ rowId: row.id, expectedReviewVersion: row.reviewVersion })}
+                              aria-label={`Approve row ${row.rowIndex}`}
+                            />
+                          : row.status === "APPROVED" ? "✓" : "—"}
+                      </td>
+                      <td className={styles.evidence}>
+                        <strong>{candidate?.title || row.extractedMetadata?.pageTitle || `Supplier row ${row.rowIndex}`}</strong>
+                        <span className={styles.sku}>{row.primaryIdentifier || row.supplierSkuHint || row.mpnHint || row.barcodeHint || "No strong identifier yet"}</span>
+                        {row.canonicalUrl && <a href={row.canonicalUrl} target="_blank" rel="noreferrer">Open captured supplier page</a>}
+                      </td>
+                      <td>
+                        <span className={styles.product}>{variant ? `${variant.parentTitle}${variant.variantTitle ? ` · ${variant.variantTitle}` : ""}` : "Unresolved"}</span>
+                        {variant && <span className={styles.sku}>{variant.merchantSku || "No Shopify SKU"}{variant.barcode ? ` · ${variant.barcode}` : ""}</span>}
+                      </td>
+                      <td>
+                        <span className={statusClass}>{row.status.replaceAll("_", " ")}</span>
+                        <span className={styles.muted}>{row.matchReason || row.error || (row.status === "DRAFT" ? "Waiting for metadata extraction." : "")}</span>
+                      </td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {data.latestImportBatch.rows.some((row: any) => row.status === "READY_FOR_REVIEW") && <>
+              <p className={styles.formHelp} style={{ marginTop: 12 }}>Only rows with strong deterministic identity evidence can be selected. Approval confirms identity only; availability is checked separately.</p>
+              <button className={styles.button} disabled={busy}>Approve selected ready mappings</button>
+            </>}
+          </fetcher.Form>
         </div>}
       </section>
       <div className={`${styles.grid} ${data.sources.length === 0 ? styles.emptyGrid : ""}`}>
