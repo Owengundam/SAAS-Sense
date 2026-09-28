@@ -101,6 +101,11 @@ function ecommerceEvidenceRecords(item, runId, sourceUrl) {
     mpn: item.mpn,
     gtin: item.gtin,
     productId: item.productId,
+    brand: item.brand,
+    manufacturer: item.manufacturer,
+    model: item.model,
+    color: item.color,
+    size: item.size,
     identifiers: item.identifiers || item.productIdentifiers,
     stockStatus: item.stockStatus,
     availability: item.availability,
@@ -244,6 +249,26 @@ export class ApifyProvider {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  async fetchPageForMetadata(source, evidenceGate = () => false) {
+    if (!this.token) return { ok: false, error: "APIFY_API_TOKEN is not configured", runId: `unconfigured-${Date.now()}` };
+
+    const primary = await this.fetchFromActor(this.actorId, source);
+    const attempts = [providerAttempt(primary, this.actorId, "primary")];
+    if (this.actorId !== ECOMMERCE_ACTOR_ID || evidenceGate(source, primary) || primary?.terminal) {
+      return { ...primary, providerAttempts: attempts };
+    }
+
+    const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
+    attempts.push(providerAttempt(fallback, CONTENT_CRAWLER_ACTOR_ID, "fallback"));
+    if (!fallback.ok) return { ...primary, fallbackError: fallback.error, providerAttempts: attempts };
+    return {
+      ...fallback,
+      providerAttempts: attempts,
+      fallbackUsed: true,
+      structuredPrimary: primary.ok ? primary : null,
+    };
   }
 
   async fetchPage(source) {

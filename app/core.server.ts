@@ -3,10 +3,12 @@ import { createDatabase } from "../src/db.js";
 import { createPageProvider } from "../src/providers/create-page-provider.js";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
+import { ImportProcessor } from "../src/onboarding/import-processor.js";
 
 type Core = {
   db: ReturnType<typeof createDatabase>;
   service: SupplierSignalService;
+  importProcessor: ImportProcessor;
   liveProvider: boolean;
 };
 
@@ -27,6 +29,7 @@ function createCore(): Core {
   const provider = createPageProvider(process.env, { root: resolve(process.cwd()) });
   const evidenceReader = createEvidenceReader(process.env);
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
+  const configuredImportLimit = Number.parseInt(process.env.IMPORT_MONTHLY_DISCOVERY_LIMIT || "50", 10);
   const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
     ?.split(",")
     .map((domain) => domain.trim())
@@ -41,7 +44,15 @@ function createCore(): Core {
     ...(supportedDomains?.length ? { supportedDomains } : {}),
     simulated: !liveProvider,
   });
-  return { db, service, liveProvider };
+  const importProcessor = new ImportProcessor({
+    db,
+    provider,
+    monthlyDiscoveryLimit: Number.isInteger(configuredImportLimit) && configuredImportLimit >= 0
+      ? configuredImportLimit
+      : 50,
+    ...(supportedDomains?.length ? { supportedDomains } : {}),
+  });
+  return { db, service, importProcessor, liveProvider };
 }
 
 async function runScheduledChecks(core: Core) {

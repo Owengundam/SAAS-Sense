@@ -124,13 +124,14 @@ export class BrowserProvider {
   async waitForRelevantContent(page, source) {
     if (this.contentWaitMs <= 0 || typeof page.waitForFunction !== "function") return;
     try {
-      await page.waitForFunction(({ terms }) => {
+      await page.waitForFunction(({ terms, discoveryMode }) => {
         const text = String(document.body?.innerText || "");
         const lower = text.toLowerCase();
         const identityFound = !terms.length || terms.some((term) => lower.includes(term));
+        if (discoveryMode) return text.trim().length > 20 && identityFound;
         const availabilityFound = /\b(in\s*stock|out\s*of\s*stock|sold\s*out|pre[ -]?order(?:ed)?|back[ -]?order(?:ed)?|discontinued|unavailable|available|ready\s*to\s*ship|ships?\s+(?:in|within))\b|有货|现货|缺货|售罄|预售|库存/iu.test(text);
         return identityFound && availabilityFound;
-      }, { terms: identityTerms(source) }, { timeout: this.contentWaitMs });
+      }, { terms: identityTerms(source), discoveryMode: source?.discoveryMode === true }, { timeout: this.contentWaitMs });
     } catch {
       // Downstream validation must decide whether the captured DOM is usable.
     }
