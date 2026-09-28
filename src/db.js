@@ -214,6 +214,20 @@ export function createDatabase(path = ":memory:") {
       mpn_hint TEXT,
       barcode_hint TEXT,
       options_hint TEXT,
+      canonical_url TEXT,
+      extracted_metadata TEXT,
+      suggested_variant_id TEXT,
+      suggested_candidate_key TEXT,
+      match_reason TEXT,
+      match_terms TEXT,
+      primary_identifier TEXT,
+      provider_run_id TEXT,
+      review_version INTEGER NOT NULL DEFAULT 0,
+      last_processed_at TEXT,
+      approved_source_id TEXT,
+      approved_at TEXT,
+      approved_by TEXT,
+      approved_review_version INTEGER,
       status TEXT NOT NULL,
       error TEXT,
       created_at TEXT NOT NULL,
@@ -222,6 +236,20 @@ export function createDatabase(path = ":memory:") {
     );
     CREATE INDEX IF NOT EXISTS import_rows_batch
       ON import_rows(batch_id, row_index);
+    CREATE TABLE IF NOT EXISTS import_attempts (
+      operation_id TEXT PRIMARY KEY,
+      row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      reserved_at TEXT NOT NULL,
+      completed_at TEXT,
+      outcome TEXT,
+      provider_run_id TEXT,
+      provider_attempts TEXT
+    );
+    CREATE INDEX IF NOT EXISTS import_attempts_batch
+      ON import_attempts(batch_id, reserved_at);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -256,6 +284,26 @@ export function createDatabase(path = ":memory:") {
   if (!decisionColumns.has("decision_details")) db.exec("ALTER TABLE decision_records ADD COLUMN decision_details TEXT");
   const attemptColumns = new Set(db.prepare("PRAGMA table_info(provider_attempts)").all().map((column) => column.name));
   if (!attemptColumns.has("latency_ms")) db.exec("ALTER TABLE provider_attempts ADD COLUMN latency_ms REAL");
+  const importRowColumns = new Set(db.prepare("PRAGMA table_info(import_rows)").all().map((column) => column.name));
+  const importRowMigrations = [
+    ["canonical_url", "TEXT"],
+    ["extracted_metadata", "TEXT"],
+    ["suggested_variant_id", "TEXT"],
+    ["suggested_candidate_key", "TEXT"],
+    ["match_reason", "TEXT"],
+    ["match_terms", "TEXT"],
+    ["primary_identifier", "TEXT"],
+    ["provider_run_id", "TEXT"],
+    ["review_version", "INTEGER NOT NULL DEFAULT 0"],
+    ["last_processed_at", "TEXT"],
+    ["approved_source_id", "TEXT"],
+    ["approved_at", "TEXT"],
+    ["approved_by", "TEXT"],
+    ["approved_review_version", "INTEGER"],
+  ];
+  for (const [name, type] of importRowMigrations) {
+    if (!importRowColumns.has(name)) db.exec(`ALTER TABLE import_rows ADD COLUMN ${name} ${type}`);
+  }
   db.exec(`
     UPDATE sources
       SET last_attempt_at = last_checked_at
@@ -276,6 +324,45 @@ export function createDatabase(path = ":memory:") {
         state, provider_run_id
       FROM observations;
   `);
+
+  const parseJson = (value, fallback = null) => {
+    try {
+      return value == null || value === "" ? fallback : JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  };
+  const mapImportRow = (row) => row ? ({
+    id: row.id,
+    batchId: row.batch_id,
+    shop: row.shop,
+    rowIndex: row.row_index,
+    url: row.url,
+    shopifyVariantIdHint: row.shopify_variant_id_hint,
+    merchantSkuHint: row.merchant_sku_hint,
+    supplierSkuHint: row.supplier_sku_hint,
+    mpnHint: row.mpn_hint,
+    barcodeHint: row.barcode_hint,
+    optionsHint: row.options_hint,
+    canonicalUrl: row.canonical_url,
+    extractedMetadata: parseJson(row.extracted_metadata, null),
+    suggestedVariantId: row.suggested_variant_id,
+    suggestedCandidateKey: row.suggested_candidate_key,
+    matchReason: row.match_reason,
+    matchTerms: parseJson(row.match_terms, []),
+    primaryIdentifier: row.primary_identifier,
+    providerRunId: row.provider_run_id,
+    reviewVersion: Number(row.review_version || 0),
+    lastProcessedAt: row.last_processed_at,
+    approvedSourceId: row.approved_source_id,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    approvedReviewVersion: row.approved_review_version == null ? null : Number(row.approved_review_version),
+    status: row.status,
+    error: row.error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }) : null;
 
   const mapSource = (row) => row ? decodeSource({
     id: row.id,
@@ -498,21 +585,7 @@ export function createDatabase(path = ":memory:") {
           createdAt: row.created_at,
         }));
       const rows = db.prepare(`SELECT * FROM import_rows
-        WHERE shop = ? AND batch_id = ? ORDER BY row_index`).all(shop, batchId).map((row) => ({
-          id: row.id,
-          rowIndex: row.row_index,
-          url: row.url,
-          shopifyVariantIdHint: row.shopify_variant_id_hint,
-          merchantSkuHint: row.merchant_sku_hint,
-          supplierSkuHint: row.supplier_sku_hint,
-          mpnHint: row.mpn_hint,
-          barcodeHint: row.barcode_hint,
-          optionsHint: row.options_hint,
-          status: row.status,
-          error: row.error,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        }));
+        WHERE shop = ? AND batch_id = ? ORDER BY row_index`).all(shop, batchId).map(mapImportRow);
       return {
         id: batch.id,
         shop: batch.shop,
@@ -530,6 +603,12 @@ export function createDatabase(path = ":memory:") {
     listImportBatches(shop, limit = 5) {
       return db.prepare(`SELECT b.*,
         SUM(CASE WHEN r.status = 'DRAFT' THEN 1 ELSE 0 END) AS draft_rows,
+        SUM(CASE WHEN r.status = 'PROCESSING' THEN 1 ELSE 0 END) AS processing_rows,
+        SUM(CASE WHEN r.status = 'READY_FOR_REVIEW' THEN 1 ELSE 0 END) AS ready_rows,
+        SUM(CASE WHEN r.status = 'NEEDS_REVIEW' THEN 1 ELSE 0 END) AS review_rows,
+        SUM(CASE WHEN r.status = 'NO_MATCH' THEN 1 ELSE 0 END) AS no_match_rows,
+        SUM(CASE WHEN r.status = 'BLOCKED' THEN 1 ELSE 0 END) AS blocked_rows,
+        SUM(CASE WHEN r.status = 'APPROVED' THEN 1 ELSE 0 END) AS approved_rows,
         SUM(CASE WHEN r.status = 'INVALID' THEN 1 ELSE 0 END) AS invalid_rows
         FROM import_batches b
         LEFT JOIN import_rows r ON r.batch_id = b.id
@@ -543,10 +622,202 @@ export function createDatabase(path = ":memory:") {
           rowCount: row.row_count,
           variantCount: row.variant_count,
           draftRows: Number(row.draft_rows || 0),
+          processingRows: Number(row.processing_rows || 0),
+          readyRows: Number(row.ready_rows || 0),
+          reviewRows: Number(row.review_rows || 0),
+          noMatchRows: Number(row.no_match_rows || 0),
+          blockedRows: Number(row.blocked_rows || 0),
+          approvedRows: Number(row.approved_rows || 0),
           invalidRows: Number(row.invalid_rows || 0),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));
+    },
+    claimImportRow(shop, batchId, now = new Date()) {
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active FROM tenants WHERE shop = ?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const batch = db.prepare("SELECT id FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
+        if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+        const row = db.prepare(`SELECT * FROM import_rows
+          WHERE shop = ? AND batch_id = ? AND status = 'DRAFT'
+          ORDER BY row_index LIMIT 1`).get(shop, batchId);
+        if (!row) {
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return null;
+        }
+        const operationId = randomUUID();
+        db.prepare(`UPDATE import_rows SET status='PROCESSING', error=NULL,
+          last_processed_at=?, updated_at=? WHERE shop=? AND id=? AND status='DRAFT'`)
+          .run(timestamp, timestamp, shop, row.id);
+        db.prepare(`INSERT INTO import_attempts
+          (operation_id, row_id, batch_id, shop, status, reserved_at)
+          VALUES (?, ?, ?, ?, 'RESERVED', ?)`)
+          .run(operationId, row.id, batchId, shop, timestamp);
+        db.prepare("UPDATE import_batches SET status='PROCESSING', updated_at=? WHERE shop=? AND id=?")
+          .run(timestamp, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return { operationId, row: mapImportRow({ ...row, status: "PROCESSING", error: null, last_processed_at: timestamp, updated_at: timestamp }) };
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    resetStaleImportRows(shop, batchId, before = new Date(Date.now() - 5 * 60 * 1000), now = new Date()) {
+      const beforeIso = before.toISOString();
+      const nowIso = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const stale = db.prepare(`SELECT id FROM import_rows
+          WHERE shop=? AND batch_id=? AND status='PROCESSING'
+          AND (last_processed_at IS NULL OR last_processed_at <= ?)`).all(shop, batchId, beforeIso);
+        if (stale.length) {
+          const ids = stale.map((row) => row.id);
+          const placeholders = ids.map(() => "?").join(",");
+          db.prepare(`UPDATE import_rows SET status='DRAFT', error='Previous discovery worker stopped; safe to resume.',
+            updated_at=? WHERE shop=? AND id IN (${placeholders})`).run(nowIso, shop, ...ids);
+          db.prepare(`UPDATE import_attempts SET status='FAILED', completed_at=?, outcome='WORKER_INTERRUPTED'
+            WHERE shop=? AND batch_id=? AND status='RESERVED' AND row_id IN (${placeholders})`)
+            .run(nowIso, shop, batchId, ...ids);
+        }
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return stale.length;
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    completeImportRow(shop, batchId, rowId, operationId, result, now = new Date()) {
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const attempt = db.prepare(`SELECT operation_id FROM import_attempts
+          WHERE shop=? AND batch_id=? AND row_id=? AND operation_id=? AND status='RESERVED'`)
+          .get(shop, batchId, rowId, operationId);
+        if (!attempt) throw new Error("IMPORT_ATTEMPT_NOT_ACTIVE");
+        db.prepare(`UPDATE import_rows SET status=?, error=?, canonical_url=?, extracted_metadata=?,
+          suggested_variant_id=?, suggested_candidate_key=?, match_reason=?, match_terms=?,
+          primary_identifier=?, provider_run_id=?, review_version=review_version+1,
+          last_processed_at=?, updated_at=?
+          WHERE shop=? AND batch_id=? AND id=? AND status='PROCESSING'`).run(
+          result.status,
+          result.error || null,
+          result.canonicalUrl || null,
+          result.metadata ? JSON.stringify(result.metadata) : null,
+          result.suggestedVariantId || null,
+          result.candidateKey || null,
+          result.matchReason || null,
+          JSON.stringify(result.matchTerms || []),
+          result.primaryIdentifier || null,
+          result.providerRunId || null,
+          timestamp,
+          timestamp,
+          shop,
+          batchId,
+          rowId,
+        );
+        db.prepare(`UPDATE import_attempts SET status='COMPLETED', completed_at=?, outcome=?,
+          provider_run_id=?, provider_attempts=? WHERE shop=? AND operation_id=?`).run(
+          timestamp,
+          result.status,
+          result.providerRunId || null,
+          JSON.stringify(result.providerAttempts || []),
+          shop,
+          operationId,
+        );
+        const remaining = db.prepare(`SELECT COUNT(*) AS count FROM import_rows
+          WHERE shop=? AND batch_id=? AND status IN ('DRAFT','PROCESSING')`).get(shop, batchId).count;
+        db.prepare("UPDATE import_batches SET status=?, updated_at=? WHERE shop=? AND id=?")
+          .run(remaining ? "PROCESSING" : "REVIEW", timestamp, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return mapImportRow(db.prepare("SELECT * FROM import_rows WHERE shop=? AND id=?").get(shop, rowId));
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    listImportAttempts(shop, batchId) {
+      return db.prepare(`SELECT * FROM import_attempts WHERE shop=? AND batch_id=?
+        ORDER BY reserved_at, operation_id`).all(shop, batchId).map((row) => ({
+          ...row,
+          providerAttempts: parseJson(row.provider_attempts, []),
+        }));
+    },
+    commitImportApprovals(shop, batchId, approvals, { reviewer = "merchant", now = new Date() } = {}) {
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active, source_limit FROM tenants WHERE shop=?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const existingSources = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=?").get(shop).count;
+        if (existingSources + approvals.length > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
+        const created = [];
+        for (const approval of approvals) {
+          const row = db.prepare(`SELECT * FROM import_rows
+            WHERE shop=? AND batch_id=? AND id=?`).get(shop, batchId, approval.rowId);
+          if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+          if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
+          if (Number(row.review_version || 0) !== Number(approval.expectedReviewVersion)) {
+            throw new Error("IMPORT_REVIEW_STALE");
+          }
+          if (row.suggested_variant_id !== approval.source.shopifyVariantId) {
+            throw new Error("IMPORT_MAPPING_CHANGED");
+          }
+          const sourceId = randomUUID();
+          db.prepare(`INSERT INTO sources
+            (id, shop, sku, product_title, shopify_product_id, shopify_variant_id,
+             supplier_product_id, supplier_variant_id, supplier_sku, match_confirmed_at,
+             url, match_terms, in_stock_terms, out_of_stock_terms, stale_after_hours, enabled, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
+            sourceId,
+            shop,
+            approval.source.sku,
+            approval.source.productTitle,
+            approval.source.shopifyProductId || null,
+            approval.source.shopifyVariantId || null,
+            approval.source.supplierProductId || null,
+            approval.source.supplierVariantId || null,
+            approval.source.supplierSku || null,
+            timestamp,
+            approval.source.url,
+            JSON.stringify(approval.source.matchTerms || []),
+            JSON.stringify(approval.source.inStockTerms || []),
+            JSON.stringify(approval.source.outOfStockTerms || []),
+            approval.source.staleAfterHours ?? 36,
+            timestamp,
+          );
+          db.prepare(`UPDATE import_rows SET status='APPROVED', approved_source_id=?,
+            approved_at=?, approved_by=?, approved_review_version=review_version,
+            updated_at=? WHERE shop=? AND batch_id=? AND id=?`).run(
+            sourceId, timestamp, reviewer, timestamp, shop, batchId, approval.rowId,
+          );
+          created.push(sourceId);
+        }
+        const unresolved = db.prepare(`SELECT COUNT(*) AS count FROM import_rows
+          WHERE shop=? AND batch_id=? AND status NOT IN ('APPROVED','INVALID')`).get(shop, batchId).count;
+        db.prepare("UPDATE import_batches SET status=?, updated_at=? WHERE shop=? AND id=?")
+          .run(unresolved ? "REVIEW" : "APPROVED", timestamp, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return created;
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
     },
     addSource(shop, input) {
       const id = input.id || randomUUID();
