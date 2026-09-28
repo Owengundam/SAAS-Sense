@@ -246,6 +246,28 @@ test("processor persists reviewable metadata and approval creates stock-unknown 
   assert.equal(source.lastConfirmedAt, null);
 });
 
+test("repeating the same reviewed approval returns the existing source id", async () => {
+  const db = setup();
+  const batch = createBatch(db);
+  const processor = new ImportProcessor({
+    db,
+    provider: { providerName: "fixture", fetchPageForMetadata: async () => resultFor() },
+    supportedDomains: ["supplier.example"],
+  });
+  await processor.processBatch("a.myshopify.com", batch.id);
+  const review = db.getImportBatch("a.myshopify.com", batch.id);
+  const selection = [{
+    rowId: review.rows[0].id,
+    expectedReviewVersion: review.rows[0].reviewVersion,
+  }];
+
+  const first = processor.approveRows("a.myshopify.com", batch.id, selection, "session-1");
+  const second = processor.approveRows("a.myshopify.com", batch.id, selection, "session-1");
+
+  assert.deepEqual(second.sourceIds, first.sourceIds);
+  assert.equal(db.countSources("a.myshopify.com"), 1);
+});
+
 test("stale review version cannot approve a changed mapping", async () => {
   const db = setup();
   const batch = createBatch(db);
