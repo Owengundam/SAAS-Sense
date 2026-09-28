@@ -227,6 +227,21 @@ function formatTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function onboardingStatusLabel(status: string) {
+  return ({
+    DISCOVERY_PENDING: "Waiting to search",
+    DISCOVERING: "Finding supplier page",
+    DRAFT: "Supplier page found",
+    PROCESSING: "Verifying supplier page",
+    READY_FOR_REVIEW: "Ready for your approval",
+    NEEDS_REVIEW: "Needs your review",
+    NO_MATCH: "No confident match",
+    BLOCKED: "Technical failure",
+    INVALID: "Missing searchable SKU/barcode",
+    APPROVED: "Approved for monitoring",
+  } as Record<string, string>)[status] || status.replaceAll("_", " ");
+}
+
 function decisionLabel(decision: any) {
   if (!decision) return "No audit record";
   if (decision.ai_status === "ACCEPTED") return "AI accepted";
@@ -445,9 +460,9 @@ export default function Index() {
         {data.latestImportBatch && <div style={{ marginTop: 20 }}>
           <div className={styles.setupHeader}>
             <div>
-              <h3 className={styles.sectionTitle}>Latest batch</h3>
+              <h3 className={styles.sectionTitle}>Setup progress</h3>
               <span className={styles.muted}>
-                {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · {data.latestImportBatch.status} · created {formatTime(data.latestImportBatch.createdAt)}
+                {data.latestImportBatch.variantCount} Shopify product{data.latestImportBatch.variantCount === 1 ? "" : "s"} · started {formatTime(data.latestImportBatch.createdAt)}
               </span>
             </div>
             {data.latestImportBatch.rows.some((row: any) => ["DRAFT", "PROCESSING"].includes(row.status)) &&
@@ -506,8 +521,14 @@ export default function Index() {
                         {variant && <span className={styles.sku}>{variant.merchantSku || "No Shopify SKU"}{variant.barcode ? ` · ${variant.barcode}` : ""}</span>}
                       </td>
                       <td>
-                        <span className={statusClass}>{row.status.replaceAll("_", " ")}</span>
-                        <span className={styles.muted}>{row.matchReason || row.error || (row.status === "DRAFT" ? "Waiting for metadata extraction." : "")}</span>
+                        <span className={statusClass}>{onboardingStatusLabel(row.status)}</span>
+                        <span className={styles.muted}>{
+                          row.matchReason ||
+                          (row.status === "BLOCKED" ? "SupplierSignal hit a technical error. Select the same products and run Find supplier pages again." : null) ||
+                          row.error ||
+                          (row.status === "DRAFT" ? "Supplier page found. Verification will continue automatically." : "")
+                        }</span>
+                        {row.status === "BLOCKED" && row.error && <details><summary>Technical details</summary><code>{row.error}</code></details>
                       </td>
                     </tr>;
                   })}
