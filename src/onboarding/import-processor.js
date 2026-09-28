@@ -56,16 +56,18 @@ export class ImportProcessor {
     db,
     provider,
     supportedDomains,
+    monthlyDiscoveryLimit = 50,
     now = () => new Date(),
   }) {
     this.db = db;
     this.provider = provider;
     this.supportedDomains = supportedDomains;
+    this.monthlyDiscoveryLimit = monthlyDiscoveryLimit;
     this.now = now;
   }
 
   async processNext(shop, batchId) {
-    const claim = this.db.claimImportRow(shop, batchId, this.now());
+    const claim = this.db.claimImportRow(shop, batchId, this.now(), this.monthlyDiscoveryLimit);
     if (!claim) return null;
     const { operationId, row } = claim;
     const batch = this.db.getImportBatch(shop, batchId);
