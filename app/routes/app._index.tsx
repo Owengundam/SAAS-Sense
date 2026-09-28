@@ -528,7 +528,7 @@ export default function Index() {
                           row.error ||
                           (row.status === "DRAFT" ? "Supplier page found. Verification will continue automatically." : "")
                         }</span>
-                        {row.status === "BLOCKED" && row.error && <details><summary>Technical details</summary><code>{row.error}</code></details>
+                        {row.status === "BLOCKED" && row.error && <details><summary>Technical details</summary><code>{row.error}</code></details>}
                       </td>
                     </tr>;
                   })}
