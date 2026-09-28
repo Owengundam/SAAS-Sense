@@ -684,6 +684,21 @@ export function createDatabase(path = ":memory:") {
         throw error;
       }
     },
+    retryBlockedSupplierDiscoveryRows(shop, batchId, now = new Date()) {
+      const timestamp = now.toISOString();
+      const batch = db.prepare("SELECT input_kind FROM import_batches WHERE shop=? AND id=?").get(shop, batchId);
+      if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+      if (!String(batch.input_kind).startsWith("supplier:")) throw new Error("IMPORT_BATCH_NOT_SUPPLIER_DISCOVERY");
+      const result = db.prepare(`UPDATE import_rows
+        SET status='DISCOVERY_PENDING', error=NULL, updated_at=?
+        WHERE shop=? AND batch_id=? AND status='BLOCKED' AND url IS NULL`)
+        .run(timestamp, shop, batchId);
+      if (result.changes) {
+        db.prepare("UPDATE import_batches SET status='DRAFT', updated_at=? WHERE shop=? AND id=?")
+          .run(timestamp, shop, batchId);
+      }
+      return Number(result.changes || 0);
+    },
     createImportBatch(shop, input) {
       const createdAt = input.createdAt || new Date().toISOString();
       let transactionOpen = false;
