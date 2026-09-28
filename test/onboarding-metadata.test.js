@@ -9,6 +9,7 @@ import {
 import { suggestImportMapping } from "../src/onboarding/match-candidates.js";
 import { ImportProcessor } from "../src/onboarding/import-processor.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
+import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
 
 function variant(id = 1, overrides = {}) {
   return {
@@ -143,6 +144,21 @@ test("variant option mismatch stays out of ready-for-review", () => {
   const suggestion = suggestImportMapping(row, [variant()], metadata, result);
   assert.equal(suggestion.status, "NEEDS_REVIEW");
   assert.match(suggestion.reason, /Color: Blue/i);
+});
+
+test("approved structured GTIN can satisfy later availability identity gating", () => {
+  const result = {
+    ok: true,
+    text: "In stock",
+    availabilityState: "IN_STOCK",
+    evidenceRecords: [
+      { origin: "STRUCTURED_FIELD", path: "jsonld.products[0].gtin12", text: "000000000001" },
+    ],
+  };
+  assert.equal(hasUsefulAvailabilityEvidence({
+    matchTerms: ["000000000001"],
+    productTitle: "Pendant 1 · Blue",
+  }, result), true);
 });
 
 test("metadata cascade stops on first tier when product identity is sufficient", async () => {
