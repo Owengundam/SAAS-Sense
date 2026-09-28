@@ -23,10 +23,17 @@ test("OpenRouter wins when both providers are configured", () => {
   assert.ok(reader instanceof OpenRouterEvidenceReader);
 });
 
-test("SiliconFlow remains an explicit rollback provider", () => {
+test("OpenRouter cannot be overridden by the SiliconFlow fallback flag", () => {
   const reader = createEvidenceReader({
     AI_FALLBACK_PROVIDER: "siliconflow",
     OPENROUTER_API_KEY: "openrouter-key",
+    SILICONFLOW_API_KEY: "siliconflow-key",
+  });
+  assert.ok(reader instanceof OpenRouterEvidenceReader);
+});
+
+test("SiliconFlow is used only when OpenRouter is unavailable", () => {
+  const reader = createEvidenceReader({
     SILICONFLOW_API_KEY: "siliconflow-key",
   });
   assert.ok(reader instanceof SiliconFlowEvidenceReader);
