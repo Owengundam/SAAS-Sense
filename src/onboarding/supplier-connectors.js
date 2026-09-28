@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { createHash } from "node:crypto";
 import {
   assertPublicHostnameDns,
+  createPinnedLookup,
   validateSupplierUrl,
 } from "../source-policy.js";
 
@@ -59,7 +60,7 @@ async function fetchPinnedJson(url, {
           "user-agent": "SupplierSignal/0.2 (+supplier catalog discovery)",
         },
         signal: controller.signal,
-        lookup: (_hostname, _options, callback) => callback(null, address, isIP(address)),
+        lookup: createPinnedLookup(address),
       }, resolve);
       req.on("error", reject);
       req.end();

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { request } from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
-import { assertPublicHostnameDns, validateSupplierRedirect } from "../source-policy.js";
+import { assertPublicHostnameDns, createPinnedLookup, validateSupplierRedirect } from "../source-policy.js";
 import { extractProductPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -27,7 +27,7 @@ function fetchPinnedAddress(url, options, address) {
       method: options.method,
       headers: options.headers,
       signal: options.signal,
-      lookup: (_hostname, _options, callback) => callback(null, address, isIP(address)),
+      lookup: createPinnedLookup(address),
     }, (res) => {
       resolve(new Response(Readable.toWeb(res), {
         status: res.statusCode,

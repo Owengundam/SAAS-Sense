@@ -57,21 +57,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         variants,
         supportedDomains: service.supportedDomains,
       });
+      const retried = batch.reused
+        ? service.db.retryBlockedSupplierDiscoveryRows(session.shop, batch.id)
+        : 0;
       const started = startSupplierDiscoveryJob(
         session.shop,
         batch.id,
         supplierDiscoveryProcessor,
+        importProcessor,
       );
       return {
         ok: true,
         batchCreated: true,
         supplierDiscoveryStarted: started,
         batchId: batch.id,
-        message: batch.reused
-          ? "This supplier connection batch already exists. Resume any unresolved rows below."
-          : started
-            ? "Supplier connected. Searching exact identifiers in the background; candidate URLs will appear below."
-            : "Supplier connection draft saved. No searchable identifiers were available for these variants.",
+        message: started
+          ? retried
+            ? `Retrying ${retried} previous technical failure${retried === 1 ? "" : "s"}. SupplierSignal will find and verify supplier pages automatically.`
+            : "Supplier connected. SupplierSignal is finding and verifying product pages automatically."
+          : batch.reused
+            ? "This supplier setup already exists. Review the results below."
+            : "Supplier connection saved. These variants do not have a SKU or barcode that can be searched automatically.",
       };
     }
     if (intent === "create-import-batch") {
@@ -221,6 +227,21 @@ function formatTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function onboardingStatusLabel(status: string) {
+  return ({
+    DISCOVERY_PENDING: "Waiting to search",
+    DISCOVERING: "Finding supplier page",
+    DRAFT: "Supplier page found",
+    PROCESSING: "Verifying supplier page",
+    READY_FOR_REVIEW: "Ready for your approval",
+    NEEDS_REVIEW: "Needs your review",
+    NO_MATCH: "No confident match",
+    BLOCKED: "Technical failure",
+    INVALID: "Missing searchable SKU/barcode",
+    APPROVED: "Approved for monitoring",
+  } as Record<string, string>)[status] || status.replaceAll("_", " ");
+}
+
 function decisionLabel(decision: any) {
   if (!decision) return "No audit record";
   if (decision.ai_status === "ACCEPTED") return "AI accepted";
@@ -285,7 +306,6 @@ export default function Index() {
     }
     if (fetcher.data?.ok && "batchCreated" in fetcher.data && fetcher.data.batchCreated) {
       batchForm.current?.reset();
-      setBatchVariants([]);
     }
   }, [fetcher.data, shopify]);
 
@@ -367,9 +387,9 @@ export default function Index() {
       <section className={`${styles.card} ${styles.setupCard}`} aria-labelledby="batch-onboarding-heading">
         <div className={styles.setupHeader}>
           <div>
-            <span className={styles.eyebrow}>Batch-assisted onboarding</span>
-            <h2 id="batch-onboarding-heading" className={styles.sectionTitle}>Connect supplier pages without retyping Shopify data</h2>
-            <p className={styles.formIntro}>Select up to 25 existing variants, then paste supplier URLs or a mapping CSV. SupplierSignal extracts identity metadata first, proposes only evidence-backed mappings, and leaves ambiguous rows unresolved.</p>
+            <span className={styles.eyebrow}>Add products to monitor</span>
+            <h2 id="batch-onboarding-heading" className={styles.sectionTitle}>Connect Shopify products to your supplier</h2>
+            <p className={styles.formIntro}>1. Choose Shopify products. 2. Choose the supplier. 3. SupplierSignal finds and verifies product pages. 4. You approve the matches before monitoring starts.</p>
           </div>
           <strong>{batchVariants.length}/25 selected</strong>
         </div>
@@ -386,8 +406,8 @@ export default function Index() {
         <div className={styles.connectorPanel}>
           <div>
             <span className={styles.eyebrow}>Connect once · pilot adapter</span>
-            <h3 className={styles.sectionTitle}>Find Lighting Supply pages from your Shopify variants</h3>
-            <p className={styles.formIntro}>Select variants above, then connect the supplier domain once. SupplierSignal searches only exact SKU/barcode identifiers, stages candidate URLs, and still runs the normal metadata verification before anything can be approved.</p>
+            <h3 className={styles.sectionTitle}>2. Find products at Lighting Supply</h3>
+            <p className={styles.formIntro}>SupplierSignal searches the selected products by exact SKU or barcode, verifies each page, and then asks you to approve the matches.</p>
           </div>
           <fetcher.Form method="post" className={styles.form}>
             <input type="hidden" name="intent" value="connect-supplier" />
@@ -405,15 +425,17 @@ export default function Index() {
                 ? "Searching supplier…"
                 : batchVariants.length === 0
                   ? "Choose variants first"
-                  : "Connect supplier & find pages"}
+                  : "Find supplier pages"}
             </button>
           </fetcher.Form>
           {data.supplierConnections?.length > 0 && <span className={styles.formHelp}>
             Connected: {data.supplierConnections.map((item: any) => item.domain).join(", ")}
           </span>}
         </div>
-        <div className={styles.dividerLabel}><span>or provide existing mappings</span></div>
-        <fetcher.Form method="post" className={styles.form} ref={batchForm}>
+        <details className={styles.advancedFields}>
+          <summary>I already have supplier URLs or a mapping CSV</summary>
+          <div>
+            <fetcher.Form method="post" className={styles.form} ref={batchForm}>
           <input type="hidden" name="intent" value="create-import-batch" />
           <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
           <label>2. Supplier input format
@@ -431,14 +453,16 @@ export default function Index() {
             />
           </label>
           <span className={styles.formHelp}>CSV accepts url, shopify_variant_id, merchant_sku, supplier_sku, mpn, barcode/gtin, and options. Rows are never paired to Shopify variants by position.</span>
-          <button className={styles.button} disabled={busy || batchVariants.length === 0}>{fetcher.state !== "idle" ? "Saving draft…" : "Save onboarding draft"}</button>
-        </fetcher.Form>
+              <button className={styles.button} disabled={busy || batchVariants.length === 0}>{fetcher.state !== "idle" ? "Saving draft…" : "Import supplier mappings"}</button>
+            </fetcher.Form>
+          </div>
+        </details>
         {data.latestImportBatch && <div style={{ marginTop: 20 }}>
           <div className={styles.setupHeader}>
             <div>
-              <h3 className={styles.sectionTitle}>Latest batch</h3>
+              <h3 className={styles.sectionTitle}>Setup progress</h3>
               <span className={styles.muted}>
-                {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · {data.latestImportBatch.status} · created {formatTime(data.latestImportBatch.createdAt)}
+                {data.latestImportBatch.variantCount} Shopify product{data.latestImportBatch.variantCount === 1 ? "" : "s"} · started {formatTime(data.latestImportBatch.createdAt)}
               </span>
             </div>
             {data.latestImportBatch.rows.some((row: any) => ["DRAFT", "PROCESSING"].includes(row.status)) &&
@@ -497,8 +521,14 @@ export default function Index() {
                         {variant && <span className={styles.sku}>{variant.merchantSku || "No Shopify SKU"}{variant.barcode ? ` · ${variant.barcode}` : ""}</span>}
                       </td>
                       <td>
-                        <span className={statusClass}>{row.status.replaceAll("_", " ")}</span>
-                        <span className={styles.muted}>{row.matchReason || row.error || (row.status === "DRAFT" ? "Waiting for metadata extraction." : "")}</span>
+                        <span className={statusClass}>{onboardingStatusLabel(row.status)}</span>
+                        <span className={styles.muted}>{
+                          row.matchReason ||
+                          (row.status === "BLOCKED" ? "SupplierSignal hit a technical error. Select the same products and run Find supplier pages again." : null) ||
+                          row.error ||
+                          (row.status === "DRAFT" ? "Supplier page found. Verification will continue automatically." : "")
+                        }</span>
+                        {row.status === "BLOCKED" && row.error && <details><summary>Technical details</summary><code>{row.error}</code></details>}
                       </td>
                     </tr>;
                   })}

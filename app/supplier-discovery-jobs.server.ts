@@ -1,4 +1,5 @@
 import type { SupplierDiscoveryProcessor } from "../src/onboarding/supplier-connectors.js";
+import type { ImportProcessor } from "../src/onboarding/import-processor.js";
 
 type SupplierDiscoveryJob = {
   status: "running" | "finished" | "failed";
@@ -27,6 +28,7 @@ export function startSupplierDiscoveryJob(
   shop: string,
   batchId: string,
   processor: SupplierDiscoveryProcessor,
+  importProcessor?: ImportProcessor,
 ) {
   const jobKey = key(shop, batchId);
   if (jobs.get(jobKey)?.status === "running") return false;
@@ -45,10 +47,15 @@ export function startSupplierDiscoveryJob(
   jobs.set(jobKey, job);
 
   void processor.processBatch(shop, batchId, 25)
-    .then((rows: unknown[]) => {
+    .then(async (rows: unknown[]) => {
+      const verified = importProcessor
+        ? await importProcessor.processBatch(shop, batchId, 25)
+        : [];
       job.completed = rows.length;
       job.status = "finished";
-      job.message = `Searched ${rows.length} product${rows.length === 1 ? "" : "s"}. Exact candidate URLs are ready for metadata verification; unresolved rows remain visible.`;
+      job.message = verified.length
+        ? `Searched ${rows.length} product${rows.length === 1 ? "" : "s"} and verified ${verified.length} supplier page${verified.length === 1 ? "" : "s"}. Review the matches below.`
+        : `Searched ${rows.length} product${rows.length === 1 ? "" : "s"}. Unresolved products remain visible below.`;
     })
     .catch((error: unknown) => {
       job.status = "failed";
