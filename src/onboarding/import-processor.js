@@ -166,6 +166,19 @@ export class ImportProcessor {
     const approvals = selections.map((selection) => {
       const row = batch.rows.find((item) => item.id === selection.rowId);
       if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+      if (row.status === "APPROVED") {
+        if (
+          Number(row.approvedReviewVersion) !== Number(selection.expectedReviewVersion) ||
+          !row.approvedSourceId
+        ) {
+          throw new Error("IMPORT_REVIEW_STALE");
+        }
+        return {
+          rowId: row.id,
+          expectedReviewVersion: row.approvedReviewVersion,
+          source: { shopifyVariantId: row.suggestedVariantId },
+        };
+      }
       if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
       if (Number(row.reviewVersion) !== Number(selection.expectedReviewVersion)) {
         throw new Error("IMPORT_REVIEW_STALE");
