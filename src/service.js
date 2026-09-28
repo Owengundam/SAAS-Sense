@@ -77,10 +77,21 @@ export class SupplierSignalService {
   addSource(shop, input) {
     const tenant = this.db.getTenant(shop);
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
-    if (this.db.countSources(shop) >= tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
     if (!input.sku || !input.productTitle || !input.url) throw new Error("INVALID_SOURCE");
+    this.db.reconcileDuplicateShopifyVariantSources(shop);
+    const existing = input.shopifyVariantId
+      ? this.db.getSourceByShopifyVariantId(shop, input.shopifyVariantId)
+      : null;
+    if (!existing && this.db.countSources(shop) >= tenant.source_limit) {
+      throw new Error("SOURCE_QUOTA_EXCEEDED");
+    }
     const url = validateSupplierUrl(input.url, this.supportedDomains);
-    return this.db.addSource(shop, sourceInput(input, url, this.now()));
+    const normalized = sourceInput(input, url, this.now());
+    if (existing) {
+      const updated = this.db.updateSource(shop, existing.id, normalized);
+      return { ...updated, replacedExisting: true };
+    }
+    return this.db.addSource(shop, normalized);
   }
 
   updateSource(shop, sourceId, input) {
@@ -89,6 +100,10 @@ export class SupplierSignalService {
     if (!this.db.getSource(shop, sourceId)) throw new Error("SOURCE_NOT_FOUND");
     if (!input.sku || !input.productTitle || !input.url) throw new Error("INVALID_SOURCE");
     const url = validateSupplierUrl(input.url, this.supportedDomains);
+    if (input.shopifyVariantId) {
+      const existing = this.db.getSourceByShopifyVariantId(shop, input.shopifyVariantId);
+      if (existing && existing.id !== sourceId) throw new Error("SHOPIFY_VARIANT_ALREADY_MONITORED");
+    }
     return this.db.updateSource(shop, sourceId, sourceInput(input, url, this.now()));
   }
 
@@ -325,7 +340,7 @@ export class SupplierSignalService {
   dashboard(shop) {
     const now = this.now();
     const tenant = this.db.getTenant(shop);
-    const sources = this.db.listSources(shop).map((source) => ({
+    const sources = this.db.listEnabledSources(shop).map((source) => ({
       ...source,
       stale: isStale(source.lastConfirmedAt, source.staleAfterHours, now),
     }));

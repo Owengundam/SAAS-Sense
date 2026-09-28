@@ -24,6 +24,8 @@ function createCore(): Core {
     join(process.cwd(), "data", "supplier-signal.db");
   const db = createDatabase(databasePath);
   for (const tenant of db.listActiveTenants()) {
+    const duplicates = db.reconcileDuplicateShopifyVariantSources(tenant.shop);
+    if (duplicates) console.warn(`SupplierSignal archived ${duplicates} duplicate Shopify variant source(s) for ${tenant.shop}`);
     const count = db.quarantineConflictingSources(tenant.shop);
     if (count) console.warn(`SupplierSignal revoked ${count} conflicting product status(es) for ${tenant.shop}`);
   }
@@ -97,6 +99,8 @@ export function ensureTenant(shop: string) {
     sourceLimit: 25,
     monthlyCheckLimit: 1500,
   });
+  const duplicates = db.reconcileDuplicateShopifyVariantSources(shop);
+  if (duplicates) console.warn(`SupplierSignal archived ${duplicates} duplicate Shopify variant source(s) for ${shop}`);
   const quarantined = db.quarantineConflictingSources(shop);
   if (quarantined) console.warn(`SupplierSignal revoked ${quarantined} conflicting product status(es) for ${shop}`);
 }

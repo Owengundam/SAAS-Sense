@@ -151,7 +151,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     if (intent === "add-source") {
       const catalog = await verifyShopifyVariant(admin, String(form.get("selectedVariantId") || ""));
-      service.addSource(session.shop, {
+      const source = service.addSource(session.shop, {
         ...catalog,
         supplierProductId: String(form.get("supplierProductId") || "").trim(),
         supplierVariantId: String(form.get("supplierVariantId") || "").trim(),
@@ -160,7 +160,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         matchTerms: String(form.get("matchTerms") || "").split(",").map((value) => value.trim()).filter(Boolean),
         matchConfirmed: form.get("matchConfirmed") === "on",
       });
-      return { ok: true, added: true, message: "Product added. Run its first check to see the supplier's availability." };
+      return {
+        ok: true,
+        added: true,
+        message: source.replacedExisting
+          ? "Supplier mapping replaced for this Shopify variant. Run a check to establish the new baseline."
+          : "Product added. Run its first check to see the supplier's availability.",
+      };
     }
     if (intent === "check-all") {
       const sourceIds = service.dashboard(session.shop).sources.map((source: { id: string }) => source.id);

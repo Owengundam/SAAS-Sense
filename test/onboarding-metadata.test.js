@@ -367,3 +367,39 @@ test("invalid staging rows are never claimed for external discovery", async () =
   assert.equal(calls, 0);
   assert.equal(db.getImportBatch("a.myshopify.com", batch.id).rows[0].status, "INVALID");
 });
+
+
+test("batch approval replaces an existing source for the same Shopify variant", async () => {
+  const db = setup();
+  const existing = db.addSource("a.myshopify.com", {
+    sku: "SKU-1",
+    shopifyProductId: "gid://shopify/Product/101",
+    shopifyVariantId: "gid://shopify/ProductVariant/1",
+    productTitle: "Pendant 1 · Blue",
+    supplierSku: "OLD-SUP-1",
+    url: "https://supplier.example/old",
+    matchTerms: ["OLD-SUP-1"],
+    inStockTerms: [],
+    outOfStockTerms: [],
+    matchConfirmedAt: "2026-09-27T00:00:00Z",
+  });
+  const batch = createBatch(db);
+  const processor = new ImportProcessor({
+    db,
+    provider: { providerName: "fixture", fetchPageForMetadata: async () => resultFor() },
+    supportedDomains: ["supplier.example"],
+  });
+  await processor.processBatch("a.myshopify.com", batch.id);
+  const review = db.getImportBatch("a.myshopify.com", batch.id);
+  const approved = processor.approveRows("a.myshopify.com", batch.id, [{
+    rowId: review.rows[0].id,
+    expectedReviewVersion: review.rows[0].reviewVersion,
+  }], "session-1");
+
+  assert.deepEqual(approved.sourceIds, [existing.id]);
+  assert.equal(db.countSources("a.myshopify.com"), 1);
+  const source = db.getSource("a.myshopify.com", existing.id);
+  assert.equal(source.url, "https://supplier.example/p1");
+  assert.equal(source.supplierSku, "SUP-1");
+  assert.equal(source.lastState, null);
+});
