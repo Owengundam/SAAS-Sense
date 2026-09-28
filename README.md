@@ -18,7 +18,7 @@ The repository contains a Shopify-authenticated production shell and a tested pa
 - HMAC verification, webhook deduplication, uninstall disablement, and shop-redaction deletion.
 - Shopify App Pricing redirect and subscription-gate integration points.
 - Conversion-focused public pilot page and a first-run checklist that drives merchants to one verified supplier baseline.
-- Responsive merchant dashboard and add-source flow.
+- Responsive merchant dashboard, one-by-one add-source flow, and durable batch-assisted onboarding drafts with evidence-backed review.
 - Shopify's official React Router authentication shell with Prisma session storage.
 - Verified uninstall, scope-change, and privacy webhook endpoints.
 - Docker/Railway production build and health endpoint.
@@ -166,6 +166,8 @@ AI_READER_MODE=deepseek
 TYPESAFE_MODEL=jev-1.13.0
 JEV_PRIMARY_DOMAINS=
 GLOBAL_MONTHLY_CHECK_LIMIT=5000
+# Internal setup-work safety cap; this is not a merchant charge or monitoring-check allowance.
+IMPORT_MONTHLY_DISCOVERY_LIMIT=50
 # Optional: restrict a pilot to specific supplier hosts; unset to allow public HTTPS hosts.
 # SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
