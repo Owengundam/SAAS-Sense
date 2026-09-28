@@ -604,10 +604,13 @@ export function createDatabase(path = ":memory:") {
           WHERE shop=? AND batch_id=? AND id=? AND status='DISCOVERY_PENDING'`)
           .run(timestamp, shop, batchId, row.id);
         db.prepare(`INSERT INTO supplier_discovery_attempts
-          (id, connection_id, shop, shopify_variant_id, query_identifier, status,
+          (id, connection_id, batch_id, row_id, shop, shopify_variant_id, query_identifier, status,
            candidate_count, attempted_at, completed_at)
-          VALUES (?, ?, ?, ?, ?, 'RESERVED', 0, ?, NULL)`)
-          .run(attemptId, connection.id, shop, row.shopify_variant_id_hint, identifier, timestamp);
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, ?, NULL)`)
+          .run(
+            attemptId, connection.id, batchId, row.id, shop,
+            row.shopify_variant_id_hint, identifier, timestamp,
+          );
         db.prepare("UPDATE import_batches SET status='PROCESSING', updated_at=? WHERE shop=? AND id=?")
           .run(timestamp, shop, batchId);
         db.exec("COMMIT");
@@ -681,7 +684,7 @@ export function createDatabase(path = ":memory:") {
         throw error;
       }
     },
-        createImportBatch(shop, input) {
+    createImportBatch(shop, input) {
       const createdAt = input.createdAt || new Date().toISOString();
       let transactionOpen = false;
       try {
