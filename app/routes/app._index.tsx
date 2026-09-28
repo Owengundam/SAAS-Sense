@@ -197,7 +197,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     return { ok: false, message: "Unknown action." };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Request failed" };
+    const message = error instanceof Error ? error.message : "Request failed";
+    if (message === "SUPPLIER_CONNECTION_NOT_SUPPORTED") {
+      return { ok: false, message: "Automatic supplier search currently supports Lighting Supply only. For another supplier, use its exact product URL instead." };
+    }
+    return { ok: false, message };
   }
 };
 
