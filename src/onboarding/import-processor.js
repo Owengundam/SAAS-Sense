@@ -131,7 +131,12 @@ export class ImportProcessor {
         }, this.now());
       }
 
-      const suggestion = suggestImportMapping(row, batch.variants, metadata, result);
+      const suggestion = suggestImportMapping(
+        row,
+        batch.variants,
+        metadata,
+        { text: metadata.pageTextSample || "" },
+      );
       return this.db.completeImportRow(shop, batchId, row.id, operationId, {
         status: suggestion.status,
         error: suggestion.status === "BLOCKED" ? suggestion.reason : null,
