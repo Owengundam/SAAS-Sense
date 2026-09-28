@@ -226,9 +226,15 @@ function stateLabel(state: string | null, stale: boolean) {
   } as Record<string, string>)[state || ""] || "Awaiting baseline";
 }
 
-function formatTime(value: string | null | undefined) {
+function formatTime(value: string | null | undefined, timeZone: string | null) {
   if (!value) return "Not checked yet";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid time";
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timeZone || "UTC",
+  }).format(date);
 }
 
 function onboardingStatusLabel(status: string) {
@@ -268,6 +274,8 @@ export default function Index() {
   const [batchVariants, setBatchVariants] = useState<Array<{ id: string; label: string }>>([]);
   const [pickerError, setPickerError] = useState("");
   const [batchPickerError, setBatchPickerError] = useState("");
+  const [clientTimeZone, setClientTimeZone] = useState<string | null>(null);
+  const displayTime = (value: string | null | undefined) => formatTime(value, clientTimeZone);
   const chooseBatchVariants = async () => {
     try {
       const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: true });
@@ -301,6 +309,10 @@ export default function Index() {
       setPickerError("Could not open Shopify products. Try again.");
     }
   };
+
+  useEffect(() => {
+    setClientTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  }, []);
 
   useEffect(() => {
     if (fetcher.data?.message) shopify.toast.show(fetcher.data.message, { isError: !fetcher.data.ok });
@@ -468,7 +480,7 @@ export default function Index() {
             <div>
               <h3 className={styles.sectionTitle}>Setup progress</h3>
               <span className={styles.muted}>
-                {data.latestImportBatch.variantCount} Shopify product{data.latestImportBatch.variantCount === 1 ? "" : "s"} · started {formatTime(data.latestImportBatch.createdAt)}
+                {data.latestImportBatch.variantCount} Shopify product{data.latestImportBatch.variantCount === 1 ? "" : "s"} · started {displayTime(data.latestImportBatch.createdAt)}
               </span>
             </div>
             {data.latestImportBatch.rows.some((row: any) => ["DRAFT", "PROCESSING"].includes(row.status)) &&
@@ -569,13 +581,13 @@ export default function Index() {
                       <span className={latestUnverified ? `${styles.state} ${styles.warn}` : stateClass(source.lastState, source.stale)}>
                         {mismatched ? "Wrong supplier product" : latestUnverified ? "Unable to verify" : stateLabel(source.lastState, source.stale)}
                       </span>
-                      {source.lastState && <span className={styles.muted}>Last confirmed {stateLabel(source.lastState, false).toLowerCase()} {formatTime(source.lastConfirmedAt)}{source.stale ? " · stale" : ""}</span>}
-                      {source.candidateState && <span className={styles.pending}>Possible change to {stateLabel(source.candidateState, false)}. Confirmation due {formatTime(source.nextRecheckAt)}.</span>}
+                      {source.lastState && <span className={styles.muted}>Last confirmed {stateLabel(source.lastState, false).toLowerCase()} {displayTime(source.lastConfirmedAt)}{source.stale ? " · stale" : ""}</span>}
+                      {source.candidateState && <span className={styles.pending}>Possible change to {stateLabel(source.candidateState, false)}. Confirmation due {displayTime(source.nextRecheckAt)}.</span>}
                     </td>
                     <td className={styles.evidence}>
                       <strong>{mismatched ? "Supplier page describes a different product than the selected Shopify product. Choose a matching supplier link or Shopify item." : observation?.reason || "Run a check to establish a baseline"}</strong>
                       {observation && <>
-                        <span className={styles.muted}>Latest attempt {formatTime(source.lastAttemptAt)}</span>
+                        <span className={styles.muted}>Latest attempt {displayTime(source.lastAttemptAt)}</span>
                         <a href={source.url} target="_blank" rel="noreferrer">Open supplier page</a>
                         {observation.raw_excerpt && <details><summary>View captured evidence</summary><p>{observation.raw_excerpt}</p></details>}
                         {decision && <details className={styles.audit}>
