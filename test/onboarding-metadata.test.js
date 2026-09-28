@@ -89,7 +89,7 @@ test("strong supplier identifier plus compatible variant is ready for merchant r
     optionsHint: "Color: Blue",
   };
   const metadata = extractSupplierMetadata(resultFor());
-  const suggestion = suggestImportMapping(row, [variant()], metadata, resultFor());
+  const suggestion = suggestImportMapping(row, [variant(1, { barcode: null })], metadata, resultFor());
   assert.equal(suggestion.status, "READY_FOR_REVIEW");
   assert.equal(suggestion.suggestedVariantId, "gid://shopify/ProductVariant/1");
   assert.equal(suggestion.primaryIdentifier, "SUP-1");
