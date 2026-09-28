@@ -146,6 +146,72 @@ test("variant option mismatch stays out of ready-for-review", () => {
   assert.match(suggestion.reason, /Color: Blue/i);
 });
 
+
+test("expected color hints cannot override conflicting supplier color evidence", () => {
+  const result = resultFor({ color: "Red" });
+  const metadata = extractSupplierMetadata(result);
+  const row = {
+    shopifyVariantIdHint: "gid://shopify/ProductVariant/1",
+    supplierSkuHint: "SUP-1",
+    optionsHint: "Color: Blue",
+  };
+  const suggestion = suggestImportMapping(row, [variant()], metadata, result);
+  assert.equal(suggestion.status, "NEEDS_REVIEW");
+  assert.match(suggestion.reason, /Color: Blue/i);
+});
+
+test("expected size hints cannot override conflicting supplier size evidence", () => {
+  const result = resultFor();
+  const metadata = extractSupplierMetadata(result);
+  metadata.candidates[0].optionValues = ["Small"];
+  const row = {
+    shopifyVariantIdHint: "gid://shopify/ProductVariant/1",
+    supplierSkuHint: "SUP-1",
+    optionsHint: "Size: Large",
+  };
+  const shopifyVariant = variant(1, {
+    selectedOptions: [{ name: "Size", value: "Large" }],
+  });
+  const suggestion = suggestImportMapping(row, [shopifyVariant], metadata, result);
+  assert.equal(suggestion.status, "NEEDS_REVIEW");
+  assert.match(suggestion.reason, /Size: Large/i);
+});
+
+test("expected pack-count hints cannot override conflicting supplier pack evidence", () => {
+  const result = resultFor();
+  const metadata = extractSupplierMetadata(result);
+  metadata.candidates[0].optionValues = ["12 Pack"];
+  const row = {
+    shopifyVariantIdHint: "gid://shopify/ProductVariant/1",
+    supplierSkuHint: "SUP-1",
+    optionsHint: "Pack: 24 Pack",
+  };
+  const shopifyVariant = variant(1, {
+    selectedOptions: [{ name: "Pack", value: "24 Pack" }],
+  });
+  const suggestion = suggestImportMapping(row, [shopifyVariant], metadata, result);
+  assert.equal(suggestion.status, "NEEDS_REVIEW");
+  assert.match(suggestion.reason, /Pack: 24 Pack/i);
+});
+
+test("supplier page text can verify an option only when structured options are absent", () => {
+  const result = resultFor({ color: "" });
+  const metadata = extractSupplierMetadata(result);
+  metadata.candidates[0].optionValues = [];
+  const row = {
+    shopifyVariantIdHint: "gid://shopify/ProductVariant/1",
+    supplierSkuHint: "SUP-1",
+    optionsHint: "Color: Blue",
+  };
+  const suggestion = suggestImportMapping(
+    row,
+    [variant()],
+    metadata,
+    { ...result, text: "Pendant 1 Blue. SKU SUP-1." },
+  );
+  assert.equal(suggestion.status, "READY_FOR_REVIEW");
+});
+
 test("approved structured GTIN can satisfy later availability identity gating", () => {
   const result = {
     ok: true,
