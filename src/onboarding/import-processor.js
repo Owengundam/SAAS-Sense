@@ -55,7 +55,7 @@ export class ImportProcessor {
   constructor({
     db,
     provider,
-    supportedDomains,
+    supportedDomains = undefined,
     monthlyDiscoveryLimit = 50,
     now = () => new Date(),
   }) {
