@@ -4,11 +4,13 @@ import { createPageProvider } from "../src/providers/create-page-provider.js";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
 import { ImportProcessor } from "../src/onboarding/import-processor.js";
+import { SupplierDiscoveryProcessor } from "../src/onboarding/supplier-connectors.js";
 
 type Core = {
   db: ReturnType<typeof createDatabase>;
   service: SupplierSignalService;
   importProcessor: ImportProcessor;
+  supplierDiscoveryProcessor: SupplierDiscoveryProcessor;
   liveProvider: boolean;
 };
 
@@ -52,7 +54,13 @@ function createCore(): Core {
       : 50,
     ...(supportedDomains?.length ? { supportedDomains } : {}),
   });
-  return { db, service, importProcessor, liveProvider };
+  const supplierDiscoveryProcessor = new SupplierDiscoveryProcessor({
+    db,
+    monthlyAttemptLimit: Number.isInteger(configuredImportLimit) && configuredImportLimit >= 0
+      ? configuredImportLimit
+      : 50,
+  });
+  return { db, service, importProcessor, supplierDiscoveryProcessor, liveProvider };
 }
 
 async function runScheduledChecks(core: Core) {

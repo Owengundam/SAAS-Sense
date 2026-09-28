@@ -7,8 +7,10 @@ import { ensureTenant, getSupplierSignal } from "../core.server";
 import { requirePaidPlan } from "../billing-gate.server";
 import { verifyShopifyVariant, verifyShopifyVariants } from "../catalog.server";
 import { stageImportBatch } from "../../src/onboarding/import-service.js";
+import { stageSupplierConnectionBatch } from "../../src/onboarding/supplier-connectors.js";
 import { getCheckJob, startCheckJob } from "../check-jobs.server";
 import { getImportJob, startImportJob } from "../import-jobs.server";
+import { getSupplierDiscoveryJob, startSupplierDiscoveryJob } from "../supplier-discovery-jobs.server";
 import styles from "../styles/dashboard.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -24,6 +26,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     importBatches,
     latestImportBatch,
     importJob: latestImportBatch ? getImportJob(session.shop, latestImportBatch.id) : null,
+    supplierDiscoveryJob: latestImportBatch ? getSupplierDiscoveryJob(session.shop, latestImportBatch.id) : null,
+    supplierConnections: service.db.listSupplierConnections(session.shop),
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
   };
 };
@@ -35,8 +39,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   ensureTenant(session.shop);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
-  const { service, importProcessor } = getSupplierSignal();
+  const { service, importProcessor, supplierDiscoveryProcessor } = getSupplierSignal();
   try {
+    if (intent === "connect-supplier") {
+      let variantIds: string[];
+      try {
+        const parsed = JSON.parse(String(form.get("selectedVariantIds") || "[]"));
+        variantIds = Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+      } catch {
+        return { ok: false, message: "Selected Shopify products could not be read. Reopen the picker and try again." };
+      }
+      const variants = await verifyShopifyVariants(admin, variantIds);
+      const batch = stageSupplierConnectionBatch({
+        db: service.db,
+        shop: session.shop,
+        domain: String(form.get("supplierDomain") || "").trim(),
+        variants,
+        supportedDomains: service.supportedDomains,
+      });
+      const started = startSupplierDiscoveryJob(
+        session.shop,
+        batch.id,
+        supplierDiscoveryProcessor,
+      );
+      return {
+        ok: true,
+        batchCreated: true,
+        supplierDiscoveryStarted: started,
+        batchId: batch.id,
+        message: batch.reused
+          ? "This supplier connection batch already exists. Resume any unresolved rows below."
+          : started
+            ? "Supplier connected. Searching exact identifiers in the background; candidate URLs will appear below."
+            : "Supplier connection draft saved. No searchable identifiers were available for these variants.",
+      };
+    }
     if (intent === "create-import-batch") {
       let variantIds: string[];
       try {
@@ -199,7 +236,7 @@ export default function Index() {
   const fetcher = useFetcher<typeof action>();
   const revalidator = useRevalidator();
   const shopify = useAppBridge();
-  const busy = fetcher.state !== "idle" || data.checkJob?.status === "running" || data.importJob?.status === "running";
+  const busy = fetcher.state !== "idle" || data.checkJob?.status === "running" || data.importJob?.status === "running" || data.supplierDiscoveryJob?.status === "running";
   const sourceForm = useRef<HTMLFormElement>(null);
   const batchForm = useRef<HTMLFormElement>(null);
   const [selectedVariant, setSelectedVariant] = useState<{ id: string; label: string } | null>(null);
@@ -253,12 +290,12 @@ export default function Index() {
   }, [fetcher.data, shopify]);
 
   useEffect(() => {
-    if (data.checkJob?.status !== "running" && data.importJob?.status !== "running") return;
+    if (data.checkJob?.status !== "running" && data.importJob?.status !== "running" && data.supplierDiscoveryJob?.status !== "running") return;
     const timer = window.setInterval(() => {
       if (revalidator.state === "idle") revalidator.revalidate();
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [data.checkJob?.status, data.importJob?.status, revalidator]);
+  }, [data.checkJob?.status, data.importJob?.status, data.supplierDiscoveryJob?.status, revalidator]);
 
   const latest = new Map<string, any>();
   for (const item of data.observations as any[]) {
@@ -336,6 +373,28 @@ export default function Index() {
           </div>
           <strong>{batchVariants.length}/25 selected</strong>
         </div>
+        <div className={styles.connectorPanel}>
+          <div>
+            <span className={styles.eyebrow}>Connect once · pilot adapter</span>
+            <h3 className={styles.sectionTitle}>Find Lighting Supply pages from your Shopify variants</h3>
+            <p className={styles.formIntro}>Select variants above, then connect the supplier domain once. SupplierSignal searches only exact SKU/barcode identifiers, stages candidate URLs, and still runs the normal metadata verification before anything can be approved.</p>
+          </div>
+          <fetcher.Form method="post" className={styles.form}>
+            <input type="hidden" name="intent" value="connect-supplier" />
+            <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
+            <label>Supplier domain
+              <input name="supplierDomain" required defaultValue="lightingsupply.com" />
+            </label>
+            <span className={styles.formHelp}>Current pilot support: Lighting Supply only. Search results are candidate URLs, not stock or identity evidence.</span>
+            <button className={styles.button} disabled={busy || batchVariants.length === 0}>
+              {data.supplierDiscoveryJob?.status === "running" ? "Searching supplier…" : "Connect supplier & find pages"}
+            </button>
+          </fetcher.Form>
+          {data.supplierConnections?.length > 0 && <span className={styles.formHelp}>
+            Connected: {data.supplierConnections.map((item: any) => item.domain).join(", ")}
+          </span>}
+        </div>
+        <div className={styles.dividerLabel}><span>or provide existing mappings</span></div>
         <fetcher.Form method="post" className={styles.form} ref={batchForm}>
           <input type="hidden" name="intent" value="create-import-batch" />
           <input type="hidden" name="selectedVariantIds" value={JSON.stringify(batchVariants.map((variant) => variant.id))} />
@@ -381,6 +440,11 @@ export default function Index() {
                 <button className={styles.button} disabled={busy}>{data.importJob?.status === "running" ? "Extracting…" : data.latestImportBatch.rows.some((row: any) => row.status === "PROCESSING") ? "Resume extraction" : "Extract supplier metadata"}</button>
               </fetcher.Form>}
           </div>
+          {data.supplierDiscoveryJob && <div className={styles.notice} role="status" style={{ marginTop: 10 }}>
+            {data.supplierDiscoveryJob.status === "running"
+              ? `Searching ${data.supplierDiscoveryJob.completed} of ${data.supplierDiscoveryJob.total} selected variants at the connected supplier.`
+              : data.supplierDiscoveryJob.message}
+          </div>}
           {data.importJob && <div className={styles.notice} role="status" style={{ marginTop: 10 }}>
             {data.importJob.status === "running"
               ? `Extracting ${data.importJob.completed} of ${data.importJob.total} supplier rows.`

@@ -250,6 +250,30 @@ export function createDatabase(path = ":memory:") {
     );
     CREATE INDEX IF NOT EXISTS import_attempts_batch
       ON import_attempts(batch_id, reserved_at);
+    CREATE TABLE IF NOT EXISTS supplier_connections (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      adapter TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      UNIQUE(shop, domain)
+    );
+    CREATE TABLE IF NOT EXISTS supplier_discovery_attempts (
+      id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL REFERENCES supplier_connections(id) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      shopify_variant_id TEXT NOT NULL,
+      query_identifier TEXT,
+      status TEXT NOT NULL,
+      candidate_count INTEGER NOT NULL DEFAULT 0,
+      attempted_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS supplier_discovery_attempts_shop_time
+      ON supplier_discovery_attempts(shop, attempted_at);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -511,6 +535,155 @@ export function createDatabase(path = ":memory:") {
       }
       return db.prepare("SELECT * FROM provider_attempts WHERE shop = ? ORDER BY attempted_at, id").all(shop);
     },
+    upsertSupplierConnection(shop, { domain, adapter, now = new Date() }) {
+      const timestamp = now.toISOString();
+      const existing = db.prepare("SELECT id FROM supplier_connections WHERE shop=? AND domain=?")
+        .get(shop, domain);
+      const id = existing?.id || randomUUID();
+      db.prepare(`INSERT INTO supplier_connections (id, shop, domain, adapter, created_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(shop, domain) DO UPDATE SET adapter=excluded.adapter, last_used_at=excluded.last_used_at`)
+        .run(id, shop, domain, adapter, timestamp, timestamp);
+      return db.prepare("SELECT * FROM supplier_connections WHERE shop=? AND id=?").get(shop, id);
+    },
+    listSupplierConnections(shop) {
+      return db.prepare(`SELECT c.*,
+        (SELECT COUNT(*) FROM supplier_discovery_attempts a WHERE a.connection_id=c.id) AS attempt_count
+        FROM supplier_connections c WHERE c.shop=? ORDER BY c.last_used_at DESC`).all(shop);
+    },
+    countSupplierDiscoveryAttemptsThisMonth(shop, now = new Date()) {
+      const month = now.toISOString().slice(0, 7);
+      return Number(db.prepare(`SELECT COUNT(*) AS count FROM supplier_discovery_attempts
+        WHERE shop=? AND substr(attempted_at,1,7)=?`).get(shop, month).count || 0);
+    },
+    recordSupplierDiscoveryAttempt(shop, connectionId, input, now = new Date()) {
+      if (!input.batchId || !input.rowId) throw new Error("SUPPLIER_DISCOVERY_ROW_REQUIRED");
+      const id = randomUUID();
+      db.prepare(`INSERT INTO supplier_discovery_attempts
+        (id, connection_id, batch_id, row_id, shop, shopify_variant_id, query_identifier,
+         status, candidate_count, attempted_at, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, connectionId, input.batchId, input.rowId, shop, input.shopifyVariantId,
+        input.queryIdentifier || null, input.status, Number(input.candidateCount || 0),
+        now.toISOString(), input.completedAt ? new Date(input.completedAt).toISOString() : null,
+      );
+      return id;
+    },
+    claimSupplierDiscoveryRow(shop, batchId, now = new Date(), tenantMonthlyLimit = 50) {
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const tenant = db.prepare("SELECT active FROM tenants WHERE shop=?").get(shop);
+        if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+        const batch = db.prepare("SELECT id, input_kind FROM import_batches WHERE shop=? AND id=?").get(shop, batchId);
+        if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+        if (!String(batch.input_kind).startsWith("supplier:")) throw new Error("IMPORT_BATCH_NOT_SUPPLIER_DISCOVERY");
+        const month = timestamp.slice(0, 7);
+        const used = Number(db.prepare(`SELECT COUNT(*) AS count FROM supplier_discovery_attempts
+          WHERE shop=? AND substr(attempted_at,1,7)=?`).get(shop, month).count || 0);
+        if (Number.isInteger(tenantMonthlyLimit) && tenantMonthlyLimit >= 0 && used >= tenantMonthlyLimit) {
+          throw new Error("SUPPLIER_DISCOVERY_MONTHLY_LIMIT_EXCEEDED");
+        }
+        const row = db.prepare(`SELECT * FROM import_rows
+          WHERE shop=? AND batch_id=? AND status='DISCOVERY_PENDING'
+          ORDER BY row_index LIMIT 1`).get(shop, batchId);
+        if (!row) {
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return null;
+        }
+        const connection = db.prepare(`SELECT id FROM supplier_connections
+          WHERE shop=? AND adapter=? ORDER BY last_used_at DESC LIMIT 1`)
+          .get(shop, String(batch.input_kind).slice("supplier:".length));
+        if (!connection?.id) throw new Error("SUPPLIER_CONNECTION_NOT_FOUND");
+        const attemptId = randomUUID();
+        const identifier = row.supplier_sku_hint || row.barcode_hint || null;
+        db.prepare(`UPDATE import_rows SET status='DISCOVERING', error=NULL, updated_at=?
+          WHERE shop=? AND batch_id=? AND id=? AND status='DISCOVERY_PENDING'`)
+          .run(timestamp, shop, batchId, row.id);
+        db.prepare(`INSERT INTO supplier_discovery_attempts
+          (id, connection_id, batch_id, row_id, shop, shopify_variant_id, query_identifier, status,
+           candidate_count, attempted_at, completed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, ?, NULL)`)
+          .run(
+            attemptId, connection.id, batchId, row.id, shop,
+            row.shopify_variant_id_hint, identifier, timestamp,
+          );
+        db.prepare("UPDATE import_batches SET status='PROCESSING', updated_at=? WHERE shop=? AND id=?")
+          .run(timestamp, shop, batchId);
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return {
+          attemptId,
+          row: mapImportRow({ ...row, status: "DISCOVERING", error: null, updated_at: timestamp }),
+        };
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    completeSupplierDiscoveryRow(shop, batchId, rowId, attemptId, result, now = new Date()) {
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const attempt = db.prepare(`SELECT id FROM supplier_discovery_attempts
+          WHERE id=? AND shop=? AND status='RESERVED'`).get(attemptId, shop);
+        if (!attempt) throw new Error("SUPPLIER_DISCOVERY_ATTEMPT_NOT_ACTIVE");
+        db.prepare(`UPDATE import_rows SET status=?, url=?, error=?, updated_at=?
+          WHERE shop=? AND batch_id=? AND id=? AND status='DISCOVERING'`).run(
+          result.status, result.url || null, result.error || null, timestamp,
+          shop, batchId, rowId,
+        );
+        db.prepare(`UPDATE supplier_discovery_attempts SET status='COMPLETED',
+          candidate_count=?, completed_at=? WHERE id=? AND shop=?`).run(
+          Number(result.candidateCount || 0), timestamp, attemptId, shop,
+        );
+        const remainingDiscovery = Number(db.prepare(`SELECT COUNT(*) AS count FROM import_rows
+          WHERE shop=? AND batch_id=? AND status IN ('DISCOVERY_PENDING','DISCOVERING')`)
+          .get(shop, batchId).count || 0);
+        db.prepare("UPDATE import_batches SET status=?, updated_at=? WHERE shop=? AND id=?").run(
+          remainingDiscovery ? "PROCESSING" : "DRAFT", timestamp, shop, batchId,
+        );
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return mapImportRow(db.prepare("SELECT * FROM import_rows WHERE shop=? AND id=?").get(shop, rowId));
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    resetStaleSupplierDiscoveryRows(shop, batchId, before = new Date(Date.now() - 5 * 60 * 1000), now = new Date()) {
+      const beforeIso = before.toISOString();
+      const timestamp = now.toISOString();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        const stale = db.prepare(`SELECT id FROM import_rows
+          WHERE shop=? AND batch_id=? AND status='DISCOVERING' AND updated_at<=?`)
+          .all(shop, batchId, beforeIso);
+        if (stale.length) {
+          const ids = stale.map((row) => row.id);
+          const placeholders = ids.map(() => "?").join(",");
+          db.prepare(`UPDATE import_rows SET status='DISCOVERY_PENDING',
+            error='Previous supplier discovery worker stopped; safe to resume.', updated_at=?
+            WHERE shop=? AND id IN (${placeholders})`).run(timestamp, shop, ...ids);
+          db.prepare(`UPDATE supplier_discovery_attempts SET status='FAILED', completed_at=?
+            WHERE shop=? AND batch_id=? AND status='RESERVED' AND row_id IN (${placeholders})`)
+            .run(timestamp, shop, batchId, ...ids);
+        }
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return stale.length;
+      } catch (error) {
+        if (transactionOpen) db.exec("ROLLBACK");
+        throw error;
+      }
+    },
     createImportBatch(shop, input) {
       const createdAt = input.createdAt || new Date().toISOString();
       let transactionOpen = false;
@@ -602,6 +775,8 @@ export function createDatabase(path = ":memory:") {
     },
     listImportBatches(shop, limit = 5) {
       return db.prepare(`SELECT b.*,
+        SUM(CASE WHEN r.status = 'DISCOVERY_PENDING' THEN 1 ELSE 0 END) AS discovery_pending_rows,
+        SUM(CASE WHEN r.status = 'DISCOVERING' THEN 1 ELSE 0 END) AS discovering_rows,
         SUM(CASE WHEN r.status = 'DRAFT' THEN 1 ELSE 0 END) AS draft_rows,
         SUM(CASE WHEN r.status = 'PROCESSING' THEN 1 ELSE 0 END) AS processing_rows,
         SUM(CASE WHEN r.status = 'READY_FOR_REVIEW' THEN 1 ELSE 0 END) AS ready_rows,
@@ -621,6 +796,8 @@ export function createDatabase(path = ":memory:") {
           status: row.status,
           rowCount: row.row_count,
           variantCount: row.variant_count,
+          discoveryPendingRows: Number(row.discovery_pending_rows || 0),
+          discoveringRows: Number(row.discovering_rows || 0),
           draftRows: Number(row.draft_rows || 0),
           processingRows: Number(row.processing_rows || 0),
           readyRows: Number(row.ready_rows || 0),
