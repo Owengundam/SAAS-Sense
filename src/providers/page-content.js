@@ -84,9 +84,10 @@ function productRecords(products, snapshotId, sourceUrl) {
   };
   products.slice(0, 10).forEach((product, productIndex) => {
     const prefix = `jsonld.products[${productIndex}]`;
-    for (const key of ["name", "sku", "mpn", "gtin", "gtin8", "gtin12", "gtin13", "gtin14", "productID"]) {
+    for (const key of ["name", "sku", "mpn", "gtin", "gtin8", "gtin12", "gtin13", "gtin14", "productID", "model", "color", "size"]) {
       add(`${prefix}.${key}`, product[key]);
     }
+    add(`${prefix}.brand`, typeof product.brand === "object" ? product.brand?.name : product.brand);
     const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
     offers.filter(Boolean).slice(0, 20).forEach((offer, offerIndex) => {
       for (const key of ["availability", "price", "priceCurrency", "sku", "name"]) {
