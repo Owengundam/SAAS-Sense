@@ -193,7 +193,7 @@ export class SupplierDiscoveryProcessor {
   constructor({
     db,
     monthlyAttemptLimit = 50,
-    connectorOptions,
+    connectorOptions = {},
     now = () => new Date(),
   }) {
     this.db = db;
