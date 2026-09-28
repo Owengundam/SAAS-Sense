@@ -461,7 +461,7 @@ export function createDatabase(path = ":memory:") {
       db.prepare("DELETE FROM tenants WHERE shop = ?").run(shop);
     },
     countSources(shop) {
-      return db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop = ?").get(shop).count;
+      return db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop = ? AND enabled = 1").get(shop).count;
     },
     countChecksThisMonth(shop, now = new Date()) {
       const month = now.toISOString().slice(0, 7);
@@ -1037,6 +1037,43 @@ export function createDatabase(path = ":memory:") {
         throw error;
       }
     },
+    getSourceByShopifyVariantId(shop, shopifyVariantId) {
+      if (!shopifyVariantId) return null;
+      return mapSource(db.prepare(`SELECT * FROM sources
+        WHERE shop=? AND shopify_variant_id=? AND enabled=1
+        ORDER BY
+          CASE WHEN last_attempt_status='PRODUCT_MISMATCH' THEN 1 ELSE 0 END ASC,
+          CASE WHEN last_state IS NOT NULL THEN 0 ELSE 1 END ASC,
+          COALESCE(last_confirmed_at, '') DESC,
+          created_at DESC
+        LIMIT 1`).get(shop, shopifyVariantId));
+    },
+    reconcileDuplicateShopifyVariantSources(shop) {
+      const duplicateVariants = db.prepare(`SELECT shopify_variant_id
+        FROM sources
+        WHERE shop=? AND enabled=1 AND shopify_variant_id IS NOT NULL
+        GROUP BY shopify_variant_id HAVING COUNT(*) > 1`).all(shop);
+      let archived = 0;
+      for (const { shopify_variant_id: variantId } of duplicateVariants) {
+        const rows = db.prepare(`SELECT id, last_attempt_status, last_state,
+          last_confirmed_at, created_at
+          FROM sources
+          WHERE shop=? AND shopify_variant_id=? AND enabled=1
+          ORDER BY
+            CASE WHEN last_attempt_status='PRODUCT_MISMATCH' THEN 1 ELSE 0 END ASC,
+            CASE WHEN last_state IS NOT NULL THEN 0 ELSE 1 END ASC,
+            COALESCE(last_confirmed_at, '') DESC,
+            created_at DESC`).all(shop, variantId);
+        const keep = rows[0]?.id;
+        if (!keep) continue;
+        const losers = rows.slice(1).map((row) => row.id);
+        if (!losers.length) continue;
+        const placeholders = losers.map(() => "?").join(",");
+        archived += db.prepare(`UPDATE sources SET enabled=0
+          WHERE shop=? AND id IN (${placeholders})`).run(shop, ...losers).changes;
+      }
+      return archived;
+    },
     addSource(shop, input) {
       const id = input.id || randomUUID();
       const createdAt = input.createdAt || new Date().toISOString();
@@ -1060,6 +1097,9 @@ export function createDatabase(path = ":memory:") {
     },
     listSources(shop) {
       return db.prepare("SELECT * FROM sources WHERE shop = ? ORDER BY created_at").all(shop).map(mapSource);
+    },
+    listEnabledSources(shop) {
+      return db.prepare("SELECT * FROM sources WHERE shop = ? AND enabled = 1 ORDER BY created_at").all(shop).map(mapSource);
     },
     // Revoke previously confirmed stock only when the captured page opens with
     // the descriptive supplier item but not the selected Shopify product.
