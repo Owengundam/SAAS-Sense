@@ -144,11 +144,13 @@ export function stageSupplierConnectionBatch({
   shop,
   domain,
   variants,
+  supportedDomains,
   now = new Date(),
 }) {
   if (!Array.isArray(variants) || !variants.length) throw new Error("SELECT_SHOPIFY_VARIANTS");
   if (variants.length > MAX_DISCOVERY_ROWS) throw new Error("SUPPLIER_DISCOVERY_VARIANT_LIMIT_EXCEEDED");
   const connector = createSupplierConnector(domain);
+  validateSupplierUrl(`https://${connector.domain}`, supportedDomains);
   const tenant = db.getTenant(shop);
   if (!tenant?.active) throw new Error("TENANT_DISABLED");
 
