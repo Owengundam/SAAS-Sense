@@ -374,11 +374,11 @@ export default function Index() {
                 {data.latestImportBatch.variantCount} Shopify variants · {data.latestImportBatch.rowCount} supplier rows · {data.latestImportBatch.status} · created {formatTime(data.latestImportBatch.createdAt)}
               </span>
             </div>
-            {data.latestImportBatch.rows.some((row: any) => row.status === "DRAFT") &&
+            {data.latestImportBatch.rows.some((row: any) => ["DRAFT", "PROCESSING"].includes(row.status)) &&
               <fetcher.Form method="post">
                 <input type="hidden" name="intent" value="process-import-batch" />
                 <input type="hidden" name="batchId" value={data.latestImportBatch.id} />
-                <button className={styles.button} disabled={busy}>{data.importJob?.status === "running" ? "Extracting…" : "Extract supplier metadata"}</button>
+                <button className={styles.button} disabled={busy}>{data.importJob?.status === "running" ? "Extracting…" : data.latestImportBatch.rows.some((row: any) => row.status === "PROCESSING") ? "Resume extraction" : "Extract supplier metadata"}</button>
               </fetcher.Form>}
           </div>
           {data.importJob && <div className={styles.notice} role="status" style={{ marginTop: 10 }}>
