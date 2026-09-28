@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assertPublicHostnameDns,
+  createPinnedLookup,
   isPrivateHostname,
   validatePublicResourceUrl,
   validateSupplierRedirect,
@@ -61,4 +62,25 @@ test("DNS validation rejects public hostnames that resolve to private addresses"
     "supplier.example",
     async () => [{ address: "::1", family: 6 }],
   ), /PRIVATE_DNS_TARGET_FORBIDDEN/);
+});
+
+
+test("pinned lookup supports both single-address and all-address callback shapes", async () => {
+  const lookupOne = createPinnedLookup("8.8.8.8");
+  const one = await new Promise((resolve, reject) => {
+    lookupOne("supplier.example", {}, (error, address, family) => {
+      if (error) reject(error);
+      else resolve({ address, family });
+    });
+  });
+  assert.deepEqual(one, { address: "8.8.8.8", family: 4 });
+
+  const all = await new Promise((resolve, reject) => {
+    lookupOne("supplier.example", { all: true }, (error, addresses) => {
+      if (error) reject(error);
+      else resolve(addresses);
+    });
+  });
+  assert.deepEqual(all, [{ address: "8.8.8.8", family: 4 }]);
+  assert.throws(() => createPinnedLookup("not-an-ip"), /SOURCE_DNS_INVALID_ADDRESS/);
 });
