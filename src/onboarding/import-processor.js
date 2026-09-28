@@ -20,6 +20,7 @@ function sourceForRow(row) {
     supplierProductId: row.mpnHint || "",
     supplierVariantId: "",
     matchTerms: [row.supplierSkuHint, row.mpnHint, row.barcodeHint].map(clean).filter(Boolean),
+    discoveryMode: true,
   };
 }
 
