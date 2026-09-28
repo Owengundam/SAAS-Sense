@@ -250,6 +250,27 @@ export function createDatabase(path = ":memory:") {
     );
     CREATE INDEX IF NOT EXISTS import_attempts_batch
       ON import_attempts(batch_id, reserved_at);
+    CREATE TABLE IF NOT EXISTS supplier_connections (
+      id TEXT PRIMARY KEY,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      adapter TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      UNIQUE(shop, domain)
+    );
+    CREATE TABLE IF NOT EXISTS supplier_discovery_attempts (
+      id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL REFERENCES supplier_connections(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      shopify_variant_id TEXT NOT NULL,
+      query_identifier TEXT,
+      status TEXT NOT NULL,
+      candidate_count INTEGER NOT NULL DEFAULT 0,
+      attempted_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS supplier_discovery_attempts_shop_time
+      ON supplier_discovery_attempts(shop, attempted_at);
     CREATE TABLE IF NOT EXISTS webhook_deliveries (
       delivery_id TEXT PRIMARY KEY,
       topic TEXT NOT NULL,
@@ -510,6 +531,37 @@ export function createDatabase(path = ":memory:") {
           ORDER BY attempted_at, id`).all(shop, operationId);
       }
       return db.prepare("SELECT * FROM provider_attempts WHERE shop = ? ORDER BY attempted_at, id").all(shop);
+    },
+    upsertSupplierConnection(shop, { domain, adapter, now = new Date() }) {
+      const timestamp = now.toISOString();
+      const existing = db.prepare("SELECT id FROM supplier_connections WHERE shop=? AND domain=?")
+        .get(shop, domain);
+      const id = existing?.id || randomUUID();
+      db.prepare(`INSERT INTO supplier_connections (id, shop, domain, adapter, created_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(shop, domain) DO UPDATE SET adapter=excluded.adapter, last_used_at=excluded.last_used_at`)
+        .run(id, shop, domain, adapter, timestamp, timestamp);
+      return db.prepare("SELECT * FROM supplier_connections WHERE shop=? AND id=?").get(shop, id);
+    },
+    listSupplierConnections(shop) {
+      return db.prepare(`SELECT c.*,
+        (SELECT COUNT(*) FROM supplier_discovery_attempts a WHERE a.connection_id=c.id) AS attempt_count
+        FROM supplier_connections c WHERE c.shop=? ORDER BY c.last_used_at DESC`).all(shop);
+    },
+    countSupplierDiscoveryAttemptsThisMonth(shop, now = new Date()) {
+      const month = now.toISOString().slice(0, 7);
+      return Number(db.prepare(`SELECT COUNT(*) AS count FROM supplier_discovery_attempts
+        WHERE shop=? AND substr(attempted_at,1,7)=?`).get(shop, month).count || 0);
+    },
+    recordSupplierDiscoveryAttempt(shop, connectionId, input, now = new Date()) {
+      const id = randomUUID();
+      db.prepare(`INSERT INTO supplier_discovery_attempts
+        (id, connection_id, shop, shopify_variant_id, query_identifier, status, candidate_count, attempted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, connectionId, shop, input.shopifyVariantId, input.queryIdentifier || null,
+        input.status, Number(input.candidateCount || 0), now.toISOString(),
+      );
+      return id;
     },
     createImportBatch(shop, input) {
       const createdAt = input.createdAt || new Date().toISOString();
