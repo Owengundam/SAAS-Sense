@@ -29,7 +29,10 @@ export class CascadingPageProvider {
     this.providerName = "page-cascade";
   }
 
-  async fetchPage(source) {
+  async fetchWithPolicy(source, {
+    evidenceGate = this.evidenceGate,
+    escalateOnMissingEvidence = false,
+  } = {}) {
     const attempts = [];
     let bestSuccessful = null;
     let lastResult = null;
@@ -41,7 +44,7 @@ export class CascadingPageProvider {
       } catch (error) {
         result = { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-      const usable = this.evidenceGate(source, result);
+      const usable = evidenceGate(source, result);
       const latencyMs = performance.now() - started;
       const nested = Array.isArray(result?.providerAttempts) ? result.providerAttempts : [];
       attempts.push(attemptFor(provider, result, index, latencyMs, usable), ...nested);
@@ -55,7 +58,12 @@ export class CascadingPageProvider {
           providerAttempts: attempts,
         };
       }
-      if (!shouldEscalate(provider, result, usable)) {
+
+      const hasAnotherTier = index < this.providers.length - 1;
+      const escalate = escalateOnMissingEvidence
+        ? hasAnotherTier && result?.terminal !== true
+        : shouldEscalate(provider, result, usable);
+      if (!escalate) {
         return {
           ...result,
           fallbackUsed: index > 0,
@@ -72,5 +80,16 @@ export class CascadingPageProvider {
       providerAttempts: attempts,
       fallbackError: lastResult?.ok === false ? lastResult.error : selected.fallbackError,
     };
+  }
+
+  async fetchPage(source) {
+    return this.fetchWithPolicy(source);
+  }
+
+  async fetchPageForMetadata(source, evidenceGate) {
+    return this.fetchWithPolicy(source, {
+      evidenceGate,
+      escalateOnMissingEvidence: true,
+    });
   }
 }
