@@ -29,6 +29,7 @@ function createCore(): Core {
   const provider = createPageProvider(process.env, { root: resolve(process.cwd()) });
   const evidenceReader = createEvidenceReader(process.env);
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
+  const configuredImportLimit = Number.parseInt(process.env.IMPORT_MONTHLY_DISCOVERY_LIMIT || "50", 10);
   const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
     ?.split(",")
     .map((domain) => domain.trim())
@@ -46,6 +47,9 @@ function createCore(): Core {
   const importProcessor = new ImportProcessor({
     db,
     provider,
+    monthlyDiscoveryLimit: Number.isInteger(configuredImportLimit) && configuredImportLimit >= 0
+      ? configuredImportLimit
+      : 50,
     ...(supportedDomains?.length ? { supportedDomains } : {}),
   });
   return { db, service, importProcessor, liveProvider };
