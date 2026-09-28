@@ -78,17 +78,19 @@ export class SupplierSignalService {
     const tenant = this.db.getTenant(shop);
     if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
     if (!input.sku || !input.productTitle || !input.url) throw new Error("INVALID_SOURCE");
+    this.db.reconcileDuplicateShopifyVariantSources(shop);
+    const existing = input.shopifyVariantId
+      ? this.db.getSourceByShopifyVariantId(shop, input.shopifyVariantId)
+      : null;
+    if (!existing && this.db.countSources(shop) >= tenant.source_limit) {
+      throw new Error("SOURCE_QUOTA_EXCEEDED");
+    }
     const url = validateSupplierUrl(input.url, this.supportedDomains);
     const normalized = sourceInput(input, url, this.now());
-    this.db.reconcileDuplicateShopifyVariantSources(shop);
-    if (input.shopifyVariantId) {
-      const existing = this.db.getSourceByShopifyVariantId(shop, input.shopifyVariantId);
-      if (existing) {
-        const updated = this.db.updateSource(shop, existing.id, normalized);
-        return { ...updated, replacedExisting: true };
-      }
+    if (existing) {
+      const updated = this.db.updateSource(shop, existing.id, normalized);
+      return { ...updated, replacedExisting: true };
     }
-    if (this.db.countSources(shop) >= tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
     return this.db.addSource(shop, normalized);
   }
 
