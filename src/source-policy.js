@@ -85,6 +85,20 @@ export function validatePublicResourceUrl(value) {
   return url;
 }
 
+export function createPinnedLookup(address) {
+  const family = isIP(address);
+  if (!family) throw new Error("SOURCE_DNS_INVALID_ADDRESS");
+  return (_hostname, options, callback) => {
+    const cb = typeof options === "function" ? options : callback;
+    const lookupOptions = typeof options === "object" && options ? options : {};
+    if (lookupOptions.all) {
+      cb(null, [{ address, family }]);
+      return;
+    }
+    cb(null, address, family);
+  };
+}
+
 export async function assertPublicHostnameDns(hostname, lookupImpl = lookup) {
   const host = normalizeHost(hostname);
   if (isPrivateHostname(host)) throw new Error("PRIVATE_DNS_TARGET_FORBIDDEN");
