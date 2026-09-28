@@ -55,6 +55,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop: session.shop,
         domain: String(form.get("supplierDomain") || "").trim(),
         variants,
+        supportedDomains: service.supportedDomains,
       });
       const started = startSupplierDiscoveryJob(
         session.shop,
