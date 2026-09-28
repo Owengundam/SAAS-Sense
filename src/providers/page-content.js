@@ -162,7 +162,11 @@ function normalized(value) {
 export function hasUsefulAvailabilityEvidence(source, result) {
   if (!result?.ok || !result.text) return false;
   const searchable = String(result.text);
-  const compact = normalized(searchable);
+  const structuredIdentityText = (Array.isArray(result?.evidenceRecords) ? result.evidenceRecords : [])
+    .filter((record) => record?.origin === "STRUCTURED_FIELD")
+    .map((record) => String(record?.text || ""))
+    .join("\n");
+  const compact = normalized(`${searchable}\n${structuredIdentityText}`);
   const identityTerms = [
     ...(Array.isArray(source?.matchTerms) ? source.matchTerms : []),
     source?.productTitle,
