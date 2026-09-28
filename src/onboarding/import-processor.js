@@ -52,10 +52,19 @@ function productTitle(variant) {
 }
 
 export class ImportProcessor {
+  /**
+   * @param {{
+   *   db: any,
+   *   provider: any,
+   *   supportedDomains?: string[],
+   *   monthlyDiscoveryLimit?: number,
+   *   now?: () => Date,
+   * }} options
+   */
   constructor({
     db,
     provider,
-    supportedDomains = undefined,
+    supportedDomains,
     monthlyDiscoveryLimit = 50,
     now = () => new Date(),
   }) {
