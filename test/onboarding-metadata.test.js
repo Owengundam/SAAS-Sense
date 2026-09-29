@@ -457,9 +457,15 @@ test("batch approval replaces an existing source for the same Shopify variant", 
   });
   await processor.processBatch("a.myshopify.com", batch.id);
   const review = db.getImportBatch("a.myshopify.com", batch.id);
+  assert.throws(() => processor.approveRows("a.myshopify.com", batch.id, [{
+    rowId: review.rows[0].id,
+    expectedReviewVersion: review.rows[0].reviewVersion,
+  }]), /explicitly confirm/);
   const approved = processor.approveRows("a.myshopify.com", batch.id, [{
     rowId: review.rows[0].id,
     expectedReviewVersion: review.rows[0].reviewVersion,
+    replaceSourceId: existing.id,
+    replaceSourceUrl: existing.url,
   }], "session-1");
 
   assert.deepEqual(approved.sourceIds, [existing.id]);
@@ -468,4 +474,46 @@ test("batch approval replaces an existing source for the same Shopify variant", 
   assert.equal(source.url, "https://supplier.example/p1");
   assert.equal(source.supplierSku, "SUP-1");
   assert.equal(source.lastState, null);
+});
+
+test("a corrected row is rematched from captured evidence without bypassing variant conflicts", async () => {
+  const db = setup();
+  const batch = createBatch(db, [variant(1, { barcode: null })], "url,shopify_variant_id\nhttps://supplier.example/p1,gid://shopify/ProductVariant/1");
+  let captures = 0;
+  const processor = new ImportProcessor({ db, supportedDomains: ["supplier.example"], provider: {
+    fetchPageForMetadata: async () => { captures++; return resultFor(); },
+  } });
+  await processor.processBatch("a.myshopify.com", batch.id);
+  let row = db.getImportBatch("a.myshopify.com", batch.id).rows[0];
+  assert.equal(row.status, "NEEDS_REVIEW");
+  const changes = { expectedReviewVersion: row.reviewVersion, url: row.url,
+    shopifyVariantIdHint: "gid://shopify/ProductVariant/1", supplierSkuHint: "SUP-1" };
+  processor.reviseRow("a.myshopify.com", batch.id, row.id, changes);
+  row = db.getImportBatch("a.myshopify.com", batch.id).rows[0];
+  assert.equal(row.status, "READY_FOR_REVIEW");
+  assert.equal(captures, 1);
+  assert.throws(() => processor.reviseRow("a.myshopify.com", batch.id, row.id, changes), /STALE/);
+  assert.throws(() => processor.reviseRow("other.myshopify.com", batch.id, row.id, changes), /NOT_FOUND/);
+  processor.reviseRow("a.myshopify.com", batch.id, row.id, { ...changes, expectedReviewVersion: row.reviewVersion, url: "https://supplier.example/white" });
+  row = db.getImportBatch("a.myshopify.com", batch.id).rows[0];
+  assert.equal(row.status, "DRAFT");
+  assert.equal(row.extractedMetadata, null);
+  processor.provider.fetchPageForMetadata = async () => resultFor({ color: "White", url: "https://supplier.example/white" });
+  await processor.processBatch("a.myshopify.com", batch.id, 1);
+  row = db.getImportBatch("a.myshopify.com", batch.id).rows[0];
+  assert.equal(row.status, "NEEDS_REVIEW");
+  assert.match(row.matchReason, /not verified/);
+  assert.throws(() => processor.approveRows("a.myshopify.com", batch.id, [{ rowId: row.id, expectedReviewVersion: row.reviewVersion }]), /NOT_READY/);
+});
+
+test("two ready supplier rows cannot create competing connections for one variant", async () => {
+  const db = setup();
+  const batch = createBatch(db, [variant()], "url,merchant_sku,supplier_sku\nhttps://supplier.example/p1,SKU-1,SUP-1\nhttps://supplier.example/p2,SKU-1,SUP-1");
+  const processor = new ImportProcessor({ db, supportedDomains: ["supplier.example"], provider: { fetchPageForMetadata: async source => resultFor({ url: source.url }) } });
+  await processor.processBatch("a.myshopify.com", batch.id);
+  const rows = db.getImportBatch("a.myshopify.com", batch.id).rows;
+  assert.ok(rows.every(row => row.status === "READY_FOR_REVIEW"));
+  assert.throws(() => processor.approveRows("a.myshopify.com", batch.id, rows.map(row => ({ rowId: row.id, expectedReviewVersion: row.reviewVersion }))), /only one supplier/);
+  assert.equal(db.countSources("a.myshopify.com"), 0);
+  assert.ok(db.getImportBatch("a.myshopify.com", batch.id).rows.every(row => row.status === "READY_FOR_REVIEW"));
 });
