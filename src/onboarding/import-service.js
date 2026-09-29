@@ -1,3 +1,5 @@
+import { parseCsv } from "./csv.js";
+export { parseCsv } from "./csv.js";
 import { createHash } from "node:crypto";
 import { DEFAULT_SUPPORTED_DOMAINS, validateSupplierUrl } from "../source-policy.js";
 
@@ -26,49 +28,6 @@ function normalizeHeader(value) {
   return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-export function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cell = "";
-  let quoted = false;
-  const source = String(text || "").replace(/^\uFEFF/, "");
-
-  for (let i = 0; i < source.length; i += 1) {
-    const char = source[i];
-    if (quoted) {
-      if (char === '"' && source[i + 1] === '"') {
-        cell += '"';
-        i += 1;
-      } else if (char === '"') {
-        quoted = false;
-      } else {
-        cell += char;
-      }
-      continue;
-    }
-    if (char === '"') {
-      quoted = true;
-      continue;
-    }
-    if (char === ",") {
-      row.push(cell);
-      cell = "";
-      continue;
-    }
-    if (char === "\n") {
-      row.push(cell.replace(/\r$/, ""));
-      rows.push(row);
-      row = [];
-      cell = "";
-      continue;
-    }
-    cell += char;
-  }
-  if (quoted) throw new Error("CSV_UNCLOSED_QUOTE");
-  row.push(cell.replace(/\r$/, ""));
-  if (row.some((value) => clean(value))) rows.push(row);
-  return rows;
-}
 
 function parseUrlLines(text) {
   return String(text || "").split(/\r?\n/)

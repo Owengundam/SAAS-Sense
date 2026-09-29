@@ -951,6 +951,25 @@ export function createDatabase(path = ":memory:") {
         throw error;
       }
     },
+    reviseImportRow(shop, batchId, rowId, version, revised, suggestion, now = new Date()) {
+      const result = db.prepare(`UPDATE import_rows SET url=?, shopify_variant_id_hint=?,
+        supplier_sku_hint=?, mpn_hint=NULL, barcode_hint=NULL,
+        status=?, error=NULL, suggested_variant_id=?, suggested_candidate_key=?,
+        match_reason=?, match_terms=?, primary_identifier=?,
+        canonical_url=CASE WHEN ? THEN canonical_url ELSE NULL END,
+        extracted_metadata=CASE WHEN ? THEN extracted_metadata ELSE NULL END,
+        review_version=review_version+1, updated_at=?
+        WHERE shop=? AND batch_id=? AND id=? AND review_version=?
+        AND status NOT IN ('APPROVED','PROCESSING','DISCOVERING')`).run(
+          revised.url, revised.shopifyVariantIdHint, revised.supplierSkuHint,
+          suggestion?.status || 'DRAFT', suggestion?.suggestedVariantId || null,
+          suggestion?.candidateKey || null, suggestion?.reason || null,
+          JSON.stringify(suggestion?.matchTerms || []), suggestion?.primaryIdentifier || null,
+          suggestion ? 1 : 0, suggestion ? 1 : 0, now.toISOString(), shop, batchId, rowId, version,
+        );
+      if (!result.changes) throw new Error("IMPORT_REVIEW_STALE");
+      return this.getImportBatch(shop, batchId);
+    },
     listImportAttempts(shop, batchId) {
       return db.prepare(`SELECT * FROM import_attempts WHERE shop=? AND batch_id=?
         ORDER BY reserved_at, operation_id`).all(shop, batchId).map((row) => ({
@@ -992,7 +1011,7 @@ export function createDatabase(path = ":memory:") {
             throw new Error("IMPORT_MAPPING_CHANGED");
           }
           const existing = approval.source.shopifyVariantId
-            ? db.prepare(`SELECT id FROM sources
+            ? db.prepare(`SELECT id, url FROM sources
               WHERE shop=? AND shopify_variant_id=? AND enabled=1
               ORDER BY
                 CASE WHEN last_attempt_status='PRODUCT_MISMATCH' THEN 1 ELSE 0 END ASC,
@@ -1001,6 +1020,13 @@ export function createDatabase(path = ":memory:") {
                 created_at DESC LIMIT 1`)
               .get(shop, approval.source.shopifyVariantId)
             : null;
+          if (existing && (approval.replaceSourceId !== existing.id || approval.replaceSourceUrl !== existing.url)) {
+            throw new Error("This product already has a supplier. Review and explicitly confirm its replacement.");
+          }
+          if (!existing && approval.replaceSourceId) throw new Error("IMPORT_REVIEW_STALE");
+          if (pending.some(item => item.approval.source.shopifyVariantId === approval.source.shopifyVariantId)) {
+            throw new Error("Select only one supplier match per Shopify variant.");
+          }
           pending.push({ approval, row, existingSourceId: existing?.id || null });
         }
         const existingSources = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=? AND enabled=1").get(shop).count;
@@ -1289,16 +1315,16 @@ export function createDatabase(path = ":memory:") {
       );
       return id;
     },
-    listObservations(shop, limit = 30) {
+    listObservations(shop, limit = 30, sourceId = null) {
       return db.prepare(`SELECT o.*, s.sku, s.product_title FROM observations o
-        JOIN sources s ON s.id=o.source_id WHERE o.shop=? ORDER BY o.checked_at DESC LIMIT ?`).all(shop, limit);
+        JOIN sources s ON s.id=o.source_id WHERE o.shop=? AND (? IS NULL OR o.source_id=?) ORDER BY o.checked_at DESC LIMIT ?`).all(shop, sourceId, sourceId, limit);
     },
-    listDecisionRecords(shop, limit = 30) {
+    listDecisionRecords(shop, limit = 30, sourceId = null) {
       return db.prepare(`SELECT d.*, o.checked_at, s.sku, s.product_title
         FROM decision_records d
         JOIN observations o ON o.id=d.observation_id
         JOIN sources s ON s.id=d.source_id
-        WHERE d.shop=? ORDER BY d.created_at DESC LIMIT ?`).all(shop, limit);
+        WHERE d.shop=? AND (? IS NULL OR d.source_id=?) ORDER BY d.created_at DESC LIMIT ?`).all(shop, sourceId, sourceId, limit);
     },
     listModelEvaluations(shop, limit = 100) {
       return db.prepare(`SELECT m.*, o.checked_at, s.sku, s.product_title

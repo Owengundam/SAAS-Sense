@@ -19,3 +19,20 @@ test("supplier checks return immediately and reject duplicate runs until finishe
   assert.equal(getCheckJob("test.myshopify.com").status, "finished");
   assert.equal(getCheckJob("test.myshopify.com").completed, 1);
 });
+
+test("newly confirmed products queue their first check behind an active run", async () => {
+  let finish;
+  const waiting = new Promise(resolve => { finish = resolve; });
+  const calls = [];
+  const shop = "queued.myshopify.com";
+  const service = { checkSource: async (_shop, id) => { calls.push(id); if (calls.length === 1) await waiting; } };
+  startCheckJob(shop, ["old"], service);
+  assert.equal(startCheckJob(shop, ["new"], service, true), true);
+  assert.equal(startCheckJob(shop, ["new"], service, true), true);
+  assert.equal(getCheckJob(shop).total, 2);
+  finish();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, ["old", "new"]);
+  assert.equal(getCheckJob(shop).status, "finished");
+  assert.equal(getCheckJob(shop).completed, 2);
+});

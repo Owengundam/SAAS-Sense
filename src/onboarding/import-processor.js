@@ -172,6 +172,20 @@ export class ImportProcessor {
     return processed;
   }
 
+  reviseRow(shop, batchId, rowId, changes) {
+    const batch = this.db.getImportBatch(shop, batchId);
+    const row = batch?.rows.find(item => item.id === rowId);
+    if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+    const variantId = clean(changes.shopifyVariantIdHint);
+    if (!batch.variants.some(item => item.shopifyVariantId === variantId)) throw new Error("SHOPIFY_VARIANT_NOT_SELECTED");
+    const url = validateSupplierUrl(clean(changes.url), this.supportedDomains).toString();
+    const revised = { ...row, url, shopifyVariantIdHint: variantId,
+      supplierSkuHint: clean(changes.supplierSkuHint), mpnHint: null, barcodeHint: null };
+    const samePage = url === row.url && row.extractedMetadata;
+    const suggestion = samePage ? suggestImportMapping(revised, batch.variants, row.extractedMetadata) : null;
+    return this.db.reviseImportRow(shop, batchId, rowId, changes.expectedReviewVersion, revised, suggestion, this.now());
+  }
+
   approveRows(shop, batchId, selections, reviewer = "merchant") {
     const batch = this.db.getImportBatch(shop, batchId);
     if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
@@ -227,6 +241,8 @@ export class ImportProcessor {
       return {
         rowId: row.id,
         expectedReviewVersion: row.reviewVersion,
+        replaceSourceId: selection.replaceSourceId || null,
+        replaceSourceUrl: selection.replaceSourceUrl || null,
         source: {
           sku: variant.merchantSku || variant.shopifyVariantId,
           productTitle: productTitle(variant),
