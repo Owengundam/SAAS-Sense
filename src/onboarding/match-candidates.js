@@ -13,24 +13,25 @@ function meaningfulOptions(variant) {
     .filter((option) => option.value && option.value.toLowerCase() !== "default title");
 }
 
-function optionCompatibility(variant, candidate, row, pageText = "") {
+function optionCompatibility(variant, candidate, _row, pageText = "") {
   const options = meaningfulOptions(variant);
   if (!options.length) return { compatible: true, reasons: [] };
 
-  const explicit = clean(row?.optionsHint).toLowerCase();
+  // Only supplier-observed evidence may establish variant compatibility.
+  // row.optionsHint is copied from the expected Shopify variant during discovery,
+  // so using it here would let expectations confirm themselves.
   const structured = new Set((candidate?.optionValues || []).map((value) => clean(value).toLowerCase()));
   const text = clean(pageText).toLowerCase();
   const missing = [];
   for (const option of options) {
     const value = option.value.toLowerCase();
     const structuredMatch = structured.has(value);
-    const explicitMatch = explicit && explicit.includes(value);
     const textMatch = value.length >= 3 && text.includes(value);
     if (structured.size) {
-      if (!structuredMatch && !explicitMatch) missing.push(`${option.name}: ${option.value}`);
+      if (!structuredMatch) missing.push(`${option.name}: ${option.value}`);
       continue;
     }
-    if (!explicitMatch && !textMatch) missing.push(`${option.name}: ${option.value}`);
+    if (!textMatch) missing.push(`${option.name}: ${option.value}`);
   }
   return {
     compatible: missing.length === 0,
