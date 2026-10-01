@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { evaluateFixtureCases } from "../src/fixture-evaluation.js";
 import { summarizeFetchBenchmark } from "../src/fetch-benchmark.js";
+import { extractStructuredPage, hasAvailabilityEvidence, hasSafeAvailabilityEvidence } from "../src/providers/page-content.js";
+import { classifyObservation } from "../src/domain.js";
 
 test("labeled supplier fixture benchmark has no incorrect factual outcomes", () => {
   const cases = JSON.parse(readFileSync(resolve("fixtures/evaluation-cases.json"), "utf8"));
@@ -91,4 +93,35 @@ test("live benchmark separates safe abstention from unsafe factual acceptance", 
   assert.equal(report.safeAbstentions, 1);
   assert.equal(report.factualCoverage, 0.5);
   assert.equal(report.safetyGatePass, true);
+});
+
+test("quality-rejected captures remain scored so safer escalation cannot inflate accuracy", () => {
+  const rows = [
+    { method: "direct", domain: "a.test", ok: true, usable: true, safeToStop: true,
+      expectedFactual: true, factual: true, correctAgainstFixture: true, labelEvidencePresent: true, latencyMs: 100 },
+    { method: "direct", domain: "b.test", ok: true, usable: true, safeToStop: false,
+      expectedFactual: true, factual: false, correctAgainstFixture: false, labelEvidencePresent: true, latencyMs: 200 },
+  ];
+  const report = summarizeFetchBenchmark(rows, ["direct"]).direct;
+  assert.equal(report.qualityAcceptedCaptures, 1);
+  assert.equal(report.qualityRejectedCaptures, 1);
+  assert.equal(report.scorableCaptures, 2);
+  assert.equal(report.accuracyDenominator, 2);
+  assert.equal(report.safeAbstentions, 1);
+  assert.equal(report.factualCoverage, 0.5);
+});
+
+test("an extracted unknown-variant offer is captured evidence even without visible stock words", () => {
+  const fixture = JSON.parse(readFileSync(resolve("test/fixtures/shopify-hidden-stock-badge.json"), "utf8"));
+  const source = { url: fixture.url, productTitle: fixture.jsonLd[0].name, supplierVariantId: "unknown" };
+  const page = { ok: true, url: source.url, ...extractStructuredPage({ ...fixture, source, runId: "offline",
+    text: `${source.productTitle}\nAdd to cart`, textVisibility: "RENDERED_VISIBLE" }) };
+  assert.equal(page.availabilityBlockedReason, "CAPTURE_EVIDENCE_CONFLICT");
+  const observation = classifyObservation(source, page);
+  const report = summarizeFetchBenchmark([{ method: "direct", domain: "supplier.test", ok: true,
+    usable: hasAvailabilityEvidence(source, page), safeToStop: hasSafeAvailabilityEvidence(source, page),
+    expectedFactual: true, factual: observation.factual, correctAgainstFixture: false,
+    labelEvidencePresent: true, latencyMs: 1 }], ["direct"]).direct;
+  assert.equal(report.scorableCaptures, 1); assert.equal(report.qualityRejectedCaptures, 1);
+  assert.equal(report.safeAbstentions, 1); assert.equal(report.factualCoverage, 0);
 });

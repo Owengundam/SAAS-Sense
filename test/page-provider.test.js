@@ -159,7 +159,7 @@ test("cascade stops at direct HTTP when identity and availability are present", 
   let fallbackCalls = 0;
   const provider = new CascadingPageProvider({
     providers: [
-      { providerName: "direct", fetchPage: async () => ({ ok: true, runId: "d1", text: "SKU A-1. In stock." }) },
+      { providerName: "direct", fetchPage: async () => ({ ok: true, runId: "d1", url: source.url, text: "SKU A-1. In stock." }) },
       { providerName: "browser", fetchPage: async () => { fallbackCalls += 1; return { ok: true, text: "unused" }; } },
     ],
   });
@@ -175,10 +175,11 @@ test("cascade escalates when direct HTTP reports missing rendered content", asyn
       { providerName: "direct-http", fetchPage: async () => ({
         ok: true,
         runId: "d1",
+        url: source.url,
         text: "Product A. SKU A-1.",
         renderingLikelyRequired: true,
       }) },
-      { providerName: "self-hosted-chromium", fetchPage: async () => ({ ok: true, runId: "b1", text: "Product A. SKU A-1. Backordered." }) },
+      { providerName: "self-hosted-chromium", fetchPage: async () => ({ ok: true, runId: "b1", url: source.url, text: "Product A. SKU A-1. Backordered." }) },
     ],
   });
   const result = await provider.fetchPage(source);

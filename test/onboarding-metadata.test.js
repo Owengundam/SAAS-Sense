@@ -9,7 +9,7 @@ import {
 import { suggestImportMapping } from "../src/onboarding/match-candidates.js";
 import { ImportProcessor } from "../src/onboarding/import-processor.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
-import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
+import { hasAvailabilityEvidence, hasUsefulAvailabilityEvidence, hasSafeAvailabilityEvidence } from "../src/providers/page-content.js";
 
 function variant(id = 1, overrides = {}) {
   return {
@@ -212,19 +212,24 @@ test("supplier page text can verify an option only when structured options are a
   assert.equal(suggestion.status, "READY_FOR_REVIEW");
 });
 
-test("approved structured GTIN can satisfy later availability identity gating", () => {
+test("structured GTIN remains captured identity evidence while the quality gate requires a resolved decision", () => {
   const result = {
     ok: true,
+    url: "https://supplier.test/product",
     text: "In stock",
     availabilityState: "IN_STOCK",
     evidenceRecords: [
       { origin: "STRUCTURED_FIELD", path: "jsonld.products[0].gtin12", text: "000000000001" },
     ],
   };
-  assert.equal(hasUsefulAvailabilityEvidence({
+  const source = {
     matchTerms: ["000000000001"],
     productTitle: "Pendant 1 · Blue",
-  }, result), true);
+  };
+  assert.equal(hasAvailabilityEvidence(source, result), true);
+  assert.equal(hasUsefulAvailabilityEvidence(source, result), true);
+  assert.equal(hasSafeAvailabilityEvidence(source, result), false);
+  assert.equal(hasSafeAvailabilityEvidence(source, { ...result, text: "GTIN 000000000001. In stock" }), true);
 });
 
 test("metadata cascade stops on first tier when product identity is sufficient", async () => {

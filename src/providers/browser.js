@@ -5,7 +5,7 @@ import {
   validateSupplierRedirect,
 } from "../source-policy.js";
 import { captureRenderedPage } from "./rendered-capture.js";
-import { extractProductPage, extractStructuredPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
+import { extractProductPage, extractStructuredPage, hasSafeAvailabilityEvidence } from "./page-content.js";
 
 const DEFAULT_TIMEOUT_MS = 40_000;
 const DEFAULT_CONTENT_WAIT_MS = 5_000;
@@ -216,7 +216,7 @@ export class BrowserProvider {
       };
       const blockedPage = /\b(?:captcha|access denied|verify you are human|checking your browser|request blocked)\b/i.test(extracted.text);
       draft.managedFallbackRecommended = blockedPage;
-      draft.captureDisposition = hasUsefulAvailabilityEvidence(source, draft)
+      draft.captureDisposition = hasSafeAvailabilityEvidence(source, draft)
         ? "USABLE_EVIDENCE"
         : blockedPage
           ? "ACCESS_BLOCKED"
