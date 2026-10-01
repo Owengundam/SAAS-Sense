@@ -1,4 +1,5 @@
-import { hasUsefulAvailabilityEvidence } from "./page-content.js";
+import { hasUsefulAvailabilityEvidence, needsAvailabilityRecapture } from "./page-content.js";
+import { productIdentityConflict } from "../product-identity.js";
 
 function attemptFor(provider, result, index, latencyMs, usable) {
   return {
@@ -11,10 +12,10 @@ function attemptFor(provider, result, index, latencyMs, usable) {
   };
 }
 
-function shouldEscalate(provider, result, usable) {
+function shouldEscalate(source, provider, result, usable) {
   if (usable || result?.terminal) return false;
   if (result?.ok === false) return true;
-  if (provider?.providerName === "direct-http") return result?.renderingLikelyRequired === true;
+  if (provider?.providerName === "direct-http") return needsAvailabilityRecapture(source, result) || result?.renderingLikelyRequired === true;
   if (provider?.providerName === "self-hosted-chromium") {
     return result?.managedFallbackRecommended === true;
   }
@@ -48,7 +49,16 @@ export class CascadingPageProvider {
       } catch (error) {
         result = { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-      const usable = evidenceGate(source, result);
+      // A known different product is not a rendering problem. Do not spend on
+      // another provider to search for an answer that overrides that mismatch.
+      // Require a scoped Product name: a generic access-denied HTML title is
+      // unresolved identity, not proof of a different product. Metadata
+      // discovery retains its separate identity-matching policy.
+      const hardIdentityMismatch = providerMethod === "fetchPage" && result?.ok &&
+        productIdentityConflict(source, result.title) && result.captureScope?.matchedProductCount === 1 &&
+        result.evidenceRecords?.some(record => record.origin === "STRUCTURED_FIELD" &&
+          /^jsonld\.products\[\d+\]\.name$/.test(record.path || "") && record.text === result.title);
+      const usable = !hardIdentityMismatch && evidenceGate(source, result);
       const latencyMs = performance.now() - started;
       const nested = Array.isArray(result?.providerAttempts) ? result.providerAttempts : [];
       attempts.push(attemptFor(provider, result, index, latencyMs, usable), ...nested);
@@ -66,10 +76,11 @@ export class CascadingPageProvider {
       const hasAnotherTier = index < this.providers.length - 1;
       const escalate = escalateOnMissingEvidence
         ? hasAnotherTier && result?.terminal !== true
-        : shouldEscalate(provider, result, usable);
-      if (!escalate) {
+        : shouldEscalate(source, provider, result, usable);
+      if (hardIdentityMismatch || !escalate) {
         return {
           ...result,
+          ...(hardIdentityMismatch ? { terminal: true, captureDisposition: "IDENTITY_MISMATCH" } : {}),
           fallbackUsed: index > 0,
           fetchTier: index + 1,
           providerAttempts: attempts,

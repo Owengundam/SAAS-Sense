@@ -41,6 +41,8 @@ export function summarizeFetchBenchmark(rows, methodNames) {
       captureFailures: selected.length - successful.length,
       environmentFailures: selected.filter(isFetchEnvironmentFailure).length,
       usableCaptures: usable.length,
+      qualityAcceptedCaptures: selected.filter((row) => row.safeToStop === true).length,
+      qualityRejectedCaptures: successful.filter((row) => row.safeToStop === false).length,
       scorableCaptures: scorable.length,
       unscoredRequests: selected.length - scorable.length,
       scoreStatus,

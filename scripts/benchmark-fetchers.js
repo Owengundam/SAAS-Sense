@@ -9,7 +9,7 @@ import { ApifyProvider } from "../src/providers/apify.js";
 import { BrowserProvider } from "../src/providers/browser.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
 import { DirectHttpProvider } from "../src/providers/direct-http.js";
-import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
+import { hasAvailabilityEvidence, hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
 
 if (!process.argv.includes("--live")) throw new Error("Pass --live to authorize live supplier fetches");
 
@@ -83,7 +83,10 @@ for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         expected: testCase.expected,
         expectedFactual: !["UNCERTAIN", "SOURCE_ERROR", "UNKNOWN"].includes(testCase.expected),
         ok: Boolean(page.ok),
-        usable: hasUsefulAvailabilityEvidence(testCase.source, page),
+        // Keep captured-but-conflicting cases in the scoring denominator.
+        // Quality rejection must not improve reported accuracy by hiding them.
+        usable: hasAvailabilityEvidence(testCase.source, page),
+        safeToStop: hasUsefulAvailabilityEvidence(testCase.source, page),
         state: observation.state,
         factual: observation.factual,
         correctAgainstFixture: observation.state === testCase.expected,

@@ -3,7 +3,7 @@ import { request } from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import { assertPublicHostnameDns, createPinnedLookup, validateSupplierRedirect } from "../source-policy.js";
-import { extractProductPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
+import { extractProductPage, hasUsefulAvailabilityEvidence, needsAvailabilityRecapture } from "./page-content.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 2_000_000;
@@ -138,7 +138,9 @@ export class DirectHttpProvider {
         ].map((value) => String(value || "").toLowerCase()).filter(Boolean);
         const lowerText = extracted.text.toLowerCase();
         const identityFound = !identityTerms.length || identityTerms.some((term) => lowerText.includes(term));
-        draft.renderingLikelyRequired = !identityFound ||
+        // Hidden templates, ambiguous variants and missing identity need a
+        // rendered capture even when the HTML contains recognizable stock words.
+        draft.renderingLikelyRequired = needsAvailabilityRecapture(source, draft) || !identityFound ||
           (!hasUsefulAvailabilityEvidence(source, draft) && renderHook && scriptCount >= 2);
         draft.captureDisposition = hasUsefulAvailabilityEvidence(source, draft)
           ? "USABLE_EVIDENCE"
