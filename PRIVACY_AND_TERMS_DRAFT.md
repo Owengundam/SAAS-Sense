@@ -65,7 +65,11 @@ The merchant must use only sources it is authorized to access and must not use t
 
 ### Plans and limits
 
-The proposed Founding Pilot is $19 per monthly billing cycle for 25 source links and 1,500 attempted checks, with that price guaranteed for the merchant's first six months. Any later price change requires advance notice and the merchant's approval through Shopify. This is a paid plan, not a free trial. Failed attempts and retries count toward the cap. There is no unlimited usage. Shopify-hosted app billing governs charges, plan changes, cancellation, and applicable taxes. `[REFUND POLICY — OWNER/COUNSEL TO COMPLETE]`.
+The proposed new-merchant Pilot is $49 USD per monthly billing cycle for up to 25 source links and 1,500 source-check jobs per UTC calendar month. One assisted setup of up to 30 minutes and standard email support are included; recurring concierge, response-time SLAs, and custom integrations are excluded. Monitoring cadence is confirmed during setup after source coverage, cost, and production scheduling are validated. This is a paid plan, not a free trial. There are no usage overage charges or unlimited usage.
+
+Quota is reserved once per source-check job before provider execution. Failed jobs, confirmation jobs, and repeat checks count toward the cap; multiple provider calls within the same job do not each consume another source-check job. Processing stops at the merchant cap or shared operating cap.
+
+Existing $19 Founding Pilot commitments remain honored for the merchant's promised first six months, and this new offer leaves existing subscriptions unchanged. Any later legacy price change requires advance notice and the merchant's approval through Shopify. This draft does not change Shopify's hosted plans or existing contracts. The hosted plan must be configured and verified before new paid subscriptions are accepted. Shopify-hosted app billing governs charges, plan changes, cancellation, and applicable taxes. `[REFUND POLICY — OWNER/COUNSEL TO COMPLETE]`.
 
 ### Suspension
 

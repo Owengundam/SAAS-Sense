@@ -10,13 +10,16 @@ SupplierSignal checks the supplier product pages behind your Shopify catalog, ve
 
 ### Pilot offer
 
-**Founding Pilot: $19/month, with the price guaranteed for the merchant's first six months.** The regular target price of $49 is displayed with a strikethrough. Give advance notice and require Shopify plan approval before any later price change. This is a paid plan, not a free trial.
+**New-merchant Pilot: $49 USD/month.** This is one monthly paid plan, not a free trial, discounted anchor, or new tier ladder. There are no usage overage charges. Configure and verify the matching Shopify App Pricing offer before accepting new subscriptions; repository copy alone does not change checkout.
+
+Honor all existing $19 Founding Pilot commitments for the promised first six months and leave existing subscriptions unchanged. Any later change requires advance notice and the merchant's Shopify approval; this new offer does not authorize migration or a price increase for existing merchants.
 
 - Up to 25 supplier product links.
-- Daily checks and 1,500-check monthly cap.
+- Up to 1,500 source-check jobs per UTC calendar month. A job reserves quota before provider execution; failures, confirmations, and repeat source-check jobs count. Multiple provider calls within one job do not each consume another job.
+- Confirm cadence during setup. Do not promise daily monitoring until production scheduling, source coverage, and per-source costs are validated.
 - Availability, sold-out, discontinued, uncertain, and source-failed states.
 - Evidence excerpt, last-checked time, and stale warning.
-- One lightweight assisted setup; no recurring weekly review.
+- One assisted setup of up to 30 minutes, plus standard email support. No recurring concierge or weekly reviews, SLA, or custom integrations.
 - No automatic edits to products, price, or inventory.
 
 Supported initially: public HTTPS supplier product pages that the merchant is authorized to monitor and that expose availability in page content. Unsupported: authenticated portals, CAPTCHAs, marketplaces, personalized pricing, customer/order data, and automatic Shopify writes.
@@ -28,21 +31,21 @@ Supported initially: public HTTPS supplier product pages that the merchant is au
 3. Add supplier URL and match terms for each product.
 4. Run baseline checks; ambiguous results stay unconfirmed.
 5. Review source coverage and evidence with the merchant.
-6. Start daily checks only for sources that passed baseline validation.
+6. Confirm the agreed cadence only after source baseline, cost, and production scheduling checks pass. Do not enable global scheduling as part of a pricing change.
 7. Review the first week and remove sources that repeatedly fail or drift.
 
 ## Support instructions
 
 When a result looks wrong, the merchant should provide the SupplierSignal source ID and expected state—never credentials. Support checks the stored evidence and provider run ID. If the supplier page changed, mark the source uncertain and update its source-specific terms only after visual confirmation.
 
-Severity targets for the pilot:
+Internal triage priorities (not a merchant response-time SLA):
 
 - Security or cross-tenant exposure: disable affected processing immediately.
-- False factual alert: respond within one business day; mark source uncertain while investigating.
+- False factual alert: prioritize investigation and mark the source uncertain while investigating.
 - Source unavailable: visible in dashboard; no factual alert and no emergency response promise.
 - Feature request: log for weekly pilot review; no custom work promise.
 
-Actual support hours, timezone, email address, and SLA remain owner facts to add before launch.
+Confirm support hours, timezone, and email address before launch. The pilot includes standard email help and makes no response-time SLA promise.
 
 ## Prospect criteria
 
@@ -69,7 +72,7 @@ Hi {{first_name}},
 
 I noticed {{store}} carries products from several independent brands. I’m testing a read-only Shopify workflow that checks authorized supplier product pages and flags availability or discontinuation changes with evidence. It never edits store inventory, and failed checks stay “uncertain” instead of becoming false stock alerts.
 
-I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the Founding Pilot is $19/month for 25 product links, with the price guaranteed for the first six months and one lightweight assisted setup.
+I’m looking for a few operators willing to show me how they handle this today. Would a 15-minute workflow conversation be reasonable? If the problem is real and the fit is good, the new-merchant Pilot is $49 USD/month for up to 25 product links and 1,500 source-check jobs per UTC calendar month, with one assisted setup of up to 30 minutes and standard email support. We confirm source coverage and monitoring cadence during setup.
 
 Best,
 {{owner_name}}
@@ -82,7 +85,8 @@ Continue after discovery only if:
 - At least 2 unrelated merchants pay for substantially the same pilot.
 - At least 80% of enabled checks produce high-confidence factual results.
 - False factual alerts remain under 1% of checks in the pilot.
-- Expected contribution margin is at least 50% after onboarding.
-- Ongoing support stays under 90 minutes per merchant per month.
+- Measured recurring contribution margin targets 60%, with a minimum of 50% after onboarding.
+- Ongoing support averages at most 20 minutes per merchant per month (a $10 internal allowance at an assumed $30/hour, not a merchant support entitlement or SLA).
+- Capacity is available within the unchanged 5,000-job global monthly cap: at most three fully used 1,500-job plans, less any other usage. Do not sell capacity the shared cap cannot support.
 
 Pause or abandon if those gates fail, if source permissions cannot be established, or if the only viable delivery is a heavily manual service disguised as SaaS.
