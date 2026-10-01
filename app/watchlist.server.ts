@@ -178,13 +178,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (intent === "check-all") {
       const sourceIds = service.dashboard(session.shop).sources.map((source: { id: string }) => source.id);
       const started = startCheckJob(session.shop, sourceIds, service);
-      return { ok: started, message: started ? "Checking supplier pages. Results will appear here automatically." : "A check is already running, or there are no products to check." };
+      const job = getCheckJob(session.shop);
+      return {
+        ok: started,
+        checkJobId: started ? job?.id : null,
+        message: started ? "Checking supplier pages. Results will appear here automatically." : "A check was already running, or there were no products to check.",
+      };
     }
     if (intent === "check-one") {
       const sourceId = String(form.get("sourceId") || "");
       if (!service.db.getSource(session.shop, sourceId)) return { ok: false, message: "Product not found." };
       const started = startCheckJob(session.shop, [sourceId], service);
-      return { ok: started, message: started ? "Checking the supplier page. Results will appear here automatically." : "A check is already running." };
+      const job = getCheckJob(session.shop);
+      return {
+        ok: started,
+        checkJobId: started ? job?.id : null,
+        message: started ? "Checking the supplier page. Results will appear here automatically." : "A check was already running.",
+      };
     }
     if (intent === "delete-source") {
       service.deleteSource(session.shop, String(form.get("sourceId") || ""));

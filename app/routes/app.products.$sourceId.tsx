@@ -3,6 +3,7 @@ import { Link, useFetcher, useLoaderData, redirect } from "react-router";
 import { loader as loadWatchlist, action as mutateWatchlist } from "../watchlist.server";
 import { getSupplierSignal } from "../core.server";
 import { formatTime, stateLabel, stateClass } from "../watchlist-ui";
+import { getCheckFeedback } from "../check-feedback";
 import { useCheckRefresh } from "../watchlist-hooks";
 import styles from "../styles/dashboard.module.css";
 export async function loader(args: LoaderFunctionArgs) {
@@ -20,6 +21,7 @@ export async function action(args: ActionFunctionArgs) {
 export default function ProductDetails() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const feedback = getCheckFeedback(fetcher.data, data.checkJob, fetcher.state);
   const source = data.source;
   const zone = useCheckRefresh(data.checkJob?.status === "running");
   const observations = data.observations.filter((o: any) => o.source_id === source.id);
@@ -29,7 +31,7 @@ export default function ProductDetails() {
   return <div className={`${styles.page} ${styles.focused}`}>
     <ui-title-bar title="Product details" /><Link className={styles.back} to="/app">← Watchlist</Link>
     <header className={styles.hero}><h1 className={styles.title}>{source.productTitle}</h1></header>
-    {fetcher.data?.message && <p role="status" className={`${styles.notice} ${fetcher.data.ok ? "" : styles.error}`}>{fetcher.data.message}</p>}
+    {feedback && <p role="status" className={`${styles.notice} ${feedback.ok ? "" : styles.error}`}>{feedback.message}</p>}
     <section className={styles.card}><span className={stateClass(source.lastState, source.stale)}>Supplier status: {stateLabel(source.lastState, false)}</span>
       <p>Last confirmed {formatTime(source.lastConfirmedAt, zone)}{source.stale && source.lastConfirmedAt ? " · confirmation overdue" : ""}</p>
       {failed && <p className={`${styles.notice} ${styles.warningNotice}`}>{source.lastAttemptStatus === "PRODUCT_MISMATCH" ? "The supplier page describes a different product. Change the supplier connection." : "The latest check couldn't confirm availability. The last confirmed result remains above."}</p>}
