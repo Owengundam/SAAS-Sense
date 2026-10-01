@@ -1,49 +1,8 @@
-# Privacy and Terms Draft — Not Legal Advice
+# Unpublished Terms Draft — Not Legal Advice
 
-This draft reflects the current pilot data flow. It is incomplete until the owner supplies the legal entity, address, support/privacy email, effective date, governing law, subprocessors, retention periods, and deletion process. Obtain legal review before publishing.
+The current public privacy policy is maintained separately in `app/routes/privacy.tsx` and served at [/privacy](https://suppliersignal-production.up.railway.app/privacy). It identifies Haiming Wang and owenwhm@gmail.com and describes the actual data flows and deletion behavior. This document is not the public privacy policy and must not be linked as one.
 
-## Privacy notice draft
-
-### Service
-
-SupplierSignal provides read-only monitoring of merchant-authorized supplier product pages for Shopify merchants.
-
-### Data processed
-
-- Shopify shop domain and app installation/session identifiers.
-- Product identifiers needed for matching: SKU, product title, and optional variant terms.
-- Supplier product-page URL supplied by the merchant.
-- Extracted availability evidence, check timestamps, state, confidence, and provider run identifiers.
-- Plan, quota, and operational logs.
-
-The pilot does not require customer, order, payment-card, or storefront-visitor data. Shopify handles app subscription payment information.
-
-### Purpose
-
-Data is processed to authenticate the merchant, check authorized sources, match products, detect availability changes, show evidence/staleness, enforce plan limits, prevent duplicate processing, and support the service.
-
-### Subprocessors
-
-- Shopify: app installation, authentication, and app billing.
-- Apify: optional website retrieval and processing when the live provider is enabled.
-- `[HOSTING PROVIDER — OWNER TO COMPLETE]`.
-- `[EMAIL/OBSERVABILITY PROVIDERS — OWNER TO COMPLETE OR REMOVE]`.
-
-### Retention
-
-Proposed, subject to validation: evidence excerpts and observations for 90 days; aggregate non-personal operational metrics for 12 months; deletion after uninstall/shop-redact within Shopify's required window. Exact backup behavior must be added after hosting is selected.
-
-### Merchant controls
-
-Merchants can disable or remove sources and request deletion through `[PRIVACY EMAIL]`. Shopify mandatory compliance webhooks are verified before data actions. `shop/redact` deletes the tenant and cascading source, observation, and alert records.
-
-### Security
-
-Credentials are server-side; data queries are tenant-scoped; webhooks are HMAC-verified and deduplicated; source/check quotas are server-enforced; only HTTPS sources are accepted. No service can promise absolute security.
-
-### International transfers and legal basis
-
-`[OWNER/COUNSEL TO COMPLETE BY CUSTOMER REGION AND PROVIDER LOCATION]`.
+The earlier proposed 90-day evidence and 12-month metrics periods were never implemented and have been removed. See [PRIVACY_REVIEW.md](PRIVACY_REVIEW.md) for retention limits and remaining operational/legal review. The terms below remain an unpublished draft: governing law, business address if required, refund policy, and other contractual provisions still need owner/counsel input. Publication of the privacy notice does not publish or accept these terms.
 
 ## Terms draft
 

@@ -24,6 +24,7 @@ export default function Landing() {
         <div className={styles.navLinks}>
           <a href="#how-it-works">How it works</a>
           <a href="#pricing">Pricing</a>
+          <a href="/privacy">Privacy</a>
         </div>
       </nav>
 
@@ -99,6 +100,7 @@ export default function Landing() {
 
       <footer className={styles.footer}>
         <strong>SupplierSignal</strong>
+        <a href="/privacy">Privacy policy</a>
         <span>Public HTTPS supplier pages only. Authenticated portals, CAPTCHAs, marketplaces, and automatic inventory writes are not supported in the pilot.</span>
       </footer>
     </main>

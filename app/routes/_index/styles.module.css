@@ -46,6 +46,7 @@
 .cta { display: inline-block; text-align: center; white-space: nowrap; }
 .footer { align-items: flex-start; border-top: 1px solid #20392c; color: #76867b; display: flex; font-size: 12px; gap: 32px; justify-content: space-between; margin: 0 auto; max-width: 1116px; padding: 32px 0 44px; }
 .footer strong { color: #d8e2dc; font-size: 14px; }
+.footer a { color: #b7e5c8; white-space: nowrap; text-underline-offset: 3px; }
 .footer span { max-width: 700px; text-align: right; }
 .srOnly { height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; width: 1px; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 @media (max-width: 900px) { .hero, .safetySection, .pricing { grid-template-columns: 1fr; } .hero { gap: 40px; padding-top: 48px; } .proofCard { max-width: 520px; transform: none; } .pricing { gap: 28px; } .footer { margin: 0 32px; } }

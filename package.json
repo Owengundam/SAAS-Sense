@@ -24,7 +24,7 @@
     "evaluate:real-suppliers": "node scripts/evaluate-real-suppliers.js",
     "benchmark:fetchers": "node scripts/benchmark-fetchers.js",
     "smoke:browser": "node scripts/smoke-browser.js",
-    "smoke": "node scripts/smoke.js",
+    "smoke": "node scripts/smoke.js && prisma generate && node scripts/smoke-public-pages.js",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {

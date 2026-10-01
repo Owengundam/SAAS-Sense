@@ -50,10 +50,15 @@ npm run test:coverage
 | --- | --- | --- |
 | `/health` | GET | Liveness and configured provider mode |
 | `/` | GET | Public landing and Shopify install entry |
+| `/privacy` | GET | Public privacy policy; no login or subscription required |
 | `/app` | GET/POST | Shopify-authenticated embedded dashboard and actions |
 | `/webhooks/*` | POST | Verified uninstall, scope, and privacy webhooks |
 
 The production shell uses Shopify's official React Router adapter, managed installation, expiring offline tokens, minimal `read_products` scope, and Prisma session storage. The isolated core harness in `src/server.js` remains only for deterministic testing.
+
+The privacy-policy URL for the Shopify listing is [https://suppliersignal-production.up.railway.app/privacy](https://suppliersignal-production.up.railway.app/privacy). It identifies Haiming Wang as operator and uses owenwhm@gmail.com for support and privacy requests. The notice describes current data flows and deletion behavior, including staff session fields, provider inference, and the absence of automatic age-based expiry. It is separate from the unpublished terms/refund draft. See [PRIVACY_REVIEW.md](PRIVACY_REVIEW.md) for evidence and remaining operational/legal review questions.
+
+After building, `npm run smoke` also renders the public landing and privacy pages with no Shopify session and with billing enabled. It blocks outbound service calls and verifies that the policy remains public even when a Shopify `shop` query parameter is present.
 
 ## Provider modes
 
@@ -226,4 +231,3 @@ The separate `browser` image target installs the Chromium build matching the pin
 - **Deployed:** running at an owner-authorized public or private host.
 
 Current state: the authenticated app is installed on `suppliersignal-test.myshopify.com` and deployed at `https://suppliersignal-production.up.railway.app` with the live Apify provider configured. Unattended scheduling remains disabled, so only owner-triggered checks can spend Apify credit.
-
