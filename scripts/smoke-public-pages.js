@@ -14,6 +14,7 @@ process.env.SHOPIFY_APP_URL = "https://public-page-smoke.example";
 const directory = mkdtempSync(join(tmpdir(), "supplier-public-smoke-"));
 const databasePath = join(directory, "sessions.sqlite");
 process.env.DATABASE_URL = `file:${databasePath}`;
+process.env.SUPPLIER_DATABASE_PATH = join(directory, "supplier.sqlite");
 process.env.PROVIDER = "mock";
 process.env.SCHEDULER_ENABLED = "false";
 process.env.SHOPIFY_APP_PRICING_ENABLED = "true";
@@ -52,10 +53,22 @@ try {
   assert.equal(landing.status, 200);
   const html = await landing.text();
   assert.match(html, /href="\/privacy"/);
+  assert.match(html, /No inventory feed\? Check the supplier page\./);
+  assert.match(html, /authorized public product pages/);
+  assert.match(html, /Automatic monitoring and email alerts are not enabled/);
+  assert.match(html, /Not every site can be read reliably/);
+  assert.match(html, /This is an example, not a live supplier result/);
+  assert.match(html, /\$49/);
+  assert.doesNotMatch(html, /Monitoring cadence confirmed during setup/);
+  const health = await handle(new Request("https://public-page-smoke.example/health"));
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).captureProviderMode, "mock");
   console.log("SupplierSignal public-page smoke checks passed (no login, billing, cookies, or service calls)");
 } finally {
   globalThis.fetch = originalFetch;
   await globalThis.prismaGlobal.$disconnect();
   delete globalThis.prismaGlobal;
+  globalThis.supplierSignalCore?.db.close();
+  delete globalThis.supplierSignalCore;
   rmSync(directory, { recursive: true, force: true });
 }

@@ -14,6 +14,7 @@
 .form button, .cta { border: 0; border-radius: 11px; background: #b7e5c8; color: #0f2116; cursor: pointer; font: inherit; font-weight: 800; padding: 15px 20px; text-decoration: none; }
 .form button:hover, .cta:hover { background: #d1f2dd; }
 .formNote { color: #829287; font-size: 12px; margin: 10px 0 0; }
+.formHelp { color: #aebbb3; font-size: 14px; line-height: 1.6; margin: 18px 0 0; }
 .points { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 32px; color: #8faa98; font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: .07em; }
 .proofCard { background: linear-gradient(155deg, #f9fcfa, #eaf2ed); border: 1px solid #476354; border-radius: 20px; box-shadow: 0 30px 80px rgba(0, 0, 0, .35); color: #17211b; padding: 22px; transform: rotate(1.2deg); }
 .proofHeader, .proofRow { align-items: center; display: flex; justify-content: space-between; gap: 16px; }
