@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { tryAcquireCheckRun } from "../src/check-coordinator.js";
 import type { SupplierSignalService } from "../src/service.js";
 
 type CheckJob = {
+  id: string;
   status: "running" | "finished";
   total: number;
   completed: number;
@@ -39,7 +41,7 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
   if (!release) return false;
   const queue = [...new Set(sourceIds)];
   queues.set(shop, queue);
-  const job: CheckJob = { status: "running", total: queue.length, completed: 0, failed: 0, message: "Checking supplier pages…" };
+  const job: CheckJob = { id: randomUUID(), status: "running", total: queue.length, completed: 0, failed: 0, message: "Checking supplier pages…" };
   jobs.set(shop, job);
 
   // Keep slow supplier requests outside the authenticated App Bridge form response.

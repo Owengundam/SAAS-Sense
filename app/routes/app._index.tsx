@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import { loader, action } from "../watchlist.server";
 import { formatTime, stateClass, stateLabel } from "../watchlist-ui";
+import { getCheckFeedback } from "../check-feedback";
 import { useCheckRefresh } from "../watchlist-hooks";
 import styles from "../styles/dashboard.module.css";
 export { loader, action };
@@ -9,6 +10,7 @@ export { loader, action };
 export default function Watchlist() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const feedback = getCheckFeedback(fetcher.data, data.checkJob, fetcher.state);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const zone = useCheckRefresh(data.checkJob?.status === "running");
@@ -26,7 +28,7 @@ export default function Watchlist() {
     {data.simulated && <p className={`${styles.notice} ${styles.warningNotice}`}>Demo data provider enabled. These are simulated results.</p>}
     {drafts.length > 0 && <details className={styles.resume}><summary>Continue setup · {drafts.length} unfinished {drafts.length === 1 ? "batch" : "batches"}</summary>
       {drafts.map((b: any) => <p key={b.id}><Link to={`/app/add?batch=${b.id}`}>{b.variantCount} products · {formatTime(b.createdAt, zone)}</Link> · {b.readyRows} ready to confirm</p>)}</details>}
-    {fetcher.data?.message && <p role="status" className={`${styles.notice} ${!fetcher.data.ok ? styles.error : ""}`}>{fetcher.data.message}</p>}
+    {feedback && <p role="status" className={`${styles.notice} ${feedback.ok ? "" : styles.error}`}>{feedback.message}</p>}
     {data.sources.length === 0 ? <section className={`${styles.card} ${styles.empty}`}>
       <div className={styles.emptyIcon} aria-hidden="true">↗</div><h2>Keep track of your suppliers</h2>
       <p>Connect a product to its supplier page to track availability changes.</p>
