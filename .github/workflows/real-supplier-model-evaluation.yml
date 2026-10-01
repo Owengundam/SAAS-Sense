@@ -1,22 +1,7 @@
 name: real-supplier-model-evaluation
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/real-supplier-model-evaluation.yml
-      - fixtures/real-supplier-validation-25.json
-      - scripts/evaluate-real-suppliers.js
-      - src/domain.js
-      - src/evidence.js
-      - src/model-benchmark.js
-      - src/providers/direct-http.js
-      - src/providers/create-evidence-reader.js
-      - src/providers/evidence-readers.js
-      - src/providers/jev.js
-      - src/providers/openai-compatible-evidence.js
-      - src/providers/openrouter.js
-      - src/providers/page-content.js
-      - src/providers/siliconflow.js
+  # Paid model evaluation is an explicit operation, never an automatic PR check.
   workflow_dispatch:
     inputs:
       evaluation_mode:
@@ -37,6 +22,7 @@ concurrency:
 
 jobs:
   evaluate:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -50,9 +36,7 @@ jobs:
       REAL_SUPPLIER_FIXTURE: fixtures/real-supplier-validation-25.json
       REAL_SUPPLIER_EVAL_OUTPUT: /tmp/real-supplier-model-evaluation.json
       REAL_SUPPLIER_DATASET_ROLE: development
-      # Pull requests run only the production path (the same upper request bound
-      # as the previous gate). The extra old-vs-new comparison is manual opt-in.
-      REAL_SUPPLIER_EVAL_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.evaluation_mode || 'production' }}
+      REAL_SUPPLIER_EVAL_MODE: ${{ inputs.evaluation_mode }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

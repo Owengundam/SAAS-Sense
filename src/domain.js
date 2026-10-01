@@ -78,6 +78,18 @@ export function evaluateAiObservation(deterministic, providerResult, aiResult) {
     rejectionReason: "Shopify product title conflicts with the supplier page title",
     influencedDecision: true,
   };
+  if (aiResult?.reasonCode === "AI_REQUEST_BUDGET_EXCEEDED") return {
+    observation: {
+      state: STATES.UNCERTAIN,
+      confidence: 0,
+      reason: "AI review skipped: full request exceeds the byte budget",
+      checkedAt: deterministic.checkedAt,
+      factual: false,
+    },
+    accepted: false,
+    rejectionReason: aiResult.error,
+    influencedDecision: true,
+  };
   if (!aiResult?.ok) return {
     observation: deterministic,
     accepted: false,

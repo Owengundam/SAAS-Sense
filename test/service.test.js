@@ -584,3 +584,25 @@ test("source-check quota counts jobs rather than individual cascade provider cal
     db.close();
   }
 });
+
+test("a full AI request budget rejection stays uncertain and preserves captured evidence", async () => {
+  const evidenceReader = { async analyze() { return {
+    ok: false, provider: "openrouter", reasonCode: "AI_REQUEST_BUDGET_EXCEEDED",
+    error: "AI review skipped: full request exceeds the byte budget",
+  }; } };
+  const { db, provider, service } = setup({ evidenceReader });
+  const source = add(service);
+  provider.queue(source.url, [page("budget-1", "Out of stock."), page("budget-2", "Out of stock.")]);
+  for (let index = 0; index < 2; index += 1) {
+    const result = await service.checkSource("a.myshopify.com", source.id);
+    assert.equal(result.observation.state, STATES.UNCERTAIN);
+    assert.equal(result.observation.factual, false);
+    assert.equal(result.source.lastState, null);
+  }
+  const observations = db.listObservations("a.myshopify.com");
+  assert.equal(observations.length, 2);
+  assert.ok(observations.every((observation) => observation.raw_excerpt === "SKU AFL-220. Out of stock."));
+  assert.equal(db.listAlerts("a.myshopify.com").length, 0);
+  assert.ok(db.listDecisionRecords("a.myshopify.com").every((record) => record.ai_status === "FAILED"));
+  db.close();
+});
