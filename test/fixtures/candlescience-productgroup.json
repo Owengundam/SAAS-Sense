@@ -1,0 +1,146 @@
+{
+  "provenance": {
+    "kind": "saved-raw-html-jsonld-excerpt",
+    "capturedAt": "2026-10-01",
+    "sourceUrl": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/",
+    "rawCaptureSha256": "2cc9776009054ad8a9cfde838733ec953e97e6826a0da3279ac5351bace782b8",
+    "scope": "Exact ProductGroup JSON-LD from the saved raw HTML. Does not establish browser visibility or live inventory."
+  },
+  "jsonLd": [
+    {
+      "@context": "http://schema.org/",
+      "@type": "ProductGroup",
+      "productGroupID": 1235,
+      "@id": "product:1235",
+      "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent",
+      "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+      "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/",
+      "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+      "brand": {
+        "@type": "Brand",
+        "name": "CandleScience"
+      },
+      "variesBy": "weight",
+      "hasVariant": [
+        {
+          "@context": "http://schema.org/",
+          "@type": "Product",
+          "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent 1 oz Bottle",
+          "sku": "80550",
+          "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+          "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+          "inProductGroupWithID": 1235,
+          "mpn": "80550",
+          "offers": [
+            {
+              "@type": "Offer",
+              "price": "3.49",
+              "priceCurrency": "USD",
+              "availability": "http://schema.org/InStock",
+              "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/?variant=1-oz-bottle"
+            }
+          ],
+          "additionalType": "HowToSupply"
+        },
+        {
+          "@context": "http://schema.org/",
+          "@type": "Product",
+          "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent 4 oz Bottle",
+          "sku": "80554",
+          "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+          "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+          "inProductGroupWithID": 1235,
+          "mpn": "80554",
+          "offers": [
+            {
+              "@type": "Offer",
+              "price": "12.29",
+              "priceCurrency": "USD",
+              "availability": "http://schema.org/InStock",
+              "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/?variant=4-oz-bottle"
+            }
+          ],
+          "additionalType": "HowToSupply"
+        },
+        {
+          "@context": "http://schema.org/",
+          "@type": "Product",
+          "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent 15 oz Bottle",
+          "sku": "80553",
+          "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+          "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+          "inProductGroupWithID": 1235,
+          "mpn": "80553",
+          "offers": [
+            {
+              "@type": "Offer",
+              "price": "28.85",
+              "priceCurrency": "USD",
+              "availability": "http://schema.org/InStock",
+              "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/?variant=15-oz-bottle"
+            }
+          ],
+          "additionalType": "HowToSupply"
+        },
+        {
+          "@context": "http://schema.org/",
+          "@type": "Product",
+          "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent 5 lb Jug",
+          "sku": "80555",
+          "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+          "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+          "inProductGroupWithID": 1235,
+          "mpn": "80555",
+          "offers": [
+            {
+              "@type": "Offer",
+              "price": "130.96",
+              "priceCurrency": "USD",
+              "availability": "http://schema.org/InStock",
+              "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/?variant=5-lb-jug"
+            }
+          ],
+          "additionalType": "HowToSupply"
+        },
+        {
+          "@context": "http://schema.org/",
+          "@type": "Product",
+          "name": "Sandalwood Fragrance Oil | Candle, Soap, Room Spray, Lotion, Reed Diffuser Approved Scent 25 lb Pail",
+          "sku": "91642",
+          "image": "https://d384u2mq2suvbq.cloudfront.net/public/spree/products/1541/large/Sandalwood-Fragrance-Oil.webp",
+          "description": "Sandalwood Fragrance Oil - Concentrated fragrance oil for candles, soaps, lotions, and more. Bulk ordering with wholesale prices and same-day shipping available.",
+          "inProductGroupWithID": 1235,
+          "mpn": "91642",
+          "offers": [
+            {
+              "@type": "Offer",
+              "price": "589.24",
+              "priceCurrency": "USD",
+              "availability": "http://schema.org/InStock",
+              "url": "https://www.candlescience.com/fragrance/sandalwood-fragrance-oil/?variant=25-lb-pail"
+            }
+          ],
+          "additionalType": "HowToSupply"
+        }
+      ],
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "3.72",
+        "reviewCount": 81
+      },
+      "review": {
+        "@type": "Review",
+        "author": {
+          "@type": "Person",
+          "name": "Whimsical wax & resin"
+        },
+        "datePublished": "2026-02-16",
+        "reviewBody": "THIS IS A FANTASTIC scent!! ESPECIALLY when you combine it with BEACH LINEN!! It has a great CT &amp; HT, AND IS AN EXCELLENT EXAMPLE OF THE SANDALWOOD SCENT!!",
+        "reviewRating": {
+          "@type": "Rating",
+          "ratingValue": 5
+        }
+      }
+    }
+  ]
+}
