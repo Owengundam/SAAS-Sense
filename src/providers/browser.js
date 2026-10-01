@@ -4,7 +4,8 @@ import {
   validatePublicResourceUrl,
   validateSupplierRedirect,
 } from "../source-policy.js";
-import { extractProductPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
+import { captureRenderedPage } from "./rendered-capture.js";
+import { extractProductPage, extractStructuredPage, hasUsefulAvailabilityEvidence } from "./page-content.js";
 
 const DEFAULT_TIMEOUT_MS = 40_000;
 const DEFAULT_CONTENT_WAIT_MS = 5_000;
@@ -197,8 +198,12 @@ export class BrowserProvider {
       await this.waitForRelevantContent(page, source);
       if (securityRejection) throw securityRejection;
       const resolvedUrl = validateSupplierRedirect(source.url, page.url() || source.url, this.supportedDomains).toString();
-      const html = await page.content();
-      const extracted = extractProductPage({ html, url: resolvedUrl, runId });
+      const captured = typeof page.evaluate === "function" ? await page.evaluate(captureRenderedPage) : null;
+      const extracted = captured
+        ? extractStructuredPage({ jsonLd: captured.jsonLd, text: captured.visibleText, title: captured.title,
+          productScopes: captured.productScopes, truncated: captured.truncated, textVisibility: "RENDERED_VISIBLE",
+          url: resolvedUrl, runId, source })
+        : extractProductPage({ html: await page.content(), url: resolvedUrl, runId, source });
       const draft = {
         ok: true,
         runId,

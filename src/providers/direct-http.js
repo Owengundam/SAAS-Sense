@@ -118,7 +118,7 @@ export class DirectHttpProvider {
           return { ok: false, error: `Direct HTTP unsupported content type: ${contentType || "unknown"}`, runId, url: currentUrl };
         }
         const html = await readBoundedBody(response, this.maxBytes);
-        const extracted = extractProductPage({ html, url: currentUrl, runId });
+        const extracted = extractProductPage({ html, url: currentUrl, runId, source });
         const draft = {
           ok: true,
           runId,

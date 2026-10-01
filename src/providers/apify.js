@@ -1,3 +1,7 @@
+import { unresolvedAvailability } from "../availability-safety.js";
+import { randomUUID } from "node:crypto";
+import { extractStructuredPage } from "./page-content.js";
+import { apifyRenderedPageFunction, parseRenderedCapture } from "./rendered-capture.js";
 import { classifyObservation } from "../domain.js";
 
 const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
@@ -262,7 +266,7 @@ function flattenEvidence(value, prefix = "", output = [], depth = 0) {
   return output;
 }
 
-function buildInput(actorId, source) {
+function buildInput(actorId, source, captureToken) {
   if (actorId === CONTENT_CRAWLER_ACTOR_ID) {
     return {
       startUrls: [{ url: source.url }],
@@ -273,6 +277,9 @@ function buildInput(actorId, source) {
       // field we need, so render JavaScript for the bounded fallback capture.
       crawlerType: "playwright:firefox",
       htmlTransformer: "none",
+      pageFunction: apifyRenderedPageFunction(captureToken),
+      clickElementsCssSelector: "",
+      expandIframes: false,
       dynamicContentWaitSecs: 10,
       useSitemaps: false,
       respectRobotsTxtFile: true,
@@ -323,7 +330,8 @@ export class ApifyProvider {
 
   async fetchFromActor(actorId, source) {
     const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=${this.maxTotalChargeUsd}`;
-    const input = buildInput(actorId, source);
+    const captureToken = randomUUID();
+    const input = buildInput(actorId, source, captureToken);
     const controller = new AbortController();
     const timeoutMs = actorId === CONTENT_CRAWLER_ACTOR_ID
       ? this.browserTimeoutMs
@@ -345,7 +353,21 @@ export class ApifyProvider {
       const item = Array.isArray(items) ? items[0] : null;
       if (!item) return { ok: false, error: "Apify returned no dataset item", runId };
       const ecommerce = actorId !== CONTENT_CRAWLER_ACTOR_ID;
-      const sourceUrl = item.url || item.productUrl || item.crawl?.loadedUrl || source.url;
+      const sourceUrl = item.crawl?.loadedUrl || item.url || item.productUrl || source.url;
+      if (!ecommerce) {
+        const captured = parseRenderedCapture(item.text, captureToken, sourceUrl);
+        const extracted = extractStructuredPage({
+          jsonLd: captured?.jsonLd || item.metadata?.jsonLd || [],
+          text: captured?.visibleText ?? item.text ?? item.markdown ?? "",
+          title: captured?.title || item.metadata?.title || "",
+          productScopes: captured?.productScopes || [],
+          truncated: captured?.truncated || false,
+          textVisibility: captured ? "RENDERED_VISIBLE" : "UNVERIFIED_TEXT",
+          url: sourceUrl, runId, source,
+        });
+        return { ok: true, runId, url: sourceUrl, ...extracted,
+          fetchedAt: captured?.capturedAt || item.crawl?.loadedTime || null };
+      }
       const rawPageText = ecommerce ? "" : item.text || item.markdown || "";
       const text = ecommerce ? ecommerceEvidence(item) : rawPageText;
       const availability = ecommerce ? structuredAvailability(item) : { state: null, records: [] };
@@ -372,6 +394,7 @@ export class ApifyProvider {
             ? [{ origin: "PAGE_TEXT", path: null, text: rawPageText, snapshotId: runId, sourceUrl }]
             : [],
         availabilityState,
+        textVisibility: "UNVERIFIED_TEXT",
       };
     } catch (error) {
       return { ok: false, error: error.name === "AbortError" ? "Apify timeout" : error.message, runId: `apify-error-${Date.now()}` };
@@ -406,7 +429,7 @@ export class ApifyProvider {
     const primary = await this.fetchFromActor(this.actorId, source);
     const attempts = [providerAttempt(primary, this.actorId, "primary")];
     const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
-      (!primary.ok || !primary.availabilityState);
+      (!primary.ok || !primary.availabilityState || unresolvedAvailability(primary));
     if (!shouldFallback) return { ...primary, providerAttempts: attempts };
 
     const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
@@ -416,15 +439,17 @@ export class ApifyProvider {
 
     return {
       ...primary,
+      ...fallback,
       runId: `${primary.runId}+${fallback.runId}`,
       url: fallback.url || primary.url,
-      title: primary.title || fallback.title,
-      text: [fallback.text, primary.text].filter(Boolean).join("\n\n"),
+      title: fallback.textVisibility === "RENDERED_VISIBLE" ? fallback.title : primary.title || fallback.title,
+      text: fallback.textVisibility === "RENDERED_VISIBLE" ? fallback.text : [fallback.text, primary.text].filter(Boolean).join("\n\n"),
+      structuredPrimary: primary,
       rawPageText: fallback.rawPageText || fallback.text || "",
       pageSnapshotId: fallback.pageSnapshotId || fallback.runId,
       evidenceRecords: [
         ...(fallback.evidenceRecords || []),
-        ...(primary.evidenceRecords || []),
+        ...(fallback.textVisibility === "RENDERED_VISIBLE" ? [] : primary.evidenceRecords || []),
       ],
       fallbackUsed: true,
       providerAttempts: attempts,

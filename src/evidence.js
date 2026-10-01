@@ -307,6 +307,7 @@ export function buildSharedEvidencePackage(source, providerResult, {
   const totalCandidates = Math.max(bundle.totalCandidates, unique.length);
   return {
     schemaVersion: "supplier-evidence-v2",
+    capture: { visibility: providerResult?.textVisibility || "UNVERIFIED_TEXT", scope: providerResult?.captureScope || null },
     expectedProduct: expectedProduct(source),
     observedPage: {
       title: clean(providerResult?.title) || null,

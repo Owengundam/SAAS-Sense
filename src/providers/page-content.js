@@ -1,3 +1,4 @@
+import { hasUnverifiedPurchaseConflict } from "../availability-safety.js";
 const ENTITY_MAP = Object.freeze({
   amp: "&",
   apos: "'",
@@ -25,12 +26,12 @@ function decodeEntities(value) {
 export function availabilityStateFromValue(value) {
   if (typeof value === "boolean") return value ? "IN_STOCK" : "OUT_OF_STOCK";
   if (typeof value !== "string") return null;
-  const normalized = value.replace(/[^a-z]/gi, "").toLowerCase();
-  if (/discontinued|endoflife/.test(normalized)) return "DISCONTINUED";
-  if (/backorder|backordered/.test(normalized)) return "BACKORDERED";
-  if (/preorder|presale/.test(normalized)) return "PREORDER";
-  if (/outofstock|soldout|unavailable/.test(normalized)) return "OUT_OF_STOCK";
-  if (/instock|limitedavailability/.test(normalized)) return "IN_STOCK";
+  const normalized = value.trim().replace(/^https?:\/\/schema\.org\//i, "").replace(/[ _-]/g, "").toLowerCase();
+  if (["discontinued", "endoflife"].includes(normalized)) return "DISCONTINUED";
+  if (["backorder", "backordered"].includes(normalized)) return "BACKORDERED";
+  if (["preorder", "presale"].includes(normalized)) return "PREORDER";
+  if (["outofstock", "soldout", "unavailable"].includes(normalized)) return "OUT_OF_STOCK";
+  if (["instock", "limitedavailability"].includes(normalized)) return "IN_STOCK";
   return null;
 }
 
@@ -90,7 +91,7 @@ function productRecords(products, snapshotId, sourceUrl) {
     add(`${prefix}.brand`, typeof product.brand === "object" ? product.brand?.name : product.brand);
     const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
     offers.filter(Boolean).slice(0, 20).forEach((offer, offerIndex) => {
-      for (const key of ["availability", "price", "priceCurrency", "sku", "name"]) {
+      for (const key of ["availability", "price", "priceCurrency", "sku", "name", "url"]) {
         add(`${prefix}.offers[${offerIndex}].${key}`, offer[key]);
       }
     });
@@ -98,7 +99,7 @@ function productRecords(products, snapshotId, sourceUrl) {
   return records;
 }
 
-function visibleText(html) {
+function unverifiedHtmlText(html) {
   return decodeEntities(String(html || "")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<(script|style|svg|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
@@ -117,42 +118,79 @@ function titleFromHtml(html) {
   return clean(decodeEntities(match?.[1] || ""));
 }
 
-export function extractProductPage({ html, url, runId }) {
-  const products = parseJsonLd(html);
-  const text = visibleText(html);
-  const evidenceRecords = productRecords(products, runId, url);
-  if (text) {
-    evidenceRecords.unshift({
-      origin: "PAGE_TEXT",
-      path: null,
-      text,
-      snapshotId: runId,
-      sourceUrl: url,
-    });
-  }
-  const states = new Set();
-  for (const product of products) {
-    const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
-    for (const offer of offers.filter(Boolean)) {
-      const state = availabilityStateFromValue(offer.availability ?? offer.inStock ?? offer.available);
-      if (state) states.add(state);
-    }
-  }
-  const visibleStates = availabilityStatesFromText(text);
-  const structuredState = states.size === 1 ? [...states][0] : null;
-  const structuredAvailabilityDeferred = Boolean(structuredState) && hasDeferredAvailabilityText(text);
-  const structuredAvailabilityConflict = Boolean(structuredState) &&
-    [...visibleStates].some((visibleState) => visibleState !== structuredState);
+function productUrl(value, base) {
+  try {
+    const url = new URL(value, base);
+    if (!/^https?:$/.test(url.protocol)) return null;
+    url.hash = "";
+    url.searchParams.delete("variant");
+    for (const key of [...url.searchParams.keys()]) if (/^utm_/i.test(key)) url.searchParams.delete(key);
+    url.searchParams.sort();
+    return `${url.hostname}${url.pathname.replace(/\/$/, "")}${url.search}`;
+  } catch { return null; }
+}
+
+function offerVariant(offer, base) {
+  try { return new URL(offer?.url || "", base).searchParams.get("variant"); } catch { return null; }
+}
+
+export function extractStructuredPage({ jsonLd = [], text = "", title = "", url, runId, source = {},
+  textVisibility = "UNVERIFIED_TEXT", productScopes = [], truncated = false }) {
+  const products = collectProducts(jsonLd);
+  const pageUrl = productUrl(url, url);
+  const matching = products.filter(product => product.url && productUrl(product.url, url) === pageUrl);
+  const scoped = matching.length === 1 ? matching : products.length === 1 && !products[0].url ? products : [];
+  const product = scoped[0];
+  const offers = (Array.isArray(product?.offers) ? product.offers : [product?.offers]).filter(Boolean);
+  const requestedVariant = source.supplierVariantId || offerVariant({ url: source.url || url }, url);
+  const supplierSku = String(source.supplierSku || "").trim();
+  let selected = offers;
+  if (requestedVariant) selected = offers.filter(offer => offerVariant(offer, url) === String(requestedVariant));
+  else if (offers.length > 1 && supplierSku) selected = offers.filter(offer => String(offer.sku || "") === supplierSku);
+  const offer = selected.length === 1 ? selected[0] : null;
+  const wrongOfferUrl = offer?.url && productUrl(offer.url, url) !== pageUrl;
+  const structuredState = !wrongOfferUrl && offer ? availabilityStateFromValue(offer.availability ?? offer.inStock ?? offer.available) : null;
+  const selectedVariant = offerVariant(offer, url);
+  const scopes = productScopes.filter(scope => selectedVariant ? String(scope.variantId) === selectedVariant : productScopes.length === 1);
+  const variantConflict = Boolean(productScopes.length && !scopes.length);
+  const scope = scopes.length ? {
+    text: [...new Set(scopes.map(item => item.text).filter(Boolean))].join("\n"),
+    controls: scopes.flatMap(item => item.controls || []),
+    truncated: scopes.some(item => item.truncated),
+  } : null;
+  const controls = scope?.controls || [];
+  const evidenceText = textVisibility === "RENDERED_VISIBLE" && scope?.text ? scope.text : text;
+  const textStates = availabilityStatesFromText(evidenceText);
+  const enabledPurchase = controls.some(control => /^(?:add\s+to\s+cart|buy\s+it\s+now)$/i.test(control.text) && !control.disabled);
+  const disabledPurchase = controls.some(control => control.disabled || /^(?:sold\s+out|unavailable)$/i.test(control.text));
+  const structuredAvailabilityDeferred = Boolean(structuredState) && hasDeferredAvailabilityText(evidenceText);
+  const structuredAvailabilityConflict = Boolean(structuredState) && (
+    [...textStates].some(state => state !== structuredState) ||
+    (structuredState === "IN_STOCK" && disabledPurchase) ||
+    (structuredState === "OUT_OF_STOCK" && enabledPurchase));
+  const ambiguous = products.length > 0 && (!product || wrongOfferUrl || offers.length > 1 && !offer || requestedVariant && offers.length && !offer);
+  const unresolvedControls = enabledPurchase && disabledPurchase;
+  const unverifiedConflict = textVisibility !== "RENDERED_VISIBLE" && hasUnverifiedPurchaseConflict(evidenceText);
+  const visibleConflict = textVisibility === "RENDERED_VISIBLE" && enabledPurchase && textStates.has("OUT_OF_STOCK");
+  const availabilityBlockedReason = truncated || scope?.truncated || variantConflict || ambiguous || structuredAvailabilityConflict || unresolvedControls || unverifiedConflict || visibleConflict
+    ? "CAPTURE_EVIDENCE_CONFLICT" : null;
+  const evidenceRecords = productRecords(scoped.length ? scoped : products, runId, url);
+  if (evidenceText) evidenceRecords.unshift({ origin: "PAGE_TEXT", path: null, text: evidenceText, snapshotId: runId, sourceUrl: url });
   return {
-    title: products.map((product) => clean(product.name)).find(Boolean) || titleFromHtml(html),
-    text,
-    rawPageText: text,
-    pageSnapshotId: runId,
-    evidenceRecords,
-    availabilityState: structuredAvailabilityConflict || structuredAvailabilityDeferred ? null : structuredState,
-    structuredAvailabilityConflict,
-    structuredAvailabilityDeferred,
+    title: clean(product?.name) || title,
+    text: evidenceText, rawPageText: evidenceText, pageSnapshotId: runId, evidenceRecords,
+    availabilityState: availabilityBlockedReason || structuredAvailabilityDeferred ? null : structuredState,
+    structuredAvailabilityState: structuredState,
+    structuredAvailabilityConflict, structuredAvailabilityDeferred,
+    availabilityBlockedReason, textVisibility,
+    captureScope: { productCount: products.length, matchedProductCount: scoped.length, offerCount: offers.length,
+      matchedOfferCount: selected.length, variantId: selectedVariant || null, productFormScoped: Boolean(scope?.text), controls },
   };
+}
+
+export function extractProductPage({ html, url, runId, source = {} }) {
+  return extractStructuredPage({ jsonLd: parseJsonLd(html), text: unverifiedHtmlText(html),
+    title: titleFromHtml(html), url, runId, source });
 }
 
 function normalized(value) {
