@@ -13,7 +13,7 @@ function meaningfulOptions(variant) {
     .filter((option) => option.value && option.value.toLowerCase() !== "default title");
 }
 
-function optionCompatibility(variant, candidate, _row, pageText = "") {
+export function optionCompatibility(variant, candidate, _row, pageText = "") {
   const options = meaningfulOptions(variant);
   if (!options.length) return { compatible: true, reasons: [] };
 

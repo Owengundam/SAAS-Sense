@@ -1,3 +1,4 @@
+import { manualImportReview, MANUAL_REVIEW_POLICY } from "./onboarding/manual-review.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -236,6 +237,16 @@ export function createDatabase(path = ":memory:") {
     );
     CREATE INDEX IF NOT EXISTS import_rows_batch
       ON import_rows(batch_id, row_index);
+    CREATE TABLE IF NOT EXISTS manual_import_approvals (
+      row_id TEXT PRIMARY KEY REFERENCES import_rows(id) ON DELETE CASCADE,
+      batch_id TEXT NOT NULL REFERENCES import_batches(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      reviewer TEXT NOT NULL,
+      reviewed_at TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS import_attempts (
       operation_id TEXT PRIMARY KEY,
       row_id TEXT NOT NULL REFERENCES import_rows(id) ON DELETE CASCADE,
@@ -977,7 +988,12 @@ export function createDatabase(path = ":memory:") {
           providerAttempts: parseJson(row.provider_attempts, []),
         }));
     },
-    commitImportApprovals(shop, batchId, approvals, { reviewer = "merchant", now = new Date() } = {}) {
+    getManualImportApproval(shop, batchId, rowId) {
+      const row = db.prepare("SELECT * FROM manual_import_approvals WHERE shop=? AND batch_id=? AND row_id=?").get(shop, batchId, rowId);
+      return row ? { sourceId: row.source_id, reviewer: row.reviewer, reviewedAt: row.reviewed_at,
+        snapshotHash: row.snapshot_hash, snapshot: parseJson(row.snapshot_json) } : null;
+    },
+    commitImportApprovals(shop, batchId, approvals, { reviewer = "merchant", now = new Date(), supportedDomains, returnDetails = false } = {}) {
       const timestamp = now.toISOString();
       this.reconcileDuplicateShopifyVariantSources(shop);
       let transactionOpen = false;
@@ -1003,7 +1019,13 @@ export function createDatabase(path = ":memory:") {
             created.push(row.approved_source_id);
             continue;
           }
-          if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
+          let manualReview = null;
+          if (approval.manualReview) {
+            if (approval.manualReview.policy !== MANUAL_REVIEW_POLICY) throw new Error("MANUAL_REVIEW_BLOCKED");
+            manualReview = manualImportReview(mapImportRow(row), this.getImportBatch(shop, batchId).variants, { now, supportedDomains });
+            if (!manualReview.eligible || manualReview.fingerprint !== approval.manualReview.fingerprint ||
+              JSON.stringify(manualReview.source) !== JSON.stringify(approval.source)) throw new Error("IMPORT_REVIEW_STALE");
+          } else if (row.status !== "READY_FOR_REVIEW") throw new Error("IMPORT_ROW_NOT_READY");
           if (Number(row.review_version || 0) !== Number(approval.expectedReviewVersion)) {
             throw new Error("IMPORT_REVIEW_STALE");
           }
@@ -1027,13 +1049,14 @@ export function createDatabase(path = ":memory:") {
           if (pending.some(item => item.approval.source.shopifyVariantId === approval.source.shopifyVariantId)) {
             throw new Error("Select only one supplier match per Shopify variant.");
           }
-          pending.push({ approval, row, existingSourceId: existing?.id || null });
+          pending.push({ approval, row, manualReview, existingSourceId: existing?.id || null });
         }
         const existingSources = db.prepare("SELECT COUNT(*) AS count FROM sources WHERE shop=? AND enabled=1").get(shop).count;
         const newSourceCount = pending.filter((item) => !item.existingSourceId).length;
         if (existingSources + newSourceCount > tenant.source_limit) throw new Error("SOURCE_QUOTA_EXCEEDED");
 
-        for (const { approval, row, existingSourceId } of pending) {
+        const newlyApprovedSourceIds = [];
+        for (const { approval, row, manualReview, existingSourceId } of pending) {
           const sourceId = existingSourceId || randomUUID();
           if (existingSourceId) {
             db.prepare(`UPDATE sources SET
@@ -1089,7 +1112,15 @@ export function createDatabase(path = ":memory:") {
             updated_at=? WHERE shop=? AND batch_id=? AND id=?`).run(
             sourceId, timestamp, reviewer, timestamp, shop, batchId, row.id,
           );
+          if (manualReview) {
+            db.prepare(`INSERT INTO manual_import_approvals
+              (row_id, batch_id, shop, source_id, reviewer, reviewed_at, snapshot_hash, snapshot_json)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+                row.id, batchId, shop, sourceId, reviewer, timestamp, manualReview.fingerprint, JSON.stringify(manualReview.snapshot),
+              );
+          }
           created.push(sourceId);
+          newlyApprovedSourceIds.push(sourceId);
         }
         const unresolved = db.prepare(`SELECT COUNT(*) AS count FROM import_rows
           WHERE shop=? AND batch_id=? AND status NOT IN ('APPROVED','INVALID')`).get(shop, batchId).count;
@@ -1097,7 +1128,7 @@ export function createDatabase(path = ":memory:") {
           .run(unresolved ? "REVIEW" : "APPROVED", timestamp, shop, batchId);
         db.exec("COMMIT");
         transactionOpen = false;
-        return created;
+        return returnDetails ? { sourceIds: created, newlyApprovedSourceIds } : created;
       } catch (error) {
         if (transactionOpen) db.exec("ROLLBACK");
         throw error;

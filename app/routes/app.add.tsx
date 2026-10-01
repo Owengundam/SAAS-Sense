@@ -115,9 +115,19 @@ export default function AddProducts() {
 
 function ReviewRow({ row, batch, sources, busy }: any) {
   const fetcher = useFetcher<typeof action>();
+  const navigate = useNavigate();
+  const [confirmedIdentity, setConfirmedIdentity] = useState<string | null>(null);
+  useEffect(() => {
+    if (fetcher.data?.ok && "manualSourceId" in fetcher.data && fetcher.data.manualSourceId) {
+      navigate(`/app/products/${encodeURIComponent(fetcher.data.manualSourceId)}`);
+    }
+  }, [fetcher.data, navigate]);
   const candidate = row.extractedMetadata?.candidates?.find((c: any) => c.key === row.suggestedCandidateKey);
   const variant = batch.variants.find((v: any) => v.shopifyVariantId === (row.suggestedVariantId || row.shopifyVariantIdHint));
   const existing = sources.find((s: any) => s.shopifyVariantId === row.suggestedVariantId);
+  // A changed snapshot or replacement target requires a fresh explicit review.
+  const confirmationIdentity = JSON.stringify([row.id, row.reviewVersion, row.manualReview?.fingerprint, existing?.id, existing?.url]);
+  const manualConfirmed = confirmedIdentity === confirmationIdentity;
   const ready = row.status === "READY_FOR_REVIEW";
   const approved = row.status === "APPROVED";
   return <section className={`${styles.card} ${styles.reviewCard}`}>
@@ -125,6 +135,26 @@ function ReviewRow({ row, batch, sources, busy }: any) {
       <div><span className={styles.muted}>Supplier product</span><h3>{candidate?.title || row.extractedMetadata?.pageTitle || "Not identified yet"}</h3>{candidate?.optionValues?.map((o: string) => <span className={styles.muted} key={o}>{o}</span>)}{row.url && <a href={row.canonicalUrl || row.url} target="_blank" rel="noreferrer">Open supplier page ↗</a>}</div></div>
     <p><span className={`${styles.state} ${approved || ready ? styles.good : styles.warn}`}>{approved ? "Connected" : onboardingStatusLabel(row.status)}</span></p>
     {!approved && <p>{row.matchReason || (row.status === "BLOCKED" ? "We couldn't read this page. Retry or use another link." : row.status === "INVALID" ? "Check the supplier link and product selection below." : row.error || "Checking supplier details…")}</p>}
+    {row.status === "NEEDS_REVIEW" && row.manualReview && !row.manualReview.eligible && <p className={styles.muted}>{row.manualReview.reason}</p>}
+    {row.manualReview?.eligible && <section aria-label="Review this connection manually">
+      <h3>Confirm this one connection</h3>
+      <p>We couldn't verify a shared supplier identifier. Compare the product and variant above with the supplier page before connecting them. This confirms the connection, not stock availability.</p>
+      <p className={styles.muted}>Supplier identifier: {row.primaryIdentifier || "Not provided"} · Evidence captured {row.manualReview.capturedAt}</p>
+      {existing && <p className={styles.warningNotice}>This replaces the existing connection to {existing.url}. Its confirmed availability will reset.</p>}
+      <fetcher.Form method="post" className={styles.form}>
+        <input type="hidden" name="intent" value="approve-manual-import-row" />
+        <input type="hidden" name="batchId" value={batch.id} />
+        <input type="hidden" name="rowId" value={row.id} />
+        <input type="hidden" name="reviewVersion" value={row.reviewVersion} />
+        <input type="hidden" name="variantId" value={row.manualReview.variantId} />
+        <input type="hidden" name="candidateKey" value={row.manualReview.candidateKey} />
+        <input type="hidden" name="reviewFingerprint" value={row.manualReview.fingerprint} />
+        {existing && <><input type="hidden" name="replaceSourceId" value={existing.id} /><input type="hidden" name="replaceSourceUrl" value={existing.url} /></>}
+        <label className={styles.confirm}><input type="checkbox" required name="manualConfirmation" value="same-product-and-variant-v1" checked={manualConfirmed} onChange={event => setConfirmedIdentity(event.target.checked ? confirmationIdentity : null)} />I reviewed the supplier page and confirm this is the exact Shopify product and variant I buy{existing ? ", replacing the current supplier connection" : ""}.</label>
+        <button className={styles.button} disabled={busy || fetcher.state !== "idle" || !manualConfirmed}>Confirm this connection and check availability</button>
+      </fetcher.Form>
+      {fetcher.data?.message && <p role={fetcher.data.ok ? "status" : "alert"}>{fetcher.data.message}</p>}
+    </section>}
     {ready && <label className={styles.confirm}><input type="checkbox" name="approval" form="approve-products" value={JSON.stringify({ rowId: row.id, expectedReviewVersion: row.reviewVersion, replaceSourceId: existing?.id, replaceSourceUrl: existing?.url })} />{existing ? `Replace the existing supplier connection (${new URL(existing.url).hostname}) with this product. Its current availability will reset.` : "This is the product and variant I buy."}</label>}
     {!approved && !["PROCESSING", "DISCOVERING", "DISCOVERY_PENDING"].includes(row.status) && <details className={styles.resolve} open={!ready && !["DRAFT"].includes(row.status)}><summary>{ready ? "Change link or product details" : "Resolve this product"}</summary>
       <fetcher.Form method="post" className={styles.form}>
