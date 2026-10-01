@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useLoaderData, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { loader, action } from "../watchlist.server";
 import { onboardingStatusLabel } from "../watchlist-ui";
 import { useCheckRefresh } from "../watchlist-hooks";
 import { parseCsv } from "../../src/onboarding/csv.js";
+import { applyProductSelection, hasLegacyProductSelection, productPickerOptions, restoreProductDraft, type ProductChoice } from "../product-selection";
 import styles from "../styles/dashboard.module.css";
 export { loader, action };
 
-type Choice = { id: string; label: string; image?: string };
 export default function AddProducts() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
@@ -16,7 +16,9 @@ export default function AddProducts() {
   const shopify = useAppBridge();
   const batch = data.latestImportBatch;
   const [step, setStep] = useState(1);
-  const [products, setProducts] = useState<Choice[]>([]);
+  const [products, setProducts] = useState<ProductChoice[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const pickerRequest = useRef(0);
   const [input, setInput] = useState("");
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [csvFields, setCsvFields] = useState<string[]>([]);
@@ -31,7 +33,7 @@ export default function AddProducts() {
   // Keep a pre-submission draft across refreshes and billing navigation. Server batches
   // become the source of truth as soon as Check links is submitted.
   useEffect(() => {
-    try { const saved = JSON.parse(sessionStorage.getItem(draftKey) || "null"); if (saved) { setProducts(saved.products || []); setInput(saved.input || ""); setKind(saved.kind || "urls"); setStep(saved.step || 1); } } catch { /* Storage may be unavailable. */ }
+    try { const saved = restoreProductDraft(JSON.parse(sessionStorage.getItem(draftKey) || "null")); setProducts(saved.products); setInput(saved.input); setKind(saved.kind); setStep(saved.step); } catch { /* Storage may be unavailable. */ }
     setRestored(true);
   }, [draftKey]);
   useEffect(() => { if (restored && !batch) { try { sessionStorage.setItem(draftKey, JSON.stringify({ products, input, kind, step })); } catch { /* Optional client draft storage. */ } } }, [restored, batch, products, input, kind, step, draftKey]);
@@ -47,14 +49,18 @@ export default function AddProducts() {
       if (batch && batch.rows.every((r: any) => r.status === "APPROVED")) navigate("/app");
     }
   }, [fetcher.data, navigate, batch, draftKey]);
+  useEffect(() => () => { pickerRequest.current += 1; }, []);
   const choose = async () => {
+    if (choosing || busy) return;
+    const request = ++pickerRequest.current;
+    setChoosing(true);
     try {
-      const selected = await shopify.resourcePicker({ type: "variant", action: "select", multiple: 25, selectionIds: products.map(p => ({ id: p.id })) });
-      if (!selected?.length) return;
-      if (selected.length > 25) { setError("Choose up to 25 variants at a time."); return; }
-      setProducts(selected.map((v: any) => ({ id: v.id, label: v.product?.title ? `${v.product.title}${v.title && v.title !== "Default Title" ? ` · ${v.title}` : ""}` : v.displayName || v.title, image: v.image?.originalSrc })));
+      const selected = await shopify.resourcePicker(productPickerOptions(products));
+      if (request !== pickerRequest.current) return;
+      setProducts(applyProductSelection(products, selected));
       setError("");
-    } catch { setError("Couldn't open Shopify products. Try again."); }
+    } catch (error) { if (request === pickerRequest.current) setError(error instanceof Error ? error.message : "Couldn't open Shopify products. Try again."); }
+    finally { if (request === pickerRequest.current) setChoosing(false); }
   };
   useEffect(() => {
     if (!csvRows.length) return;
@@ -70,10 +76,12 @@ export default function AddProducts() {
     {error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{error}</p>}
     {fetcher.data?.message && !(fetcher.data.ok && "batchId" in fetcher.data && batch) && <p role={fetcher.data.ok ? "status" : "alert"} className={`${styles.notice} ${fetcher.data.ok ? "" : styles.error}`}>{fetcher.data.message}</p>}
     {!batch && step === 1 && <section className={styles.card}>
-      <h2>Which products do you want to track?</h2><p>Start with one, or choose up to 25 variants.</p>
+      <h2>Which products do you want to track?</h2><p>Choose products and their exact variants. Up to 25 variants total.</p>
+      {hasLegacyProductSelection(products) && <p className={styles.formHelp}>Your earlier draft is kept below. It cannot be preselected in the updated picker; confirming a new selection replaces it. Cancel keeps this draft.</p>}
       {products.map(p => <div className={styles.selection} key={p.id}>{p.image && <img src={p.image} alt="" />}<strong>{p.label}</strong></div>)}
-      <div className={styles.toolbar}><button className={`${styles.button} ${products.length ? styles.secondary : ""}`} onClick={choose}>{products.length ? "Change selection" : "Choose products"}</button>
-        {products.length > 0 && <button className={styles.button} onClick={() => setStep(2)}>Continue</button>}</div>
+      <div className={styles.toolbar}><button className={`${styles.button} ${products.length ? styles.secondary : ""}`} onClick={choose} disabled={choosing || busy || !restored}>{choosing ? "Choosing products…" : products.length ? "Change selection" : "Choose products"}</button>
+        {products.length > 0 && <button className={styles.button} disabled={choosing || busy} onClick={() => setStep(2)}>Continue</button>}</div>
+      <p className={styles.formHelp}>Choosing products does not run a supplier check. You can go back or leave and return to this draft.</p>
     </section>}
     {!batch && step === 2 && <section className={styles.card}>
       <h2>{discovery ? "Find products on your supplier's website" : products.length === 1 ? "Add its supplier page" : "Add supplier links"}</h2>

@@ -3,10 +3,10 @@ import { Form, redirect } from "react-router";
 import styles from "./styles.module.css";
 
 export const meta: MetaFunction = () => [
-  { title: "SupplierSignal — Supplier availability monitoring for Shopify" },
+  { title: "SupplierSignal — Supplier page checks when there's no inventory feed" },
   {
     name: "description",
-    content: "Monitor authorized supplier product pages, verify availability changes with evidence, and keep uncertain results out of your stock decisions.",
+    content: "No usable supplier inventory feed? Check authorized public product pages on demand, review product matches and availability evidence, and keep Shopify inventory under your control.",
   },
 ];
 
@@ -30,9 +30,10 @@ export default function Landing() {
 
       <section className={styles.hero} id="top">
         <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>Read-only monitoring for Shopify retailers</span>
-          <h1>Catch supplier stock changes before they become customer problems.</h1>
-          <p className={styles.lede}>SupplierSignal checks the supplier pages behind your catalog, verifies the exact product, and shows the evidence behind every result. It never edits your inventory.</p>
+          <span className={styles.eyebrow}>On-demand supplier checks for Shopify</span>
+          <h1>No inventory feed? Check the supplier page.</h1>
+          <p className={styles.lede}>When your supplier has no usable inventory feed, SupplierSignal helps you check authorized public product pages. Connect the exact product and variant, run a check, and review the availability evidence and last-confirmed time before deciding what to sell.</p>
+          <p className={styles.formHelp}>You choose when to check. Automatic monitoring and email alerts are not enabled. Your Shopify inventory is never changed.</p>
           <Form method="post" action="/auth/login" className={styles.form}>
             <label className={styles.srOnly} htmlFor="shop-domain">Your Shopify store domain</label>
             <input id="shop-domain" name="shop" placeholder="your-store.myshopify.com" autoComplete="url" required />
@@ -44,39 +45,40 @@ export default function Landing() {
           </div>
         </div>
         <div className={styles.proofCard} aria-label="Example SupplierSignal result">
-          <div className={styles.proofHeader}><span>Supplier watchlist</span><span className={styles.liveDot}>Verified</span></div>
+          <div className={styles.proofHeader}><span>Example watchlist result</span><span className={styles.liveDot}>Illustration</span></div>
           <div className={styles.proofRow}>
             <div><strong>Arc pendant · BR-4821</strong><small>Supplier page checked 8:42 AM</small></div>
             <span className={styles.statusWarn}>Backordered</span>
           </div>
           <blockquote>“Backorder: Usually ships in 10–20 days”</blockquote>
-          <div className={styles.safetyLine}>Two consistent observations required before a change alert.</div>
+          <div className={styles.safetyLine}>Review the source evidence and check time. This is an example, not a live supplier result.</div>
         </div>
       </section>
 
       <section className={styles.problem}>
-        <p>Built for home, lighting, furniture, and design retailers whose suppliers publish availability on public product pages—but not in a reliable feed.</p>
+        <p>Built for retailers who otherwise revisit supplier pages one by one. A usable supplier feed is still the better source of inventory data; SupplierSignal helps when you have permission to check a public product page instead.</p>
       </section>
 
       <section className={styles.section} id="how-it-works">
         <span className={styles.eyebrow}>How it works</span>
-        <h2>From supplier URL to defensible answer.</h2>
+        <h2>From supplier link to evidence you can review.</h2>
         <div className={styles.steps}>
-          <article><span>01</span><h3>Add the exact page</h3><p>Paste an authorized supplier product URL and identify the SKU or model you sell.</p></article>
-          <article><span>02</span><h3>We verify the evidence</h3><p>SupplierSignal checks product identity and availability language, preserving the source excerpt.</p></article>
-          <article><span>03</span><h3>Review real changes</h3><p>Ambiguous or failed checks stay uncertain. Confirmed changes are separated from extraction failures.</p></article>
+          <article><span>01</span><h3>Connect the exact product</h3><p>Choose a Shopify product and variant, then paste the supplier product link you are authorized to check. Review the proposed match before connecting.</p></article>
+          <article><span>02</span><h3>Run an on-demand check</h3><p>Start a check from your watchlist. SupplierSignal reads the page and records product identity, availability evidence, and the check time.</p></article>
+          <article><span>03</span><h3>Decide with the evidence</h3><p>Open the supplier link and inspect the result. Unclear or failed checks cannot confirm availability; the last confirmed result stays distinct from the latest attempt.</p></article>
         </div>
       </section>
 
       <section className={styles.safetySection}>
         <div>
-          <span className={styles.eyebrow}>Confidence before automation</span>
-          <h2>A failed check is not an out-of-stock alert.</h2>
+          <span className={styles.eyebrow}>Know what a page check can tell you</span>
+          <h2>A failed check is not an out-of-stock result.</h2>
         </div>
         <ul>
           <li>No automatic edits to products, prices, or inventory.</li>
           <li>Preorder, backorder, discontinued, and lead-time results remain distinct.</li>
           <li>Unclear pages go to review instead of becoming stock facts.</li>
+          <li>Compatibility depends on the supplier page and variant evidence. Not every site can be read reliably; validate your sources before relying on results.</li>
         </ul>
       </section>
 
@@ -90,7 +92,7 @@ export default function Landing() {
         <ul>
           <li>25 supplier product links</li>
           <li>1,500 source-check jobs per calendar month (UTC), including failed jobs, confirmations, and repeat checks</li>
-          <li>Monitoring cadence confirmed during setup, after source validation</li>
+          <li>Manual, on-demand checks. Automatic monitoring and email alerts are not enabled.</li>
           <li>Evidence and uncertainty queue</li>
           <li>One assisted setup of up to 30 minutes</li>
           <li>Standard email support; no recurring concierge, SLA, or custom integrations</li>

@@ -13,7 +13,7 @@ test("new-merchant landing offer is $49 USD with bounded setup and honest readin
   assert.match(landing, /including failed jobs, confirmations, and repeat checks/);
   assert.match(landing, /One assisted setup of up to 30 minutes/);
   assert.match(landing, /Standard email support; no recurring concierge, SLA, or custom integrations/);
-  assert.match(landing, /Monitoring cadence confirmed during setup, after source validation/);
+  assert.match(landing, /Manual, on-demand checks\. Automatic monitoring and email alerts are not enabled\./);
   assert.match(landing, /No usage overage charges/);
   assert.match(landing, /Confirm the plan and price in Shopify before approving/);
   assert.match(landing, /Existing \$19 founding commitments keep their promised first six months/);

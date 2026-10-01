@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { captureProviderMode } from "./health-status.js";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,7 +62,7 @@ export function createAppServer(overrides = {}) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-      if (url.pathname === "/health") return json(response, 200, { ok: true, provider: process.env.PROVIDER || "mock" });
+      if (url.pathname === "/health") return json(response, 200, { ok: true, provider: captureProviderMode(process.env.PROVIDER) });
 
       if (url.pathname === "/webhooks/shopify" && request.method === "POST") {
         const rawBody = await readBody(request);
