@@ -380,3 +380,14 @@ test("unrestricted suppliers use the pinned direct connection and managed fallba
   assert.deepEqual(provider.providers.map((item) => item.providerName), ["direct-http", "apify"]);
   assert.equal(provider.providers[0].fetchImpl, undefined);
 });
+
+test("Apify charge configuration reaches both direct and cascade factory paths", () => {
+  const env = { APIFY_API_TOKEN: "token", APIFY_MAX_TOTAL_CHARGE_USD: "0.2" };
+  const direct = createPageProvider({ ...env, PROVIDER: "apify" });
+  assert.equal(direct.maxTotalChargeUsd, 0.2);
+  const cascade = createPageProvider({ ...env, PROVIDER: "cascade" });
+  assert.equal(cascade.providers.at(-1).maxTotalChargeUsd, 0.2);
+  for (const PROVIDER of ["apify", "cascade"]) {
+    assert.throws(() => createPageProvider({ ...env, PROVIDER, APIFY_MAX_TOTAL_CHARGE_USD: "2" }), /APIFY_MAX_TOTAL_CHARGE_USD/);
+  }
+});

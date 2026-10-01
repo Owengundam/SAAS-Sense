@@ -117,6 +117,7 @@ export class OpenAiCompatibleEvidenceReader {
     timeoutMs = 10_000,
     maxAttempts = 1,
     maxEvidenceChars = 12_000,
+    maxRequestBytes = null,
     promptVersion,
     evidenceFormat = "shared-v2",
     requestOptions = {},
@@ -133,6 +134,10 @@ export class OpenAiCompatibleEvidenceReader {
     this.timeoutMs = timeoutMs;
     this.maxAttempts = Math.max(1, Math.floor(maxAttempts));
     this.maxEvidenceChars = maxEvidenceChars;
+    if (maxRequestBytes !== null && (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes <= 0)) {
+      throw new Error("INVALID_AI_REQUEST_BYTE_LIMIT");
+    }
+    this.maxRequestBytes = maxRequestBytes;
     this.evidenceFormat = evidenceFormat;
     this.promptVersion = promptVersion || (evidenceFormat === "legacy-prefix"
       ? "availability-evidence-v1"
@@ -197,6 +202,15 @@ export class OpenAiCompatibleEvidenceReader {
         },
       ],
     });
+    // Check the exact wire body, including both messages, schema, identity,
+    // provenance, escaping and multibyte UTF-8. Never clip a span to make it fit:
+    // that could remove an unavailable/conflicting statement.
+    if (this.maxRequestBytes !== null && Buffer.byteLength(requestBody, "utf8") > this.maxRequestBytes) return {
+      ok: false,
+      reasonCode: "AI_REQUEST_BUDGET_EXCEEDED",
+      error: "AI review skipped: full request exceeds the byte budget",
+      ...this.metadata(),
+    };
     const attemptTimeoutMs = Math.max(1, Math.floor(this.timeoutMs / this.maxAttempts));
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       const controller = new AbortController();

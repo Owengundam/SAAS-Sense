@@ -4,6 +4,15 @@ const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
 const CONTENT_CRAWLER_ACTOR_ID = "apify~website-content-crawler";
 const DEFAULT_ACTOR_TIMEOUT_MS = 70_000;
 const DEFAULT_BROWSER_ACTOR_TIMEOUT_MS = 120_000;
+const MAX_RUN_CHARGE_USD = 1;
+
+function boundedRunCharge(value) {
+  const parsed = typeof value === "string" && value.trim() ? Number(value) : value;
+  if (typeof parsed !== "number" || !Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_RUN_CHARGE_USD) {
+    throw new Error("APIFY_MAX_TOTAL_CHARGE_USD must be greater than 0 and at most 1");
+  }
+  return parsed;
+}
 
 function firstText(...values) {
   return values.find((value) => typeof value === "string" && value.trim())?.trim() || "";
@@ -301,6 +310,7 @@ export class ApifyProvider {
     fetchImpl = fetch,
     timeoutMs = DEFAULT_ACTOR_TIMEOUT_MS,
     browserTimeoutMs = DEFAULT_BROWSER_ACTOR_TIMEOUT_MS,
+    maxTotalChargeUsd = MAX_RUN_CHARGE_USD,
   } = {}) {
     this.token = token;
     this.actorId = actorId;
@@ -308,10 +318,11 @@ export class ApifyProvider {
     this.timeoutMs = timeoutMs;
     this.browserTimeoutMs = browserTimeoutMs;
     this.providerName = "apify";
+    this.maxTotalChargeUsd = boundedRunCharge(maxTotalChargeUsd);
   }
 
   async fetchFromActor(actorId, source) {
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=1`;
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=${this.maxTotalChargeUsd}`;
     const input = buildInput(actorId, source);
     const controller = new AbortController();
     const timeoutMs = actorId === CONTENT_CRAWLER_ACTOR_ID

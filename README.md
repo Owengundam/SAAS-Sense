@@ -95,9 +95,10 @@ Set these only through a secure secret configuration interface:
 PROVIDER=apify
 APIFY_API_TOKEN=...
 APIFY_ACTOR_ID=apify~e-commerce-scraping-tool
+APIFY_MAX_TOTAL_CHARGE_USD=1
 ```
 
-The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run has Apify's minimum supported $1 maximum-charge guard and remains restricted to one URL. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly.
+The primary adapter requests one structured product detail, including additional product properties, with reviews and Apify AI summarization disabled. Each run sends `maxTotalChargeUsd=1` and remains restricted to one URL. `APIFY_MAX_TOTAL_CHARGE_USD` may lower this cap, but must be finite, positive and at most 1; invalid values reject configuration. The current E-commerce Actor has a $1 minimum permitted run-cap setting, not a $1 minimum actual charge (its [public pricing metadata](https://api.apify.com/v2/acts/apify~e-commerce-scraping-tool), checked 2026-10-01), so a lower cap may be rejected. SupplierSignal never increases a rejected cap or retries without it. When that Actor returns no structured availability, SupplierSignal automatically makes a second, single-page request with `apify~website-content-crawler` and combines its visible page text with the structured evidence. Pages that already return structured stock data stay on the one-run path. You can still set `APIFY_ACTOR_ID=apify~website-content-crawler` to use the generic crawler directly.
 
 Use `npm run benchmark:fetchers -- --live` to compare fresh direct HTTP, self-hosted Chromium, the full cascade, and optionally Apify against up to 50 labeled cases. The harness repeats each case three times by default and reports capture success, environment failures, usable evidence, score status, an explicit accuracy numerator/denominator, median/p95 successful-capture latency, escalation attempts, and Apify cost when the run API exposes it. Accuracy is `null` when no usable capture contains current label evidence; provider or DNS failures are never scored as model errors. Configure the fixture, methods, repetitions, and output through `FETCH_BENCHMARK_FIXTURE`, `FETCH_BENCHMARK_METHODS`, `FETCH_BENCHMARK_RUNS`, and `FETCH_BENCHMARK_OUTPUT`.
 
@@ -122,6 +123,18 @@ SILICONFLOW_API_KEY=...
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 SILICONFLOW_ENDPOINT=https://api.siliconflow.com/v1/chat/completions
 ```
+
+### Controlled live-test cost limits
+
+OpenRouter requests have a hard 16,384-byte limit on the **complete serialized UTF-8 request body**, including the system prompt, response schema, expected identity, evidence, provenance and JSON escaping. The existing 12,000-character evidence selection is only a soft preparation target. A full-body overflow makes no model request, keeps the captured evidence intact, and records an uncertain observation rather than accepting a partial fact.
+
+Every OpenRouter attempt sets `provider.max_price` to `$0.60/M` prompt tokens, `$2.40/M` completion tokens and `$0` fixed request charges. [OpenRouter's routing contract](https://openrouter.ai/docs/guides/routing/provider-selection#max-price) excludes endpoints above these rates; no eligible endpoint means a failed request. Internal provider fallback is disabled. Reasoning is disabled, completion output stays capped at 350 tokens, and only one timeout retry is allowed. Both attempts use the identical byte/rate/output limits; a local timeout is **not** assumed to cancel provider billing. These controls may reduce availability.
+
+For a supervised two-source-check test with `AI_READER_MODE=deepseek`, the application can make at most four Apify runs and four OpenRouter attempts. At the default Apify cap, reserve $4 for requested Actor charges. A conservative DeepSeek planning allowance of one input token per wire byte plus 1,024 template tokens gives `4 × ((16,384 + 1,024) × 0.60 + 350 × 2.40) / 1,000,000 = $0.04514` for inference. Reserve **$4.10** total before the test, confirm adequate remaining monthly allowance and provider balances first, verify no concurrent scheduler/import work, and stop after the two checks. This input-token calculation is a planning allowance, not a provider-enforced dollar ledger or an exact tokenizer measurement.
+
+Apify's [run API](https://docs.apify.com/api/v2/actors-runs-post) accepts a total charge cap, but its [next-version ChargingManager documentation](https://docs.apify.com/sdk/js/reference/next/class/ChargingManager) describes possible one-item overcharge before termination; this is a caution from the development SDK, not a verified behavior of these hosted Actors. Account limits remain the backstop; a Free account without a payment method or top-up must be verified before relying on zero cash spend. Do not claim the per-run setting alone guarantees an absolute total bill. Do not enable unattended scheduling based on this two-check reserve: the 1,500/5,000 job quotas do not enforce a monthly dollar budget.
+
+The paid `real-supplier-model-evaluation` workflow is manual-only; ordinary pull requests continue to run offline unit/fixture, type, build and smoke CI. Dispatching that workflow is separate from the two-check test and needs its own cost plan. JEV/TypeSafe and SiliconFlow are outside this OpenRouter cost bound; explicitly use `AI_READER_MODE=deepseek` with the existing OpenRouter credential for the controlled test.
 
 ### TypeSafe JEV — implemented behind evaluation modes; live verification pending
 

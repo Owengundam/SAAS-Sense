@@ -19,7 +19,12 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
     return new MockProvider({ fixturePath: resolve(root, "fixtures", "mock-pages.json") });
   }
   if (mode === "apify") {
-    return new ApifyProvider({ token: env.APIFY_API_TOKEN, actorId: env.APIFY_ACTOR_ID, fetchImpl: fetchImpl || fetch });
+    return new ApifyProvider({
+      token: env.APIFY_API_TOKEN,
+      actorId: env.APIFY_ACTOR_ID,
+      maxTotalChargeUsd: env.APIFY_MAX_TOTAL_CHARGE_USD,
+      fetchImpl: fetchImpl || fetch,
+    });
   }
 
   const direct = new DirectHttpProvider({
@@ -49,6 +54,7 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
     providers.push(new ApifyProvider({
       token: env.APIFY_API_TOKEN,
       actorId: env.APIFY_ACTOR_ID,
+      maxTotalChargeUsd: env.APIFY_MAX_TOTAL_CHARGE_USD,
       fetchImpl: fetchImpl || fetch,
     }));
   }

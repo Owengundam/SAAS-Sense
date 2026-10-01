@@ -479,3 +479,24 @@ test("nested variant stock is not normalized into root product availability", as
   assert.equal(result.availabilityState, null);
   assert.equal(classifyObservation({ matchTerms: ["A-1"] }, result).factual, false);
 });
+
+for (const value of [0, -1, 1.01, Infinity, NaN, "", " ", "abc", "0.2oops", null, true]) {
+  test(`Apify rejects invalid or excessive run charge ${String(value)}`, () => {
+    assert.throws(() => new ApifyProvider({ token: "token", maxTotalChargeUsd: value }), /APIFY_MAX_TOTAL_CHARGE_USD/);
+  });
+}
+
+test("Apify preserves a lower configured cap on primary and fallback even after rejection", async () => {
+  const urls = [];
+  const provider = new ApifyProvider({
+    token: "token", maxTotalChargeUsd: "0.20",
+    fetchImpl: async (url) => {
+      urls.push(url);
+      return new Response("Actor minimum charge exceeds requested cap", { status: 400 });
+    },
+  });
+  const result = await provider.fetchPage(source);
+  assert.equal(result.ok, false);
+  assert.equal(urls.length, 2);
+  assert.ok(urls.every((url) => new URL(url).searchParams.get("maxTotalChargeUsd") === "0.2"));
+});
