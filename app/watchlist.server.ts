@@ -5,6 +5,7 @@ import { requirePaidPlan } from "./billing-gate.server";
 import { verifyShopifyVariants } from "./catalog.server";
 import { stageImportBatch } from "../src/onboarding/import-service.js";
 import { stageSupplierConnectionBatch } from "../src/onboarding/supplier-connectors.js";
+import { scheduledChecksEnabledForShop } from "../src/scheduled-checks.js";
 import { getCheckJob, startCheckJob } from "./check-jobs.server";
 import { getImportJob, startImportJob } from "./import-jobs.server";
 import { getSupplierDiscoveryJob, startSupplierDiscoveryJob } from "./supplier-discovery-jobs.server";
@@ -26,7 +27,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     importJob: latestImportBatch ? getImportJob(session.shop, latestImportBatch.id) : null,
     supplierDiscoveryJob: latestImportBatch ? getSupplierDiscoveryJob(session.shop, latestImportBatch.id) : null,
     supplierConnections: service.db.listSupplierConnections(session.shop),
-    schedulerEnabled: process.env.SCHEDULER_ENABLED === "true",
+    schedulerEnabled: scheduledChecksEnabledForShop(session.shop),
     pricingEnabled: process.env.SHOPIFY_APP_PRICING_ENABLED === "true",
   };
 };
@@ -210,4 +211,5 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: false, message: messages[message] || message };
   }
 };
+
 

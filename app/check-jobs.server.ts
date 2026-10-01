@@ -1,3 +1,4 @@
+import { tryAcquireCheckRun } from "../src/check-coordinator.js";
 import type { SupplierSignalService } from "../src/service.js";
 
 type CheckJob = {
@@ -34,6 +35,8 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
     return true;
   }
   if (!sourceIds.length) return false;
+  const release = tryAcquireCheckRun(shop);
+  if (!release) return false;
   const queue = [...new Set(sourceIds)];
   queues.set(shop, queue);
   const job: CheckJob = { status: "running", total: queue.length, completed: 0, failed: 0, message: "Checking supplier pages…" };
@@ -41,16 +44,20 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
 
   // Keep slow supplier requests outside the authenticated App Bridge form response.
   void (async () => {
-    while (queue.length) {
-      const sourceId = queue.shift()!;
-      try {
-        await service.checkSource(shop, sourceId);
-      } catch (error) {
-        job.failed += 1;
-        console.error("Supplier check failed", error);
-      } finally {
-        job.completed += 1;
+    try {
+      while (queue.length) {
+        const sourceId = queue.shift()!;
+        try {
+          await service.checkSource(shop, sourceId);
+        } catch (error) {
+          job.failed += 1;
+          console.error("Supplier check failed", error);
+        } finally {
+          job.completed += 1;
+        }
       }
+    } finally {
+      release();
     }
     queues.delete(shop);
     job.status = "finished";
@@ -60,3 +67,4 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
   })();
   return true;
 }
+
