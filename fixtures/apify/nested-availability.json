@@ -1,0 +1,50 @@
+[
+  {
+    "name": "additionalDetails availability from saved snowboard response",
+    "note": "Minimal fixture reproducing the field shape observed in saved run 2oHNLfKMI8xUKjbrr; identity, URL and price are synthetic; saved output had one offers object and no variants.",
+    "runId": "saved-snowboard-shape",
+    "item": {
+      "url": "https://supplier.test/snowboard",
+      "name": "The Complete Snowboard",
+      "sku": "SNOW-1",
+      "additionalDetails": {
+        "availability": "OutOfStock"
+      },
+      "offers": {
+        "price": 100
+      }
+    },
+    "expectedState": "OUT_OF_STOCK",
+    "expectedPath": "additionalDetails.availability",
+    "expectedValue": "OutOfStock"
+  },
+  {
+    "name": "extraProperties availability from saved book response",
+    "note": "Minimal fixture reproducing the field shape observed in saved run b1WdXnbLJxV0qLBHd; identity, URL and price are synthetic; saved output had one offers object and no variants.",
+    "runId": "saved-book-shape",
+    "item": {
+      "url": "https://supplier.test/book",
+      "name": "A Light in the Attic",
+      "sku": "BOOK-1",
+      "additionalProperties": {
+        "extraProperties": [
+          {
+            "name": "Product Type",
+            "value": "Books"
+          },
+          {
+            "name": "availability",
+            "value": "In stock (22 available)"
+          }
+        ]
+      },
+      "offers": {
+        "price": 10,
+        "priceCurrency": "GBP"
+      }
+    },
+    "expectedState": "IN_STOCK",
+    "expectedPath": "additionalProperties.extraProperties[1].value",
+    "expectedValue": "In stock (22 available)"
+  }
+]

@@ -279,7 +279,7 @@ test("monthly check quota is enforced", async () => {
 });
 
 test("parallel requests cannot overspend an atomically reserved quota", async () => {
-  const { db, provider, service } = setup({ checkLimit: 1 });
+  const { db, provider, service, clock } = setup({ checkLimit: 1 });
   const source = add(service);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -291,7 +291,7 @@ test("parallel requests cannot overspend an atomically reserved quota", async ()
   const first = service.checkSource("a.myshopify.com", source.id);
   await Promise.resolve();
   await assert.rejects(service.checkSource("a.myshopify.com", source.id), /CHECK_QUOTA_EXCEEDED/);
-  assert.equal(db.countChecksThisMonth("a.myshopify.com"), 1);
+  assert.equal(db.countChecksThisMonth("a.myshopify.com", clock.value), 1);
   release();
   await first;
   assert.equal(db.listUsageLedger("a.myshopify.com")[0].status, "COMPLETED");
