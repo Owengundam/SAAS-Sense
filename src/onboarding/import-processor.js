@@ -6,6 +6,7 @@ import {
   extractSupplierMetadata,
   hasSufficientProductMetadata,
 } from "./supplier-metadata.js";
+import { manualImportReview, variantIdentity, MANUAL_REVIEW_POLICY } from "./manual-review.js";
 import { suggestImportMapping } from "./match-candidates.js";
 
 function clean(value) {
@@ -184,6 +185,44 @@ export class ImportProcessor {
     const samePage = url === row.url && row.extractedMetadata;
     const suggestion = samePage ? suggestImportMapping(revised, batch.variants, row.extractedMetadata) : null;
     return this.db.reviseImportRow(shop, batchId, rowId, changes.expectedReviewVersion, revised, suggestion, this.now());
+  }
+
+  manualReview(row, variants) {
+    const review = manualImportReview(row, variants, { now: this.now(), supportedDomains: this.supportedDomains });
+    // Only the server retains the approval snapshot/source construction.
+    const { snapshot: _snapshot, source: _source, ...display } = review;
+    return display;
+  }
+
+  approveManualRow(shop, batchId, selection, currentVariant, reviewer = "merchant") {
+    if (selection.confirmed !== true) throw new Error("MANUAL_CONFIRMATION_REQUIRED");
+    const batch = this.db.getImportBatch(shop, batchId);
+    const row = batch?.rows.find(item => item.id === selection.rowId);
+    if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+    const expectedVersion = row.status === "APPROVED" ? row.approvedReviewVersion : row.reviewVersion;
+    if (Number(expectedVersion) !== Number(selection.expectedReviewVersion)) throw new Error("IMPORT_REVIEW_STALE");
+    if (row.status === "APPROVED") {
+      const prior = this.db.getManualImportApproval(shop, batchId, row.id);
+      if (!prior || prior.snapshotHash !== selection.fingerprint ||
+        prior.snapshot.variant.shopifyVariantId !== selection.variantId ||
+        prior.snapshot.candidateKey !== selection.candidateKey) throw new Error("IMPORT_REVIEW_STALE");
+      return { sourceId: row.approvedSourceId, sourceIds: [], approved: 0, alreadyApproved: true };
+    }
+    const review = manualImportReview(row, batch.variants, { now: this.now(), supportedDomains: this.supportedDomains });
+    if (!review.eligible) throw new Error("MANUAL_REVIEW_BLOCKED");
+    if (review.fingerprint !== selection.fingerprint || review.variantId !== selection.variantId ||
+      review.candidateKey !== selection.candidateKey) throw new Error("IMPORT_REVIEW_STALE");
+    if (!currentVariant || JSON.stringify(variantIdentity(currentVariant)) !== JSON.stringify(review.snapshot.variant)) {
+      throw new Error("SHOPIFY_VARIANT_CHANGED");
+    }
+    const result = this.db.commitImportApprovals(shop, batchId, [{
+      rowId: row.id, expectedReviewVersion: row.reviewVersion,
+      replaceSourceId: selection.replaceSourceId || null, replaceSourceUrl: selection.replaceSourceUrl || null,
+      source: review.source,
+      manualReview: { policy: MANUAL_REVIEW_POLICY, fingerprint: review.fingerprint },
+    }], { reviewer, now: this.now(), supportedDomains: this.supportedDomains, returnDetails: true });
+    return { sourceId: result.sourceIds[0], sourceIds: result.newlyApprovedSourceIds,
+      approved: result.newlyApprovedSourceIds.length, alreadyApproved: !result.newlyApprovedSourceIds.length };
   }
 
   approveRows(shop, batchId, selections, reviewer = "merchant") {

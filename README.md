@@ -60,6 +60,14 @@ The privacy-policy URL for the Shopify listing is [https://suppliersignal-produc
 
 After building, `npm run smoke` also renders the public landing and privacy pages with no Shopify session and with billing enabled. It blocks outbound service calls and verifies that the policy remains public even when a Shopify `shop` query parameter is present.
 
+## Explicit review when a supplier has no shared identifier
+
+Title-only evidence never becomes eligible for automatic bulk approval. A separate, per-row **Confirm this connection** control is available only when the saved capture has exactly one supplier candidate, the selected Shopify product title matches, the safe submitted/canonical/evidence URLs agree, and there are no conflicting identifiers or unverified variant options. A known store-name suffix in a page title may be ignored for comparison; a different product or variant may not. Captures older than 24 hours require an explicit new check instead of reuse.
+
+The reviewer sees Shopify and supplier identities side by side, opens the supplier page, and explicitly confirms the exact product/variant. The server rechecks current Shopify identity and the saved review version/fingerprint, then atomically records the mapping and an immutable approval snapshot with the authenticated reviewer/session identity. Real supplier identifiers remain null if absent; the captured supplier title is stored as a match term, never invented as an SKU. Approval confirms the connection only: availability remains unknown until a normal evidence-backed check completes.
+
+Manual review reuses saved metadata without another scrape. One newly approved mapping queues one initial availability check. Duplicate/replayed approval returns the recorded connection and does not queue another baseline. Existing source-limit, tenant, replacement-confirmation and safety gates remain in force. The automatic strong-identifier bulk-approval path is unchanged.
+
 ## Provider modes
 
 ### Mock — tested

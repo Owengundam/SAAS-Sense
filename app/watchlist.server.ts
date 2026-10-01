@@ -5,6 +5,7 @@ import { requirePaidPlan } from "./billing-gate.server";
 import { verifyShopifyVariants } from "./catalog.server";
 import { stageImportBatch } from "../src/onboarding/import-service.js";
 import { stageSupplierConnectionBatch } from "../src/onboarding/supplier-connectors.js";
+import { MANUAL_REVIEW_CONFIRMATION } from "../src/onboarding/manual-review.js";
 import { scheduledChecksEnabledForShop } from "../src/scheduled-checks.js";
 import { getCheckJob, startCheckJob } from "./check-jobs.server";
 import { getImportJob, startImportJob } from "./import-jobs.server";
@@ -13,7 +14,7 @@ import { getSupplierDiscoveryJob, startSupplierDiscoveryJob } from "./supplier-d
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   ensureTenant(session.shop);
-  const { service } = getSupplierSignal();
+  const { service, importProcessor } = getSupplierSignal();
   const importBatches = service.db.listImportBatches(session.shop, 100);
   const batchId = new URL(request.url).searchParams.get("batch");
   const latestImportBatch = batchId ? service.db.getImportBatch(session.shop, batchId) : null;
@@ -23,7 +24,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop: session.shop,
     checkJob: getCheckJob(session.shop),
     importBatches,
-    latestImportBatch,
+    latestImportBatch: latestImportBatch ? {
+      ...latestImportBatch,
+      rows: latestImportBatch.rows.map((row: any) => ({
+        ...row,
+        manualReview: importProcessor.manualReview(row, latestImportBatch.variants),
+      })),
+    } : null,
     importJob: latestImportBatch ? getImportJob(session.shop, latestImportBatch.id) : null,
     supplierDiscoveryJob: latestImportBatch ? getSupplierDiscoveryJob(session.shop, latestImportBatch.id) : null,
     supplierConnections: service.db.listSupplierConnections(session.shop),
@@ -143,6 +150,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       startImportJob(session.shop, batchId, importProcessor);
       return { ok: true, message: "Updated. Checking the product match again." };
     }
+    if (intent === "approve-manual-import-row") {
+      const batchId = String(form.get("batchId") || "");
+      const selection = {
+        rowId: String(form.get("rowId") || ""),
+        expectedReviewVersion: Number(form.get("reviewVersion")),
+        variantId: String(form.get("variantId") || ""),
+        candidateKey: String(form.get("candidateKey") || ""),
+        fingerprint: String(form.get("reviewFingerprint") || ""),
+        confirmed: form.get("manualConfirmation") === MANUAL_REVIEW_CONFIRMATION,
+        replaceSourceId: String(form.get("replaceSourceId") || "") || null,
+        replaceSourceUrl: String(form.get("replaceSourceUrl") || "") || null,
+      };
+      if (!selection.confirmed) throw new Error("MANUAL_CONFIRMATION_REQUIRED");
+      const batch = service.db.getImportBatch(session.shop, batchId);
+      const row = batch?.rows.find((item: any) => item.id === selection.rowId);
+      if (!row || !batch.variants.some((item: any) => item.shopifyVariantId === selection.variantId)) {
+        throw new Error("IMPORT_ROW_NOT_FOUND");
+      }
+      const currentVariant = row.status === "APPROVED" ? null
+        : (await verifyShopifyVariants(admin, [selection.variantId]))[0];
+      const approved = importProcessor.approveManualRow(session.shop, batchId, selection, currentVariant,
+        String((session as any).id || session.shop));
+      // Replaying an already recorded confirmation must not spend another check.
+      const baselineStarted = approved.sourceIds.length
+        ? startCheckJob(session.shop, approved.sourceIds, service, true) : false;
+      return { ok: true, manualSourceId: approved.sourceId,
+        message: approved.alreadyApproved ? "This reviewed connection was already saved."
+          : `Reviewed connection saved. ${baselineStarted ? "The first availability check is queued." : "Availability is unknown until its first check."}` };
+    }
     if (intent === "approve-import-rows") {
       const batchId = String(form.get("batchId") || "");
       const selections = form.getAll("approval").map((value) => {
@@ -207,6 +243,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: false, message: "Automatic supplier search currently supports Lighting Supply only. For another supplier, use its exact product URL instead." };
     }
     const messages: Record<string, string> = {
+      MANUAL_CONFIRMATION_REQUIRED: "Review both products and confirm the exact product and variant before connecting.",
+      MANUAL_REVIEW_BLOCKED: "This evidence cannot be manually confirmed. Resolve the product, variant or supplier-page conflict first.",
+      SHOPIFY_VARIANT_CHANGED: "The Shopify product or variant changed since this review was prepared. Start a new setup with its current details.",
       SELECT_IMPORT_ROWS: "Select at least one matching product before confirming.",
       IMPORT_REVIEW_STALE: "This match changed while you were reviewing it. Refresh and review it again.",
       IMPORT_ROW_NOT_READY: "This product still needs matching details. Resolve it before confirming.",
