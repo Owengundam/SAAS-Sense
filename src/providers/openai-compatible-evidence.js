@@ -114,6 +114,7 @@ export class OpenAiCompatibleEvidenceReader {
     providerName,
     apiKeyName,
     fetchImpl = fetch,
+    requestBudget = null,
     timeoutMs = 10_000,
     maxAttempts = 1,
     maxEvidenceChars = 12_000,
@@ -131,6 +132,7 @@ export class OpenAiCompatibleEvidenceReader {
     this.providerName = providerName;
     this.apiKeyName = apiKeyName;
     this.fetchImpl = fetchImpl;
+    this.requestBudget = requestBudget;
     this.timeoutMs = timeoutMs;
     this.maxAttempts = Math.max(1, Math.floor(maxAttempts));
     this.maxEvidenceChars = maxEvidenceChars;
@@ -213,9 +215,13 @@ export class OpenAiCompatibleEvidenceReader {
     };
     const attemptTimeoutMs = Math.max(1, Math.floor(this.timeoutMs / this.maxAttempts));
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), attemptTimeoutMs);
+      let reservation = null;
+      let timeout = null;
       try {
+        reservation = await this.requestBudget?.beforeAttempt({ endpoint: this.endpoint, body: JSON.parse(requestBody), attempt });
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), attemptTimeoutMs);
+        if (reservation) this.requestBudget.dispatched(reservation);
         const response = await this.fetchImpl(this.endpoint, {
           method: "POST",
           headers: {
@@ -231,6 +237,7 @@ export class OpenAiCompatibleEvidenceReader {
           .map((header) => response.headers.get(header))
           .find(Boolean) || null;
         if (!response.ok) {
+          this.requestBudget?.failed?.(reservation, `HTTP_${response.status}`);
           const detail = compact(await response.text(), 300);
           return {
             ok: false,
@@ -240,13 +247,16 @@ export class OpenAiCompatibleEvidenceReader {
         }
 
         const payload = await response.json();
+        const cost = reservation ? await this.requestBudget.response(reservation, payload) : null;
         const content = payload?.choices?.[0]?.message?.content;
         const usage = payload?.usage ? {
           inputTokens: Number.isInteger(payload.usage.prompt_tokens) ? payload.usage.prompt_tokens : null,
           outputTokens: Number.isInteger(payload.usage.completion_tokens) ? payload.usage.completion_tokens : null,
+          ...(cost ? { costUsd: cost.costUsd } : {}),
         } : null;
         const metadata = this.metadata({
           traceId,
+          ...(cost ? { generationId: cost.generationId, budgetAttemptId: reservation.id } : {}),
           model: payload?.model || this.model,
           returnedModel: payload?.model || null,
           usage,
@@ -275,6 +285,7 @@ export class OpenAiCompatibleEvidenceReader {
           reason: compact(parsed.reason, 300),
         };
       } catch (error) {
+        this.requestBudget?.failed?.(reservation, error.name === "AbortError" ? "CLIENT_TIMEOUT" : "REQUEST_OR_ACCOUNTING_FAILED");
         if (error.name === "AbortError" && attempt < this.maxAttempts) continue;
         return {
           ok: false,

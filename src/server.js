@@ -1,3 +1,4 @@
+import { createRuntimeProviderBudget } from "./provider-budget-runtime.js";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
@@ -17,8 +18,9 @@ const databasePath = process.env.DATABASE_PATH || join(root, "data", "supplier-s
 const db = createDatabase(databasePath);
 if (demoMode) seedDemo(db);
 
-const provider = createPageProvider(process.env, { root });
-const evidenceReader = createEvidenceReader(process.env);
+const budget = createRuntimeProviderBudget(process.env, db);
+const provider = createPageProvider(process.env, { root, budget });
+const evidenceReader = createEvidenceReader(process.env, { budget });
 const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS
   ?.split(",")
   .map((domain) => domain.trim())

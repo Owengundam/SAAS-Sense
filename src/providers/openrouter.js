@@ -1,3 +1,4 @@
+import { OpenRouterBudgetPolicy } from "./budget-policies.js";
 import { OpenAiCompatibleEvidenceReader } from "./openai-compatible-evidence.js";
 
 const DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
@@ -12,6 +13,7 @@ export class OpenRouterEvidenceReader extends OpenAiCompatibleEvidenceReader {
     model = DEFAULT_MODEL,
     endpoint = DEFAULT_ENDPOINT,
     fetchImpl = fetch,
+    budget = null,
     timeoutMs = 10_000,
     maxEvidenceChars = 12_000,
     promptVersion,
@@ -24,6 +26,7 @@ export class OpenRouterEvidenceReader extends OpenAiCompatibleEvidenceReader {
       model,
       endpoint,
       fetchImpl,
+      requestBudget: budget ? new OpenRouterBudgetPolicy({ budget, token, fetchImpl, now: budget.now, attestation: () => budget.proofs?.openrouter || null }) : null,
       timeoutMs,
       maxAttempts: 2,
       maxEvidenceChars,

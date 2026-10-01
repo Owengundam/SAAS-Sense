@@ -1,3 +1,4 @@
+import { ApifyBudgetPolicy } from "./budget-policies.js";
 import { unresolvedAvailability } from "../availability-safety.js";
 import { randomUUID } from "node:crypto";
 import { extractStructuredPage } from "./page-content.js";
@@ -315,18 +316,23 @@ export class ApifyProvider {
     token,
     actorId = ECOMMERCE_ACTOR_ID,
     fetchImpl = fetch,
+    budget = null,
     timeoutMs = DEFAULT_ACTOR_TIMEOUT_MS,
     browserTimeoutMs = DEFAULT_BROWSER_ACTOR_TIMEOUT_MS,
     maxTotalChargeUsd = MAX_RUN_CHARGE_USD,
   } = {}) {
     this.token = token;
     this.actorId = actorId;
-    this.fetchImpl = fetchImpl;
+    this.budgetPolicy = budget ? new ApifyBudgetPolicy({ budget, token, fetchImpl, now: budget.now,
+      attestation: () => budget.proofs?.apify || null }) : null;
+    this.fetchImpl = this.budgetPolicy ? this.budgetPolicy.fetchSyncAdapter.bind(this.budgetPolicy) : fetchImpl;
     this.timeoutMs = timeoutMs;
     this.browserTimeoutMs = browserTimeoutMs;
     this.providerName = "apify";
     this.maxTotalChargeUsd = boundedRunCharge(maxTotalChargeUsd);
   }
+
+  async preflightBudget() { if (this.budgetPolicy) await this.budgetPolicy.preflight(); }
 
   async fetchFromActor(actorId, source) {
     const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=${this.maxTotalChargeUsd}`;
@@ -397,7 +403,9 @@ export class ApifyProvider {
         textVisibility: "UNVERIFIED_TEXT",
       };
     } catch (error) {
-      return { ok: false, error: error.name === "AbortError" ? "Apify timeout" : error.message, runId: `apify-error-${Date.now()}` };
+      return { ok: false, error: error.name === "AbortError" ? "Apify timeout" : error.message,
+        ...(error.code === "PROVIDER_BUDGET_UNAVAILABLE" ? { budgetBlocked: true, terminal: true, budgetReasonCode: error.reasonCode } : {}),
+        runId: `apify-error-${Date.now()}` };
     } finally {
       clearTimeout(timeout);
     }
@@ -428,7 +436,7 @@ export class ApifyProvider {
 
     const primary = await this.fetchFromActor(this.actorId, source);
     const attempts = [providerAttempt(primary, this.actorId, "primary")];
-    const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
+    const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID && !primary.terminal &&
       (!primary.ok || !primary.availabilityState || unresolvedAvailability(primary));
     if (!shouldFallback) return { ...primary, providerAttempts: attempts };
 

@@ -36,3 +36,13 @@ test("newly confirmed products queue their first check behind an active run", as
   assert.equal(getCheckJob(shop).status, "finished");
   assert.equal(getCheckJob(shop).completed, 2);
 });
+
+test("budget admission denial gives merchants an explicit pause message without suggesting repeated retries", async () => {
+  const shop = "budget-paused.myshopify.com";
+  const service = { checkSource: async () => { throw Object.assign(new Error("service budget pause"), { code: "PROVIDER_BUDGET_UNAVAILABLE" }); } };
+  assert.equal(startCheckJob(shop, ["source"], service), true);
+  await new Promise(resolve => setImmediate(resolve));
+  const job = getCheckJob(shop);
+  assert.equal(job.status, "finished"); assert.equal(job.failed, 1); assert.equal(job.budgetBlocked, 1);
+  assert.match(job.message, /did not use your allowance/); assert.match(job.message, /repeated retries will not resolve/);
+});

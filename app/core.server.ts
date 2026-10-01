@@ -1,3 +1,4 @@
+import { createRuntimeProviderBudget } from "../src/provider-budget-runtime.js";
 import { join, resolve } from "node:path";
 import { createDatabase } from "../src/db.js";
 import { createPageProvider } from "../src/providers/create-page-provider.js";
@@ -33,8 +34,9 @@ function createCore(): Core {
     if (count) console.warn(`SupplierSignal revoked ${count} conflicting product status(es) for ${tenant.shop}`);
   }
   const liveProvider = String(process.env.PROVIDER || "mock").toLowerCase() !== "mock";
-  const provider = createPageProvider(process.env, { root: resolve(process.cwd()) });
-  const evidenceReader = createEvidenceReader(process.env);
+  const budget = createRuntimeProviderBudget(process.env, db);
+  const provider = createPageProvider(process.env, { root: resolve(process.cwd()), budget });
+  const evidenceReader = createEvidenceReader(process.env, { budget });
   const configuredGlobalLimit = Number.parseInt(process.env.GLOBAL_MONTHLY_CHECK_LIMIT || "5000", 10);
   const configuredImportLimit = Number.parseInt(process.env.IMPORT_MONTHLY_DISCOVERY_LIMIT || "50", 10);
   const supportedDomains = process.env.SUPPORTED_SUPPLIER_DOMAINS

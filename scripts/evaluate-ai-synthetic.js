@@ -1,9 +1,11 @@
+import { rejectUnmeteredPaidEvaluation } from "../src/provider-budget-errors.js";
 // Explicit opt-in: invokes paid TypeSafe and configured DeepSeek-provider calls. It never accesses the app database.
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { classifyObservation, evaluateAiObservation, STATES } from "../src/domain.js";
 import { createFallbackEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { JevEvidenceReader } from "../src/providers/jev.js";
 
+rejectUnmeteredPaidEvaluation();
 if (!process.argv.includes("--live")) throw new Error("Pass --live to authorize paid model evaluation");
 const jevToken = process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY;
 const deepseek = createFallbackEvidenceReader(process.env, { timeoutMs: 30_000 });

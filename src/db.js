@@ -498,7 +498,7 @@ export function createDatabase(path = ":memory:") {
     },
     countChecksThisMonth(shop, now = new Date()) {
       const month = now.toISOString().slice(0, 7);
-      return db.prepare("SELECT COUNT(*) AS count FROM usage_ledger WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL")
+      return db.prepare("SELECT COUNT(*) AS count FROM usage_ledger WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL AND status != 'NOT_RUN'")
         .get(shop, month).count;
     },
     reserveCheckUsage(shop, sourceId, now = new Date(), operationId = randomUUID(), globalMonthlyLimit = null) {
@@ -511,11 +511,11 @@ export function createDatabase(path = ":memory:") {
         if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
         const month = reservedAt.slice(0, 7);
         const usage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
-          WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL`).get(shop, month).count;
+          WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL AND status != 'NOT_RUN'`).get(shop, month).count;
         if (usage >= tenant.monthly_check_limit) throw new Error("CHECK_QUOTA_EXCEEDED");
         if (Number.isInteger(globalMonthlyLimit) && globalMonthlyLimit >= 0) {
           const globalUsage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
-            WHERE substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL`).get(month).count;
+            WHERE substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL AND status != 'NOT_RUN'`).get(month).count;
           if (globalUsage >= globalMonthlyLimit) throw new Error("GLOBAL_CHECK_BUDGET_EXCEEDED");
         }
         db.prepare(`INSERT INTO usage_ledger
@@ -528,6 +528,21 @@ export function createDatabase(path = ":memory:") {
         if (transactionOpen) db.exec("ROLLBACK");
         throw error;
       }
+    },
+    markUndispatchedBudgetCheck(shop, operationId, now = new Date()) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const financialTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='provider_budget_attempts'").get();
+        if (!financialTable || db.prepare(`SELECT id FROM provider_budget_attempts WHERE operation_id=?
+          AND state IN ('DISPATCHED','UNKNOWN','SETTLED','OPENING_HOLD')`).get(operationId)) throw new Error("BUDGET_USAGE_CORRECTION_UNVERIFIED");
+        if (db.prepare("SELECT id FROM provider_attempts WHERE operation_id=?").get(operationId)) throw new Error("BUDGET_USAGE_CORRECTION_UNVERIFIED");
+        const changed = db.prepare(`UPDATE usage_ledger SET status='NOT_RUN',outcome='BUDGET_ADMISSION_DENIED',completed_at=?
+          WHERE shop=? AND operation_id=? AND status='RESERVED'`).run(now.toISOString(), shop, operationId).changes;
+        if (changed !== 1) throw new Error("BUDGET_USAGE_CORRECTION_UNVERIFIED");
+        db.prepare("INSERT INTO provider_budget_events(attempt_id,event,details,created_at) VALUES (?, 'CHECK_NOT_DISPATCHED', '{}', ?)")
+          .run(operationId, now.toISOString());
+        db.exec("COMMIT");
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
     },
     completeCheckUsage(shop, operationId, { status = "COMPLETED", outcome = null, providerRunId = null, completedAt = new Date() } = {}) {
       return db.prepare(`UPDATE usage_ledger

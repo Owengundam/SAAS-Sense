@@ -1,3 +1,4 @@
+import { rejectUnmeteredPaidEvaluation } from "../src/provider-budget-errors.js";
 // Explicit opt-in: accesses live supplier pages and may invoke paid Apify runs.
 // It never reads or writes the application database.
 import { readFile, writeFile } from "node:fs/promises";
@@ -18,6 +19,7 @@ const outputPath = resolve(process.env.FETCH_BENCHMARK_OUTPUT || "/tmp/supplier-
 const repetitions = Math.max(1, Math.min(10, Number.parseInt(process.env.FETCH_BENCHMARK_RUNS || "3", 10)));
 const requestedMethods = new Set(String(process.env.FETCH_BENCHMARK_METHODS || "direct,browser,cascade")
   .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));
+if (process.env.APIFY_API_TOKEN && [...requestedMethods].some(method => ["apify", "cascade"].includes(method))) rejectUnmeteredPaidEvaluation();
 const cases = JSON.parse(await readFile(pathToFileURL(fixturePath), "utf8"));
 if (!Array.isArray(cases) || !cases.length) throw new Error("FETCH_BENCHMARK_CASES_REQUIRED");
 if (cases.length > 50) throw new Error("FETCH_BENCHMARK_CASE_LIMIT_EXCEEDED");

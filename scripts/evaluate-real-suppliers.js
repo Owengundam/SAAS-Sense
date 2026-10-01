@@ -1,3 +1,4 @@
+import { rejectUnmeteredPaidEvaluation } from "../src/provider-budget-errors.js";
 // Explicit opt-in: invokes paid TypeSafe and configured DeepSeek-provider calls.
 // The production evaluation executes the real sequential cascade with the same
 // reader timeouts used by the app. Optional parallel comparison runs legacy and
@@ -16,6 +17,7 @@ import { CascadingEvidenceReader } from "../src/providers/evidence-readers.js";
 import { JevEvidenceReader } from "../src/providers/jev.js";
 import { hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
 
+rejectUnmeteredPaidEvaluation();
 if (!process.argv.includes("--live")) throw new Error("Pass --live to authorize paid model evaluation");
 const jevToken = process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY;
 const productionDeepseek = createFallbackEvidenceReader(process.env);
