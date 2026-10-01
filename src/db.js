@@ -1,3 +1,4 @@
+import { hasUnverifiedPurchaseConflict, UNRESOLVED_AVAILABILITY_REASON } from "./availability-safety.js";
 import { manualImportReview, MANUAL_REVIEW_POLICY } from "./onboarding/manual-review.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -123,7 +124,8 @@ export function createDatabase(path = ":memory:") {
       reserved_at TEXT NOT NULL,
       completed_at TEXT,
       outcome TEXT,
-      provider_run_id TEXT
+      provider_run_id TEXT,
+      superseded_by_operation_id TEXT
     );
     CREATE INDEX IF NOT EXISTS usage_ledger_shop_reserved_at
       ON usage_ledger(shop, reserved_at);
@@ -307,6 +309,9 @@ export function createDatabase(path = ":memory:") {
   if (!sourceColumns.has("supplier_variant_id")) db.exec("ALTER TABLE sources ADD COLUMN supplier_variant_id TEXT");
   if (!sourceColumns.has("supplier_sku")) db.exec("ALTER TABLE sources ADD COLUMN supplier_sku TEXT");
   if (!sourceColumns.has("match_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN match_confirmed_at TEXT");
+  if (!sourceColumns.has("availability_hold_reason")) db.exec("ALTER TABLE sources ADD COLUMN availability_hold_reason TEXT");
+  const usageColumns = new Set(db.prepare("PRAGMA table_info(usage_ledger)").all().map(column => column.name));
+  if (!usageColumns.has("superseded_by_operation_id")) db.exec("ALTER TABLE usage_ledger ADD COLUMN superseded_by_operation_id TEXT");
   const decisionColumns = new Set(db.prepare("PRAGMA table_info(decision_records)").all().map((column) => column.name));
   if (!decisionColumns.has("ai_provider")) db.exec("ALTER TABLE decision_records ADD COLUMN ai_provider TEXT");
   if (!decisionColumns.has("reader_mode")) db.exec("ALTER TABLE decision_records ADD COLUMN reader_mode TEXT");
@@ -353,11 +358,27 @@ export function createDatabase(path = ":memory:") {
     UPDATE sources
       SET last_confirmed_at = last_checked_at
       WHERE last_confirmed_at IS NULL AND last_state IS NOT NULL AND last_checked_at IS NOT NULL;
+    UPDATE usage_ledger AS synthetic SET superseded_by_operation_id = (
+      SELECT actual.operation_id FROM observations o
+      JOIN decision_records d ON d.observation_id=o.id AND d.shop=o.shop
+      JOIN usage_ledger actual ON actual.operation_id=d.operation_id AND actual.shop=o.shop
+        AND actual.source_id=o.source_id AND actual.provider_run_id=o.provider_run_id
+      WHERE synthetic.operation_id='legacy-observation-' || o.id
+        AND synthetic.shop=o.shop AND actual.operation_id NOT LIKE 'legacy-observation-%'
+      LIMIT 1
+    ) WHERE synthetic.superseded_by_operation_id IS NULL AND synthetic.operation_id LIKE 'legacy-observation-%'
+      AND EXISTS (
+        SELECT 1 FROM observations o JOIN decision_records d ON d.observation_id=o.id AND d.shop=o.shop
+        JOIN usage_ledger actual ON actual.operation_id=d.operation_id AND actual.shop=o.shop
+          AND actual.source_id=o.source_id AND actual.provider_run_id=o.provider_run_id
+        WHERE synthetic.operation_id='legacy-observation-' || o.id AND synthetic.shop=o.shop
+          AND actual.operation_id NOT LIKE 'legacy-observation-%'
+      );
     INSERT OR IGNORE INTO usage_ledger
       (operation_id, shop, source_id, status, reserved_at, completed_at, outcome, provider_run_id)
-      SELECT 'legacy-observation-' || id, shop, source_id, 'COMPLETED', checked_at, checked_at,
-        state, provider_run_id
-      FROM observations;
+      SELECT 'legacy-observation-' || o.id, o.shop, o.source_id, 'COMPLETED', o.checked_at, o.checked_at,
+        o.state, o.provider_run_id FROM observations o
+      WHERE NOT EXISTS (SELECT 1 FROM decision_records d WHERE d.observation_id=o.id AND d.shop=o.shop);
   `);
 
   const parseJson = (value, fallback = null) => {
@@ -410,6 +431,7 @@ export function createDatabase(path = ":memory:") {
     supplierVariantId: row.supplier_variant_id,
     supplierSku: row.supplier_sku,
     matchConfirmedAt: row.match_confirmed_at,
+    availabilityHoldReason: row.availability_hold_reason,
     url: row.url,
     matchTerms: row.match_terms,
     inStockTerms: row.in_stock_terms,
@@ -476,7 +498,7 @@ export function createDatabase(path = ":memory:") {
     },
     countChecksThisMonth(shop, now = new Date()) {
       const month = now.toISOString().slice(0, 7);
-      return db.prepare("SELECT COUNT(*) AS count FROM usage_ledger WHERE shop = ? AND substr(reserved_at, 1, 7) = ?")
+      return db.prepare("SELECT COUNT(*) AS count FROM usage_ledger WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL")
         .get(shop, month).count;
     },
     reserveCheckUsage(shop, sourceId, now = new Date(), operationId = randomUUID(), globalMonthlyLimit = null) {
@@ -489,11 +511,11 @@ export function createDatabase(path = ":memory:") {
         if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
         const month = reservedAt.slice(0, 7);
         const usage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
-          WHERE shop = ? AND substr(reserved_at, 1, 7) = ?`).get(shop, month).count;
+          WHERE shop = ? AND substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL`).get(shop, month).count;
         if (usage >= tenant.monthly_check_limit) throw new Error("CHECK_QUOTA_EXCEEDED");
         if (Number.isInteger(globalMonthlyLimit) && globalMonthlyLimit >= 0) {
           const globalUsage = db.prepare(`SELECT COUNT(*) AS count FROM usage_ledger
-            WHERE substr(reserved_at, 1, 7) = ?`).get(month).count;
+            WHERE substr(reserved_at, 1, 7) = ? AND superseded_by_operation_id IS NULL`).get(month).count;
           if (globalUsage >= globalMonthlyLimit) throw new Error("GLOBAL_CHECK_BUDGET_EXCEEDED");
         }
         db.prepare(`INSERT INTO usage_ledger
@@ -1198,9 +1220,34 @@ export function createDatabase(path = ":memory:") {
     listEnabledSources(shop) {
       return db.prepare("SELECT * FROM sources WHERE shop = ? AND enabled = 1 ORDER BY created_at").all(shop).map(mapSource);
     },
-    // Revoke previously confirmed stock only when the captured page opens with
-    // the descriptive supplier item but not the selected Shopify product.
-    // Keep the original evidence and decision record for audit.
+    // Withdraw legacy confirmations with unresolved purchase/stock conflicts.
+    // Keep observations, decisions and a correction receipt for audit.
+    quarantineUnverifiedAvailabilitySources(shop) {
+      const rows = db.prepare(`SELECT s.id, s.last_state, o.id AS observation_id, o.raw_excerpt,
+        d.evidence_context, d.decision_details FROM sources s
+        JOIN observations o ON o.source_id=s.id AND o.shop=s.shop AND o.checked_at=s.last_confirmed_at
+        LEFT JOIN decision_records d ON d.observation_id=o.id AND d.shop=o.shop
+        WHERE s.shop=? AND s.last_state IS NOT NULL AND o.factual=1 AND o.state=s.last_state`).all(shop);
+      let count = 0;
+      for (const row of rows) {
+        const capture = parseJson(row.decision_details)?.capture;
+        if (capture?.visibility === "RENDERED_VISIBLE" ||
+          !hasUnverifiedPurchaseConflict(`${row.raw_excerpt || ""} ${row.evidence_context || ""}`)) continue;
+        const key = `availability-reconciliation-v1:${shop}:${row.observation_id}`;
+        if (this.getAppState(key)) continue;
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          this.setAppState(key, JSON.stringify({ observationId: row.observation_id, sourceId: row.id,
+            previousState: row.last_state, reason: UNRESOLVED_AVAILABILITY_REASON, correctedAt: new Date().toISOString() }));
+          db.prepare(`UPDATE sources SET last_state=NULL, candidate_state=NULL, candidate_count=0,
+            last_confirmed_at=NULL, next_recheck_at=NULL, last_attempt_status='UNCERTAIN', availability_hold_reason=?
+            WHERE shop=? AND id=?`).run(UNRESOLVED_AVAILABILITY_REASON, shop, row.id);
+          db.exec("COMMIT");
+          count += 1;
+        } catch (error) { db.exec("ROLLBACK"); throw error; }
+      }
+      return count;
+    },
     quarantineConflictingSources(shop) {
       const key = `identity-reconciliation-v1:${shop}`;
       if (this.getAppState(key)) return 0;
@@ -1234,7 +1281,7 @@ export function createDatabase(path = ":memory:") {
         shopify_product_id=?, shopify_variant_id=?, supplier_product_id=?, supplier_variant_id=?,
         supplier_sku=?, match_confirmed_at=?, url=?, match_terms=?,
         last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL,
-        last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL
+        last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL, availability_hold_reason=NULL
         WHERE shop=? AND id=?`).run(
         input.sku, input.productTitle,
         input.shopifyProductId || null, input.shopifyVariantId || null,
@@ -1250,12 +1297,13 @@ export function createDatabase(path = ":memory:") {
     updateTransition(shop, id, transition, observation, nextRecheckAt = null, confirmedAt = null) {
       db.prepare(`UPDATE sources SET last_state=?, candidate_state=?, candidate_count=?,
         last_checked_at=?, last_attempt_at=?, last_attempt_status=?,
-        last_confirmed_at=CASE WHEN ? THEN NULL ELSE COALESCE(?, last_confirmed_at) END, next_recheck_at=?
+        last_confirmed_at=CASE WHEN ? THEN NULL ELSE COALESCE(?, last_confirmed_at) END, next_recheck_at=?,
+        availability_hold_reason=CASE WHEN ? THEN NULL ELSE availability_hold_reason END
         WHERE shop=? AND id=?`).run(
         transition.confirmedState || null, transition.candidateState || null,
         transition.candidateCount || 0, observation.checkedAt, observation.checkedAt,
         observation.state, observation.reason === IDENTITY_MISMATCH_REASON ? 1 : 0,
-        confirmedAt, nextRecheckAt, shop, id,
+        confirmedAt, nextRecheckAt, observation.factual && observation.confidence >= 0.8 ? 1 : 0, shop, id,
       );
     },
     insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "") {

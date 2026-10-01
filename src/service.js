@@ -1,3 +1,4 @@
+import { unresolvedAvailability } from "./availability-safety.js";
 import { classifyObservation, decideTransition, evaluateAiObservation, isStale } from "./domain.js";
 import { evidenceContextForReference } from "./evidence.js";
 import {
@@ -42,6 +43,7 @@ function evidenceContext(text, quote, maxLength = 700) {
 }
 
 function deterministicSource(providerResult, observation) {
+  if (unresolvedAvailability(providerResult)) return "SAFETY_GATE";
   if (providerResult?.availabilityState) return "STRUCTURED";
   if (observation.state === "SOURCE_ERROR") return "PROVIDER_ERROR";
   return "RULES";
@@ -162,7 +164,7 @@ export class SupplierSignalService {
       let observation = rulesObservation;
       let aiResult = null;
       let aiStatus = "SKIPPED";
-      let aiReason = !this.evidenceReader
+      let aiReason = unresolvedAvailability(providerResult) ? "CAPTURE_EVIDENCE_CONFLICT" : !this.evidenceReader
         ? "AI_NOT_CONFIGURED"
         : providerResult?.availabilityState
           ? "STRUCTURED_AVAILABILITY_PRESENT"
@@ -173,7 +175,7 @@ export class SupplierSignalService {
               : "NOT_ATTEMPTED";
       let decisionSource = deterministicSource(providerResult, rulesObservation);
       let aiLatencyMs = null;
-      if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState) {
+      if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState && !unresolvedAvailability(providerResult)) {
         const aiStartedAt = performance.now();
         try {
           aiResult = await this.evidenceReader.analyze(source, providerResult);
@@ -228,15 +230,16 @@ export class SupplierSignalService {
         evidenceQuote,
         evidenceContext: evidenceContextValue,
         evidenceReference: aiResult?.evidenceReference,
-        decisionDetails: aiResult?.decisionSignals ? {
-          confidenceKind: aiResult.confidenceKind || null,
-          acceptancePolicyVersion: aiResult.acceptancePolicyVersion || null,
-          signals: aiResult.decisionSignals,
-          shadowSummary: aiResult.shadowSummary || null,
-          readerRouting: aiResult.readerRouting || null,
-        } : aiResult?.shadowSummary || aiResult?.readerRouting ? {
-          shadowSummary: aiResult.shadowSummary || null,
-          readerRouting: aiResult.readerRouting || null,
+        decisionDetails: providerResult?.textVisibility || aiResult?.decisionSignals || aiResult?.shadowSummary || aiResult?.readerRouting ? {
+          ...(providerResult?.textVisibility ? { capture: { visibility: providerResult.textVisibility,
+            scope: providerResult.captureScope || null, blockedReason: providerResult.availabilityBlockedReason || null } } : {}),
+          ...(aiResult?.decisionSignals ? {
+            confidenceKind: aiResult.confidenceKind || null,
+            acceptancePolicyVersion: aiResult.acceptancePolicyVersion || null,
+            signals: aiResult.decisionSignals,
+          } : {}),
+          shadowSummary: aiResult?.shadowSummary || null,
+          readerRouting: aiResult?.readerRouting || null,
         } : null,
         finalState: observation.state,
         finalConfidence: observation.confidence,

@@ -28,6 +28,7 @@ function createCore(): Core {
   for (const tenant of db.listActiveTenants()) {
     const duplicates = db.reconcileDuplicateShopifyVariantSources(tenant.shop);
     if (duplicates) console.warn(`SupplierSignal archived ${duplicates} duplicate Shopify variant source(s) for ${tenant.shop}`);
+    db.quarantineUnverifiedAvailabilitySources(tenant.shop);
     const count = db.quarantineConflictingSources(tenant.shop);
     if (count) console.warn(`SupplierSignal revoked ${count} conflicting product status(es) for ${tenant.shop}`);
   }
@@ -103,6 +104,7 @@ export function ensureTenant(shop: string) {
   });
   const duplicates = db.reconcileDuplicateShopifyVariantSources(shop);
   if (duplicates) console.warn(`SupplierSignal archived ${duplicates} duplicate Shopify variant source(s) for ${shop}`);
+  db.quarantineUnverifiedAvailabilitySources(shop);
   const quarantined = db.quarantineConflictingSources(shop);
   if (quarantined) console.warn(`SupplierSignal revoked ${quarantined} conflicting product status(es) for ${shop}`);
 }

@@ -1,3 +1,4 @@
+import { unresolvedAvailability, UNRESOLVED_AVAILABILITY_REASON } from "./availability-safety.js";
 import { verifyEvidenceReference } from "./evidence.js";
 import { productIdentityConflict, IDENTITY_MISMATCH_REASON } from "./product-identity.js";
 
@@ -72,6 +73,11 @@ function isAcceptedJevConflictResolution(aiResult) {
 }
 
 export function evaluateAiObservation(deterministic, providerResult, aiResult) {
+  if (unresolvedAvailability(providerResult)) return {
+    observation: { state: STATES.UNCERTAIN, confidence: 0, factual: false,
+      reason: UNRESOLVED_AVAILABILITY_REASON, checkedAt: deterministic.checkedAt },
+    accepted: false, rejectionReason: UNRESOLVED_AVAILABILITY_REASON, influencedDecision: true,
+  };
   if (deterministic.reason === IDENTITY_MISMATCH_REASON) return {
     observation: deterministic,
     accepted: false,
@@ -241,6 +247,10 @@ export function classifyObservation(source, providerResult, now = new Date()) {
     factual: false,
   };
 
+  if (unresolvedAvailability(providerResult)) return {
+    state: STATES.UNCERTAIN, confidence: 0, factual: false,
+    reason: UNRESOLVED_AVAILABILITY_REASON, checkedAt: now.toISOString(),
+  };
   const title = normalize(providerResult.title);
   const text = normalize(providerResult.text);
   const expectedTerms = (source.matchTerms || []).map(normalize).filter(Boolean);

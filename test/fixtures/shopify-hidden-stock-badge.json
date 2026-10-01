@@ -1,0 +1,22 @@
+{
+  "provenance": "Sanitized facts replayed from saved Apify crawler run S2r8kcfka8eTeeTmf, 2026-10-01; no response headers, cookies or signed links",
+  "url": "https://collabpaydemo.myshopify.com/products/the-inventory-not-tracked-snowboard",
+  "title": "The Inventory Not Tracked Snowboard – CollabPayDemo",
+  "text": "The Inventory Not Tracked Snowboard\nRegular price $949.95 USD\nSale Sold out\nAdd to cart\nBuy it now",
+  "jsonLd": [{
+    "@context": "http://schema.org/",
+    "@type": "Product",
+    "name": "The Inventory Not Tracked Snowboard",
+    "url": "https://collabpaydemo.myshopify.com/products/the-inventory-not-tracked-snowboard",
+    "sku": "sku-untracked-1",
+    "brand": {"@type": "Brand", "name": "collab-pay-demo"},
+    "offers": [{
+      "@type": "Offer",
+      "sku": "sku-untracked-1",
+      "availability": "http://schema.org/InStock",
+      "price": 949.95,
+      "priceCurrency": "USD",
+      "url": "https://collabpaydemo.myshopify.com/products/the-inventory-not-tracked-snowboard?variant=44779837817003"
+    }]
+  }]
+}
