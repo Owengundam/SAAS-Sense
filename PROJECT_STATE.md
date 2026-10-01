@@ -1,4 +1,6 @@
-# Project State — 2026-09-23 UTC
+# Project State — pricing update 2026-10-01 UTC
+
+Pricing and commercial gates below were updated on 2026-10-01. Historical completion entries and other verification notes retain their original context; they are not a fresh production audit.
 
 ## Selected opportunity
 
@@ -19,7 +21,9 @@ Job: know which supplier-linked products changed availability, which checks fail
 - A possible change is queued for one confirmation check 20 minutes later when scheduling is enabled.
 - Provider errors and ambiguous pages stay non-factual.
 - Preorder, backordered, discontinued, and lead-time-only results are never labeled in stock.
-- Founding Pilot: $19/month with the price guaranteed for each merchant's first six months; 25 source links, 1,500 checks/month, daily cadence, and one lightweight assisted setup. Any later price change requires advance notice and Shopify plan approval.
+- New-merchant Pilot: $49 USD/month; 25 source links, 1,500 source-check jobs per UTC calendar month, one assisted setup up to 30 minutes, and standard email support. No usage overages, recurring concierge, SLA, or custom integrations. Confirm cadence only after source coverage, cost, and production scheduling are validated.
+- Existing $19 Founding Pilot six-month commitments and existing subscriptions remain unchanged. A later legacy price change requires advance notice and Shopify approval. The new marketing offer does not change hosted checkout.
+- Target 60% recurring contribution margin, minimum 50%, with an internal 20-minute monthly support allowance at an assumed $30/hour. Keep the 5,000-job shared cap unchanged; it supports at most three fully used 1,500-job plans, less other usage.
 - Node 22.13+ with Shopify's official React Router production shell; built-in SQLite remains the isolated core store.
 - Railway Starter is the selected pilot host, with a persistent `/data` volume for both SQLite databases.
 - The page-provider cascade is direct HTTP, optional self-hosted Chromium, then Apify. Railway production uses direct HTTP with Apify fallback; its Chromium tier remains disabled.
@@ -50,7 +54,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 - Added exact-supplier-identity ranking before JEV's bounded candidate selection, preventing long mixed-variant pages from dropping the monitored variant behind unrelated finishes while preserving verbatim evidence provenance.
 - Added a provisional five-case, four-domain direct-capture fixture. The first local live attempt was invalidated because the runner returned `EAI_AGAIN` for every public supplier hostname; no accuracy score was claimed.
 - Hardened live benchmark denominators so DNS/provider failures are counted separately, accuracy is `null` with no scorable evidence, and latency percentiles exclude failed captures.
-- Added the Partner API active-subscription check at the app root and mutation route, with a five-minute positive cache and fail-closed error handling. It remains disabled until the $19 plan and Partner API credentials are configured.
+- Historical 2026-09-23: added the Partner API active-subscription check at the app root and mutation route, with a five-minute positive cache and fail-closed error handling. At that time it was gated on the former $19 offer and Partner API configuration. The current new-merchant offer is $49; hosted plan/subscription state still needs separate verification.
 
 ## Tested locally
 
@@ -86,7 +90,7 @@ Job: know which supplier-linked products changed availability, which checks fail
 
 ## Minimum next owner action
 
-Create the $19 monthly `Founding Pilot` in Shopify App Pricing and a Partner API client with `Manage apps`; add the organization ID, access token, and app GID to Railway. Then provide the final company/support details for the public policies and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
+Configure and verify the $49 USD monthly `Pilot` new-merchant offer in Shopify App Pricing while preserving existing $19 six-month commitments and all existing subscriptions. Verify the Partner API configuration separately; any required credentials belong only in Railway, never in the repository or chat. Then provide the final company/support details for the public policies and recruit one design-partner merchant with 3–5 authorized supplier product URLs.
 
 ## Next execution step
 

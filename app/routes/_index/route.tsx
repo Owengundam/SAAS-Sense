@@ -37,9 +37,9 @@ export default function Landing() {
             <input id="shop-domain" name="shop" placeholder="your-store.myshopify.com" autoComplete="url" required />
             <button>Connect your store</button>
           </Form>
-          <p className={styles.formNote}>Founding price: $19/month · 25 supplier links · assisted setup · cancel anytime</p>
+          <p className={styles.formNote}>New-merchant pilot: $49 USD/month · 25 supplier links · cancel anytime</p>
           <div className={styles.points}>
-            <span>Read-only</span><span>Daily checks</span><span>Evidence included</span><span>Safe uncertainty</span>
+            <span>Read-only</span><span>Source validation</span><span>Evidence included</span><span>Safe uncertainty</span>
           </div>
         </div>
         <div className={styles.proofCard} aria-label="Example SupplierSignal result">
@@ -81,16 +81,18 @@ export default function Landing() {
 
       <section className={styles.pricing} id="pricing">
         <div>
-          <span className={styles.eyebrow}>Founding pilot</span>
-          <h2><del className={styles.regularPrice}>$49</del> $19 <small>/ month</small></h2>
-          <p>Founding price guaranteed for your first 6 months. We will give advance notice before any later price change. Cancel anytime.</p>
+          <span className={styles.eyebrow}>New-merchant pilot</span>
+          <h2>$49 <small>USD / month</small></h2>
+          <p>Monthly paid plan. No usage overage charges. Confirm the plan and price in Shopify before approving a subscription.</p>
+          <p>Existing $19 founding commitments keep their promised first six months. Existing subscriptions are not changed by this offer.</p>
         </div>
         <ul>
           <li>25 supplier product links</li>
-          <li>1,500 checks each month</li>
-          <li>Daily monitoring for supported sources</li>
+          <li>1,500 source-check jobs per calendar month (UTC), including failed jobs, confirmations, and repeat checks</li>
+          <li>Monitoring cadence confirmed during setup, after source validation</li>
           <li>Evidence and uncertainty queue</li>
-          <li>One lightweight assisted setup</li>
+          <li>One assisted setup of up to 30 minutes</li>
+          <li>Standard email support; no recurring concierge, SLA, or custom integrations</li>
         </ul>
         <a className={styles.cta} href="#top">Start with your store</a>
       </section>

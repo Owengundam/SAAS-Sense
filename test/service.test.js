@@ -561,3 +561,26 @@ test("duplicate active Shopify variant sources are reconciled without deleting h
   assert.equal(db.listSources("a.myshopify.com").length, 2);
   db.close();
 });
+
+test("source-check quota counts jobs rather than individual cascade provider calls", async () => {
+  const { db, provider, service } = setup({ checkLimit: 2 });
+  try {
+    const source = add(service);
+    provider.queue(source.url, [{
+      ...page("cascade-job", "In stock"),
+      providerAttempts: [
+        { provider: "direct", outcome: "INCONCLUSIVE" },
+        { provider: "apify", outcome: "SUCCEEDED" },
+      ],
+    }, { ok: false, runId: "failed-job", url: source.url, error: "TIMED_OUT" }]);
+    await service.checkSource("a.myshopify.com", source.id);
+    assert.equal(db.listUsageLedger("a.myshopify.com").length, 1);
+    assert.equal(db.listProviderAttempts("a.myshopify.com").length, 2);
+    await service.checkSource("a.myshopify.com", source.id);
+    assert.equal(db.listUsageLedger("a.myshopify.com").length, 2);
+    await assert.rejects(service.checkSource("a.myshopify.com", source.id), /CHECK_QUOTA_EXCEEDED/);
+    assert.equal(db.listUsageLedger("a.myshopify.com").length, 2);
+  } finally {
+    db.close();
+  }
+});

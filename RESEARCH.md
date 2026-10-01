@@ -37,7 +37,9 @@ Assumption: staff manually revisit supplier product pages to learn whether items
 
 These are product hypotheses, not validated customer claims.
 
-### Initial acquisition route
+### Initial acquisition route (historical 2026-09-15 hypothesis)
+
+The original acquisition and abandonment assumptions below are preserved as research history. The active 2026-10-01 offer and continuation gates are in `PILOT_AND_GTM.md` and `ECONOMICS.md`: $49 USD/month, one setup up to 30 minutes, standard email support, no recurring concierge, and a 20-minute internal recurring-support budget. The historical weekly-feedback and 90-minute thresholds are superseded.
 
 1. Build a list of 30–50 small Shopify home/lighting retailers that visibly carry multiple third-party brands and expose supplier/manufacturer SKUs.
 2. Ask for a 15-minute workflow interview before pitching software.
