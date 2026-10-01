@@ -4,6 +4,8 @@ import { createPageProvider } from "../src/providers/create-page-provider.js";
 import { createEvidenceReader } from "../src/providers/create-evidence-reader.js";
 import { SupplierSignalService } from "../src/service.js";
 import { ImportProcessor } from "../src/onboarding/import-processor.js";
+import { createScheduledCheckRunner } from "../src/scheduled-checks.js";
+import { fetchShopSubscription } from "./partner-api.server";
 import { SupplierDiscoveryProcessor } from "../src/onboarding/supplier-connectors.js";
 
 type Core = {
@@ -65,24 +67,24 @@ function createCore(): Core {
   return { db, service, importProcessor, supplierDiscoveryProcessor, liveProvider };
 }
 
-async function runScheduledChecks(core: Core) {
-  const today = new Date().toISOString().slice(0, 10);
-  for (const tenant of core.db.listActiveTenants()) {
-    const dailyKey = `last_daily_run:${tenant.shop}`;
-    if (core.db.getAppState(dailyKey) !== today) {
-      await core.service.checkAll(tenant.shop);
-      core.db.setAppState(dailyKey, today);
-    }
-    await core.service.checkDueRechecks(tenant.shop);
-  }
-}
-
 export function getSupplierSignal(): Core {
   const core = global.supplierSignalCore ?? createCore();
   global.supplierSignalCore = core;
 
   if (process.env.SCHEDULER_ENABLED === "true" && !global.supplierSignalScheduler) {
-    const tick = () => runScheduledChecks(core).catch((error) =>
+    const run = createScheduledCheckRunner({
+      db: core.db,
+      service: core.service,
+      hasActiveSubscription: async (shop: string, signal: AbortSignal) => {
+        // Load the SDK only after local rollout and tenant gates pass. Its
+        // offline context handles stored-session lookup and token refresh.
+        const { unauthenticated } = await import("./shopify.server");
+        const { admin } = await unauthenticated.admin(shop);
+        signal.throwIfAborted();
+        return Boolean(await fetchShopSubscription(admin, { fresh: true, signal }));
+      },
+    });
+    const tick = () => run().catch((error: unknown) =>
       console.error("SupplierSignal scheduled check failed", error));
     global.supplierSignalScheduler = setInterval(tick, 5 * 60 * 1000);
     setTimeout(tick, 15_000);
@@ -104,3 +106,4 @@ export function ensureTenant(shop: string) {
   const quarantined = db.quarantineConflictingSources(shop);
   if (quarantined) console.warn(`SupplierSignal revoked ${quarantined} conflicting product status(es) for ${shop}`);
 }
+

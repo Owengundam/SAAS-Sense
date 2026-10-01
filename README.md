@@ -171,6 +171,7 @@ IMPORT_MONTHLY_DISCOVERY_LIMIT=50
 # Optional: restrict a pilot to specific supplier hosts; unset to allow public HTTPS hosts.
 # SUPPORTED_SUPPLIER_DOMAINS=books.toscrape.com
 SCHEDULER_ENABLED=false
+SCHEDULER_ALLOWED_SHOPS=
 SCOPES=read_products
 ```
 
@@ -179,6 +180,14 @@ Add `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `APIFY_API_TOKEN
 Configure one new-merchant monthly Shopify App Pricing offer named `Pilot` at **$49 USD/month**, with no free trial or usage overage charges and a welcome link to `/app`. It includes 25 supplier links, 1,500 source-check jobs per UTC calendar month, one assisted setup of up to 30 minutes, and standard email support; no recurring concierge, SLA, or custom integrations. Honor existing $19 Founding Pilot six-month commitments and leave all existing subscriptions unchanged. Do not overwrite a legacy plan or migrate subscribers to enact this new-sale offer. Repository changes only update marketing and operating guidance; they do not update Shopify checkout. Verify the hosted price and existing subscriptions before inviting a paying merchant. Create a Partner API client with the `Manage apps` permission, then add `SHOPIFY_PARTNER_ORG_ID`, `SHOPIFY_PARTNER_API_ACCESS_TOKEN`, and `SHOPIFY_APP_GID` directly in Railway Variables. The app GID is `gid://shopify/App/{numeric_app_id}`. Keep `SHOPIFY_APP_PRICING_ENABLED=false` until the plan and all three Partner API values exist.
 
 After configuration, set `SHOPIFY_APP_HANDLE=supplier-signal` and `SHOPIFY_APP_PRICING_ENABLED=true`. That single flag enables the hosted plan redirect and enforces an active Shopify App Pricing subscription at the app root and mutation route. Confirmed subscriptions are cached for five minutes; missing subscriptions are never cached, and Partner API failures fail closed instead of being treated as unpaid. Test the install → plan approval → `/app` flow on the development store before inviting a merchant.
+
+### Background-check rollout safety
+
+Background work requires all three gates: `SCHEDULER_ENABLED=true`, `SHOPIFY_APP_PRICING_ENABLED=true`, and an exact tenant domain in `SCHEDULER_ALLOWED_SHOPS`. The allowlist defaults to empty, so turning on the scheduler alone authorizes no tenants. Keep the scheduler **off** and the allowlist **empty** until an approved pilot rollout; this change enrolls nobody.
+
+Each scheduled source check (daily and due confirmation) resolves the installed shop through Shopify's stored offline session and verifies a fresh Partner API `activeSubscription`, bypassing the interactive five-minute positive cache. Missing contracts, credentials, sessions, malformed responses, timeouts, and API errors fail closed before provider calls or quota reservations. Uninstalled/inactive tenants are excluded, with activity rechecked after asynchronous entitlement lookup. No development-store exemption is inferred. Valid active legacy $19 and approved test subscriptions remain eligible without matching the new-sale $49 price or modifying any subscription. See Shopify's [migration guidance](https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing/migrating-to-shopify-app-pricing) and [testing guidance](https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing#testing).
+
+Overlapping timer ticks join one run. Scheduled and manual check batches share a tenant lock; busy tenants are deferred until a later tick. Incomplete entitlement-gated batches are not marked as the day's completed run; a persisted per-source checkpoint prevents already-attempted sources from being recharged or fast-confirmed when that batch resumes. Coordination is in-process, matching the single-process pilot deployment; do not enable multiple scheduler replicas without a durable cross-process lease. Existing 1,500 per-tenant and 5,000 global monthly check limits remain unchanged.
 
 The default `railway` image target uses Debian Bookworm without a bundled browser. This keeps Railway builds and deployments lean while `SELF_HOSTED_BROWSER_ENABLED=false` routes captures through direct HTTP with Apify as the managed fallback.
 
@@ -217,3 +226,4 @@ The separate `browser` image target installs the Chromium build matching the pin
 - **Deployed:** running at an owner-authorized public or private host.
 
 Current state: the authenticated app is installed on `suppliersignal-test.myshopify.com` and deployed at `https://suppliersignal-production.up.railway.app` with the live Apify provider configured. Unattended scheduling remains disabled, so only owner-triggered checks can spend Apify credit.
+
