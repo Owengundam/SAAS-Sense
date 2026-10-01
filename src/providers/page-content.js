@@ -201,7 +201,7 @@ function normalized(value) {
 
 // Presence is useful for benchmark coverage, including safely abstained cases.
 // It is not sufficient to stop a capture cascade or accept a stock decision.
-export function hasAvailabilityEvidence(source, result) {
+function hasCapturedAvailabilityEvidence(source, result, includeUnselectedOffers = false) {
   if (!result?.ok || !result.text) return false;
   const searchable = String(result.text);
   const structuredIdentityText = (Array.isArray(result?.evidenceRecords) ? result.evidenceRecords : [])
@@ -221,7 +221,7 @@ export function hasAvailabilityEvidence(source, result) {
   if (result.availabilityState) return true;
   // Even an unselected/conflicting offer is captured evidence for coverage;
   // only the quality gate may decide whether it is safe to stop on that offer.
-  if ((result.evidenceRecords || []).some(record => record.origin === "STRUCTURED_FIELD" &&
+  if (includeUnselectedOffers && (result.evidenceRecords || []).some(record => record.origin === "STRUCTURED_FIELD" &&
     /(?:availability|inStock|available)$/.test(record.path || "") && availabilityStateFromValue(record.text))) return true;
   const configuredTerms = [
     ...(Array.isArray(source?.inStockTerms) ? source.inStockTerms : []),
@@ -247,7 +247,17 @@ export function hasAvailabilityEvidence(source, result) {
   });
 }
 
+export function hasAvailabilityEvidence(source, result) {
+  return hasCapturedAvailabilityEvidence(source, result, true);
+}
+
+// Compatibility for the standalone model evaluator: preserve its historical
+// presence/scoring policy. Runtime capture routing must use the safe gate below.
 export function hasUsefulAvailabilityEvidence(source, result) {
+  return hasCapturedAvailabilityEvidence(source, result);
+}
+
+export function hasSafeAvailabilityEvidence(source, result) {
   // Use the existing decision policy, not a second set of looser identity,
   // configured-stock-term or deferred-availability rules. This is pure: no AI,
   // provider call, persistence or change to the classifier's acceptance policy.
@@ -256,5 +266,5 @@ export function hasUsefulAvailabilityEvidence(source, result) {
 
 export function needsAvailabilityRecapture(source, result) {
   return Boolean(result?.ok) && (unresolvedAvailability(result) || productIdentityConflict(source, result.title) ||
-    hasAvailabilityEvidence(source, result) && !hasUsefulAvailabilityEvidence(source, result));
+    hasAvailabilityEvidence(source, result) && !hasSafeAvailabilityEvidence(source, result));
 }

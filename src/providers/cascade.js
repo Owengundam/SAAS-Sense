@@ -1,4 +1,4 @@
-import { hasUsefulAvailabilityEvidence, needsAvailabilityRecapture } from "./page-content.js";
+import { hasSafeAvailabilityEvidence, needsAvailabilityRecapture } from "./page-content.js";
 import { productIdentityConflict } from "../product-identity.js";
 
 function attemptFor(provider, result, index, latencyMs, usable) {
@@ -23,7 +23,7 @@ function shouldEscalate(source, provider, result, usable) {
 }
 
 export class CascadingPageProvider {
-  constructor({ providers = [], evidenceGate = hasUsefulAvailabilityEvidence } = {}) {
+  constructor({ providers = [], evidenceGate = hasSafeAvailabilityEvidence } = {}) {
     if (!providers.length) throw new Error("PAGE_PROVIDER_REQUIRED");
     this.providers = providers;
     this.evidenceGate = evidenceGate;

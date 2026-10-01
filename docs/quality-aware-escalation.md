@@ -14,7 +14,9 @@ The stricter gate also means a structured identifier captured outside the classi
 
 ## Measurement integrity
 
-The benchmark keeps presence-based captures, including conflicts and unselected structured offers, in its eligible scoring population. It separately reports `safeToStop`, `qualityAcceptedCaptures` and `qualityRejectedCaptures`. Current-label absence still makes a case unscored and is reported explicitly. Existing safety gates are unchanged; rejecting a difficult capture must not inflate reported accuracy by removing it.
+The fetch benchmark keeps presence-based captures, including conflicts and unselected structured offers, in its eligible scoring population. It separately reports `safeToStop`, `qualityAcceptedCaptures` and `qualityRejectedCaptures`. Current-label absence still makes a case unscored and is reported explicitly. Existing safety gates are unchanged; rejecting a difficult capture must not inflate reported accuracy by removing it.
+
+The standalone paid model evaluator retains its legacy evidence-presence helper unchanged; runtime routing now explicitly uses `hasSafeAvailabilityEvidence`. That evaluator's model-admission and saved-provenance rules need separate review before any paid replay or production-parity claim. This PR does not redesign or run that pipeline.
 
 The existing `costPerSuccessfulFreshCheckUsd` divides known provider cost by evidence-present captures, not verified correct factual decisions. Do not market it as cost per accurate result. No new cost estimate is established here.
 

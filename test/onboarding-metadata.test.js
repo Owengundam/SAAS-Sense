@@ -9,7 +9,7 @@ import {
 import { suggestImportMapping } from "../src/onboarding/match-candidates.js";
 import { ImportProcessor } from "../src/onboarding/import-processor.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
-import { hasAvailabilityEvidence, hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
+import { hasAvailabilityEvidence, hasUsefulAvailabilityEvidence, hasSafeAvailabilityEvidence } from "../src/providers/page-content.js";
 
 function variant(id = 1, overrides = {}) {
   return {
@@ -227,8 +227,9 @@ test("structured GTIN remains captured identity evidence while the quality gate 
     productTitle: "Pendant 1 · Blue",
   };
   assert.equal(hasAvailabilityEvidence(source, result), true);
-  assert.equal(hasUsefulAvailabilityEvidence(source, result), false);
-  assert.equal(hasUsefulAvailabilityEvidence(source, { ...result, text: "GTIN 000000000001. In stock" }), true);
+  assert.equal(hasUsefulAvailabilityEvidence(source, result), true);
+  assert.equal(hasSafeAvailabilityEvidence(source, result), false);
+  assert.equal(hasSafeAvailabilityEvidence(source, { ...result, text: "GTIN 000000000001. In stock" }), true);
 });
 
 test("metadata cascade stops on first tier when product identity is sufficient", async () => {

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { evaluateFixtureCases } from "../src/fixture-evaluation.js";
 import { summarizeFetchBenchmark } from "../src/fetch-benchmark.js";
-import { extractStructuredPage, hasAvailabilityEvidence, hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
+import { extractStructuredPage, hasAvailabilityEvidence, hasSafeAvailabilityEvidence } from "../src/providers/page-content.js";
 import { classifyObservation } from "../src/domain.js";
 
 test("labeled supplier fixture benchmark has no incorrect factual outcomes", () => {
@@ -119,7 +119,7 @@ test("an extracted unknown-variant offer is captured evidence even without visib
   assert.equal(page.availabilityBlockedReason, "CAPTURE_EVIDENCE_CONFLICT");
   const observation = classifyObservation(source, page);
   const report = summarizeFetchBenchmark([{ method: "direct", domain: "supplier.test", ok: true,
-    usable: hasAvailabilityEvidence(source, page), safeToStop: hasUsefulAvailabilityEvidence(source, page),
+    usable: hasAvailabilityEvidence(source, page), safeToStop: hasSafeAvailabilityEvidence(source, page),
     expectedFactual: true, factual: observation.factual, correctAgainstFixture: false,
     labelEvidencePresent: true, latencyMs: 1 }], ["direct"]).direct;
   assert.equal(report.scorableCaptures, 1); assert.equal(report.qualityRejectedCaptures, 1);

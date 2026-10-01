@@ -5,7 +5,7 @@ import { DirectHttpProvider } from "../src/providers/direct-http.js";
 import { BrowserProvider } from "../src/providers/browser.js";
 import { ApifyProvider } from "../src/providers/apify.js";
 import { CascadingPageProvider } from "../src/providers/cascade.js";
-import { hasAvailabilityEvidence, hasUsefulAvailabilityEvidence } from "../src/providers/page-content.js";
+import { hasAvailabilityEvidence, hasSafeAvailabilityEvidence } from "../src/providers/page-content.js";
 import { classifyObservation, evaluateAiObservation } from "../src/domain.js";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/shopify-hidden-stock-badge.json", import.meta.url)));
@@ -56,7 +56,7 @@ test("saved hidden-badge conflict requires rendering even without script or stoc
   assert.equal(page.structuredAvailabilityState, "IN_STOCK");
   assert.equal(page.availabilityBlockedReason, "CAPTURE_EVIDENCE_CONFLICT");
   assert.equal(hasAvailabilityEvidence(source, page), true);
-  assert.equal(hasUsefulAvailabilityEvidence(source, page), false);
+  assert.equal(hasSafeAvailabilityEvidence(source, page), false);
   assert.equal(page.renderingLikelyRequired, true);
   assert.equal(page.captureDisposition, "MISSING_RENDERED_CONTENT");
   assert.equal(classifyObservation(source, page).state, "UNCERTAIN");
@@ -74,7 +74,7 @@ for (const [name, selectedSource, text] of [
   const d = direct({ jsonLd: [], text });
   const first = await d.provider.fetchPage(selectedSource);
   assert.equal(hasAvailabilityEvidence(selectedSource, first), true);
-  assert.equal(hasUsefulAvailabilityEvidence(selectedSource, first), false);
+  assert.equal(hasSafeAvailabilityEvidence(selectedSource, first), false);
   assert.equal(first.renderingLikelyRequired, true);
   assert.equal(classifyObservation(selectedSource, first).state, "UNCERTAIN");
   const renderedText = `${visibleText}\nBlue Large`;
@@ -91,7 +91,7 @@ test("deferred availability with related-card stock renders once then safely abs
   const d = direct({ jsonLd: [], text });
   const first = await d.provider.fetchPage(source);
   assert.equal(hasAvailabilityEvidence(source, first), true);
-  assert.equal(hasUsefulAvailabilityEvidence(source, first), false);
+  assert.equal(hasSafeAvailabilityEvidence(source, first), false);
   assert.equal(first.renderingLikelyRequired, true);
   const b = browser({ ...capture, visibleText: text, productScopes: [{ ...scope, text }] });
   let managedCalls = 0;
@@ -128,7 +128,7 @@ test("a hard product-title mismatch cannot stop as useful or buy a fallback over
   assert.equal(fallbacks, 0); assert.equal(result.terminal, true);
   assert.equal(result.captureDisposition, "IDENTITY_MISMATCH");
   assert.equal(result.providerAttempts[0].outcome, "INCONCLUSIVE");
-  assert.equal(hasUsefulAvailabilityEvidence(source, result), false);
+  assert.equal(hasSafeAvailabilityEvidence(source, result), false);
   assert.equal(classifyObservation(source, result).state, "UNCERTAIN");
 });
 
