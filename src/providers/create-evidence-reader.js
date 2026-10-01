@@ -44,10 +44,14 @@ export function createFallbackEvidenceReader(env = process.env, overrides = {}) 
     : null;
 }
 
-export function createEvidenceReader(env = process.env) {
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ budget?: import('../provider-budget.js').ProviderBudget | null }} [options]
+ */
+export function createEvidenceReader(env = process.env, { budget = null } = {}) {
   const jevToken = env.JEV_API_KEY || env.TYPESAFE_API_KEY;
   const mode = String(env.AI_READER_MODE || (jevToken ? "jev-shadow" : "deepseek")).trim().toLowerCase();
-  const deepseek = createFallbackEvidenceReader(env);
+  const deepseek = createFallbackEvidenceReader(env, { budget });
 
   if (mode === "deepseek") return deepseek;
   if (!["jev-shadow", "jev-primary", "jev-validated"].includes(mode)) {
@@ -56,6 +60,7 @@ export function createEvidenceReader(env = process.env) {
   if (!jevToken) throw new Error("JEV_API_KEY_REQUIRED");
   const jev = new JevEvidenceReader({
     token: jevToken,
+    budget,
     model: env.TYPESAFE_MODEL,
   });
   if (mode === "jev-shadow") {

@@ -11,7 +11,11 @@ function integer(value, fallback) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-export function createPageProvider(env = process.env, { root = process.cwd(), fetchImpl } = {}) {
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ root?: string, fetchImpl?: typeof fetch, budget?: import('../provider-budget.js').ProviderBudget | null }} [options]
+ */
+export function createPageProvider(env = process.env, { root = process.cwd(), fetchImpl, budget = null } = {}) {
   const mode = String(env.PROVIDER || "mock").trim().toLowerCase();
   const normalizedDomains = normalizeSupportedDomains(env.SUPPORTED_SUPPLIER_DOMAINS || "");
   const supportedDomains = normalizedDomains.length ? normalizedDomains : undefined;
@@ -21,6 +25,7 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
   if (mode === "apify") {
     return new ApifyProvider({
       token: env.APIFY_API_TOKEN,
+      budget,
       actorId: env.APIFY_ACTOR_ID,
       maxTotalChargeUsd: env.APIFY_MAX_TOTAL_CHARGE_USD,
       fetchImpl: fetchImpl || fetch,
@@ -53,6 +58,7 @@ export function createPageProvider(env = process.env, { root = process.cwd(), fe
   if (env.APIFY_API_TOKEN) {
     providers.push(new ApifyProvider({
       token: env.APIFY_API_TOKEN,
+      budget,
       actorId: env.APIFY_ACTOR_ID,
       maxTotalChargeUsd: env.APIFY_MAX_TOTAL_CHARGE_USD,
       fetchImpl: fetchImpl || fetch,

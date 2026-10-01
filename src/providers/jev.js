@@ -97,6 +97,7 @@ export class JevEvidenceReader {
     model = DEFAULT_MODEL,
     endpoint = DEFAULT_ENDPOINT,
     fetchImpl = fetch,
+    budget = null,
     timeoutMs = 5_000,
     maxCandidates = 120,
     promptVersion = DEFAULT_POLICY_VERSION,
@@ -106,6 +107,7 @@ export class JevEvidenceReader {
     this.model = model || DEFAULT_MODEL;
     this.endpoint = endpoint;
     this.fetchImpl = fetchImpl;
+    this.budgetBlocked = Boolean(budget);
     this.timeoutMs = timeoutMs;
     this.maxCandidates = maxCandidates;
     this.promptVersion = promptVersion;
@@ -123,6 +125,7 @@ export class JevEvidenceReader {
   }
 
   async request(stage, state, questions) {
+    if (this.budgetBlocked) return { ok: false, error: "BUDGET_ROUTE_UNSUPPORTED" };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const started = performance.now();

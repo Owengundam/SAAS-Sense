@@ -1,8 +1,10 @@
+import { rejectUnmeteredPaidEvaluation } from "../src/provider-budget-errors.js";
 // Explicit opt-in: invokes paid TypeSafe calls only; never reads/writes the app DB.
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { JevEvidenceReader } from "../src/providers/jev.js";
 
+rejectUnmeteredPaidEvaluation();
 if (!process.argv.includes("--live")) throw new Error("Pass --live to authorize paid model evaluation");
 const token = process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY;
 if (!token) throw new Error("JEV_API_KEY is required");

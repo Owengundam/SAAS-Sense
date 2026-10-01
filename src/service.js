@@ -1,3 +1,5 @@
+import { ProviderBudgetUnavailableError } from "./provider-budget-errors.js";
+import { withProviderBudgetContext } from "./provider-budget.js";
 import { unresolvedAvailability } from "./availability-safety.js";
 import { classifyObservation, decideTransition, evaluateAiObservation, isStale } from "./domain.js";
 import { evidenceContextForReference } from "./evidence.js";
@@ -122,6 +124,7 @@ export class SupplierSignalService {
     const source = this.db.getSource(shop, sourceId);
     if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
     validateSupplierUrl(source.url, this.supportedDomains);
+    await this.provider.preflightBudget?.();
     const usage = this.db.reserveCheckUsage(
       shop,
       source.id,
@@ -130,9 +133,15 @@ export class SupplierSignalService {
       this.globalMonthlyCheckLimit,
     );
     let providerAttemptsRecorded = false;
+    let budgetCheckNotRun = false;
 
     try {
-      let providerResult = await this.provider.fetchPage(source);
+      let providerResult = await withProviderBudgetContext({ operationId: usage.operationId, purpose: "source-check" }, () => this.provider.fetchPage(source));
+      if (providerResult?.budgetBlocked && this.provider.providerName === "apify") {
+        this.db.markUndispatchedBudgetCheck(shop, usage.operationId, this.now());
+        budgetCheckNotRun = true;
+        throw new ProviderBudgetUnavailableError(providerResult.budgetReasonCode);
+      }
       const providerAttempts = providerResult?.providerAttempts?.length
         ? providerResult.providerAttempts
         : [{
@@ -178,7 +187,7 @@ export class SupplierSignalService {
       if (this.evidenceReader && providerResult?.ok !== false && providerResult?.text && !providerResult.availabilityState && !unresolvedAvailability(providerResult)) {
         const aiStartedAt = performance.now();
         try {
-          aiResult = await this.evidenceReader.analyze(source, providerResult);
+          aiResult = await withProviderBudgetContext({ operationId: usage.operationId, purpose: "source-check" }, () => this.evidenceReader.analyze(source, providerResult));
         } catch (error) {
           aiResult = { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
@@ -297,6 +306,7 @@ export class SupplierSignalService {
         source: this.db.getSource(shop, source.id),
       };
     } catch (error) {
+      if (budgetCheckNotRun) throw error;
       const message = error instanceof Error ? error.message : String(error);
       if (!providerAttemptsRecorded) {
         this.db.recordProviderAttempt(shop, usage.operationId, {

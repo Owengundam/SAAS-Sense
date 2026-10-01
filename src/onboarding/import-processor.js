@@ -1,3 +1,4 @@
+import { withProviderBudgetContext } from "../provider-budget.js";
 import {
   validateSupplierRedirect,
   validateSupplierUrl,
@@ -77,6 +78,7 @@ export class ImportProcessor {
   }
 
   async processNext(shop, batchId) {
+    await this.provider.preflightBudget?.();
     const claim = this.db.claimImportRow(shop, batchId, this.now(), this.monthlyDiscoveryLimit);
     if (!claim) return null;
     const { operationId, row } = claim;
@@ -89,7 +91,7 @@ export class ImportProcessor {
       const fetcher = typeof this.provider?.fetchPageForMetadata === "function"
         ? this.provider.fetchPageForMetadata.bind(this.provider)
         : this.provider.fetchPage.bind(this.provider);
-      result = await fetcher(source, hasSufficientProductMetadata);
+      result = await withProviderBudgetContext({ operationId, purpose: "import" }, () => fetcher(source, hasSufficientProductMetadata));
 
       if (result?.ok === false) {
         return this.db.completeImportRow(shop, batchId, row.id, operationId, {

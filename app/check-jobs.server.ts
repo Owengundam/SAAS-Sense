@@ -8,6 +8,7 @@ type CheckJob = {
   total: number;
   completed: number;
   failed: number;
+  budgetBlocked?: number;
   message: string;
 };
 
@@ -53,7 +54,9 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
           await service.checkSource(shop, sourceId);
         } catch (error) {
           job.failed += 1;
-          console.error("Supplier check failed", error);
+          if (error && typeof error === "object" && "code" in error && error.code === "PROVIDER_BUDGET_UNAVAILABLE") {
+            job.budgetBlocked = (job.budgetBlocked || 0) + 1;
+          } else console.error("Supplier check failed", error);
         } finally {
           job.completed += 1;
         }
@@ -63,7 +66,9 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
     }
     queues.delete(shop);
     job.status = "finished";
-    job.message = job.failed
+    job.message = job.budgetBlocked
+      ? `${job.budgetBlocked} check${job.budgetBlocked === 1 ? " was" : "s were"} paused because service budget verification is unavailable. Those checks did not use your allowance. Contact support; repeated retries will not resolve this.`
+      : job.failed
       ? `Finished ${job.total} check${job.total === 1 ? "" : "s"}; ${job.failed} failed. Review the watchlist for details.`
       : `Finished ${job.total} check${job.total === 1 ? "" : "s"}. Review the watchlist for results.`;
   })();
