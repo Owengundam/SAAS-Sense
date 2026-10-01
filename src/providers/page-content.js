@@ -121,38 +121,85 @@ function titleFromHtml(html) {
 }
 
 function productUrl(value, base) {
+  if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value, base);
-    if (!/^https?:$/.test(url.protocol)) return null;
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.searchParams.getAll("variant").length > 1) return null;
     url.hash = "";
     url.searchParams.delete("variant");
     for (const key of [...url.searchParams.keys()]) if (/^utm_/i.test(key)) url.searchParams.delete(key);
     url.searchParams.sort();
-    return `${url.hostname}${url.pathname.replace(/\/$/, "")}${url.search}`;
+    return `${url.origin}${url.pathname.replace(/\/$/, "")}${url.search}`;
   } catch { return null; }
 }
 
 function offerVariant(offer, base) {
-  try { return new URL(offer?.url || "", base).searchParams.get("variant"); } catch { return null; }
+  if (!offer?.url) return null;
+  try {
+    const variants = new URL(offer.url, base).searchParams.getAll("variant");
+    return variants.length === 1 ? variants[0] : null;
+  } catch { return null; }
+}
+
+function conflictingUrlVariant(value, base, requestedVariant) {
+  if (!value) return false;
+  try {
+    const variants = new URL(value, base).searchParams.getAll("variant");
+    return variants.length > 1 || Boolean(requestedVariant && variants.length && variants[0] !== String(requestedVariant));
+  } catch { return true; }
+}
+
+function productOffers(product) {
+  return (Array.isArray(product?.offers) ? product.offers : [product?.offers]).filter(Boolean);
+}
+
+function selectProduct(products, pageUrl, url, requestedVariant, supplierSku) {
+  if (!pageUrl) return [];
+  // A variant Product may omit its own URL (for example ProductGroup.hasVariant).
+  // Its Offer must still point at this exact origin/product, never a related card.
+  let matching = products.filter(product => product.url
+    ? productUrl(product.url, url) === pageUrl
+    : productOffers(product).some(offer => offer.url && productUrl(offer.url, url) === pageUrl));
+  if (requestedVariant) {
+    matching = matching.filter(product => productOffers(product).some(offer =>
+      offerVariant(offer, url) === String(requestedVariant) &&
+      (!offer.url || productUrl(offer.url, url) === pageUrl)));
+  } else if (matching.length > 1 && supplierSku) {
+    matching = matching.filter(product => String(product.sku || "").trim() === supplierSku ||
+      productOffers(product).some(offer => String(offer.sku || "").trim() === supplierSku));
+  }
+  // Preserve the existing single-Product, URL-free schema fallback, but never
+  // let an explicit foreign/invalid Offer URL take that fallback route.
+  if (!matching.length && products.length === 1 && !products[0].url &&
+    !productOffers(products[0]).some(offer => offer.url)) return products;
+  return matching.length === 1 ? matching : [];
 }
 
 export function extractStructuredPage({ jsonLd = [], text = "", title = "", url, runId, source = {},
   textVisibility = "UNVERIFIED_TEXT", productScopes = [], truncated = false }) {
   const products = collectProducts(jsonLd);
   const pageUrl = productUrl(url, url);
-  const matching = products.filter(product => product.url && productUrl(product.url, url) === pageUrl);
-  const scoped = matching.length === 1 ? matching : products.length === 1 && !products[0].url ? products : [];
-  const product = scoped[0];
-  const offers = (Array.isArray(product?.offers) ? product.offers : [product?.offers]).filter(Boolean);
-  const requestedVariant = source.supplierVariantId || offerVariant({ url: source.url || url }, url);
+  const sourceVariant = offerVariant({ url: source.url || url }, url);
+  const requestedVariant = source.supplierVariantId || sourceVariant;
   const supplierSku = String(source.supplierSku || "").trim();
+  const scoped = selectProduct(products, pageUrl, url, requestedVariant, supplierSku);
+  const product = scoped[0];
+  const offers = productOffers(product);
   let selected = offers;
   if (requestedVariant) selected = offers.filter(offer => offerVariant(offer, url) === String(requestedVariant));
   else if (offers.length > 1 && supplierSku) selected = offers.filter(offer => String(offer.sku || "") === supplierSku);
   const offer = selected.length === 1 ? selected[0] : null;
   const wrongOfferUrl = offer?.url && productUrl(offer.url, url) !== pageUrl;
-  const structuredState = !wrongOfferUrl && offer ? availabilityStateFromValue(offer.availability ?? offer.inStock ?? offer.available) : null;
+  const declaredSkus = [product?.sku, offer?.sku].map(value => String(value ?? "").trim()).filter(Boolean);
+  const skuConflict = Boolean(supplierSku && (declaredSkus.some(sku => sku !== supplierSku) ||
+    // Offer-URL binding is new: require the configured SKU to be evidenced, not
+    // merely found elsewhere in a page containing several variants/products.
+    product && !product.url && offer?.url && !declaredSkus.includes(supplierSku)));
   const selectedVariant = offerVariant(offer, url);
+  const requestedVariantConflict = [source.url, url, product?.url].some(value =>
+    conflictingUrlVariant(value, url, requestedVariant || selectedVariant));
+  const structuredState = !wrongOfferUrl && !skuConflict && !requestedVariantConflict && offer
+    ? availabilityStateFromValue(offer.availability ?? offer.inStock ?? offer.available) : null;
   const scopes = productScopes.filter(scope => selectedVariant ? String(scope.variantId) === selectedVariant : productScopes.length === 1);
   const variantConflict = Boolean(productScopes.length && !scopes.length);
   const scope = scopes.length ? {
@@ -170,7 +217,8 @@ export function extractStructuredPage({ jsonLd = [], text = "", title = "", url,
     [...textStates].some(state => state !== structuredState) ||
     (structuredState === "IN_STOCK" && disabledPurchase) ||
     (structuredState === "OUT_OF_STOCK" && enabledPurchase));
-  const ambiguous = products.length > 0 && (!product || wrongOfferUrl || offers.length > 1 && !offer || requestedVariant && offers.length && !offer);
+  const ambiguous = products.length > 0 && (!product || wrongOfferUrl || skuConflict || requestedVariantConflict ||
+    offers.length > 1 && !offer || requestedVariant && offers.length && !offer);
   const unresolvedControls = enabledPurchase && disabledPurchase;
   const unverifiedConflict = textVisibility !== "RENDERED_VISIBLE" && hasUnverifiedPurchaseConflict(evidenceText);
   const visibleConflict = textVisibility === "RENDERED_VISIBLE" && enabledPurchase && textStates.has("OUT_OF_STOCK");
