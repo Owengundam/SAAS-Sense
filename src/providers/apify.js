@@ -8,6 +8,8 @@ const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
 const CONTENT_CRAWLER_ACTOR_ID = "apify~website-content-crawler";
 const DEFAULT_ACTOR_TIMEOUT_MS = 70_000;
 const DEFAULT_BROWSER_ACTOR_TIMEOUT_MS = 120_000;
+const ACTOR_RUN_TIMEOUT_SECS = 60;
+const BROWSER_ACTOR_RUN_TIMEOUT_SECS = 110;
 const MAX_RUN_CHARGE_USD = 1;
 
 function boundedRunCharge(value) {
@@ -284,6 +286,7 @@ function buildInput(actorId, source, captureToken) {
       useSitemaps: false,
       respectRobotsTxtFile: true,
       maxRequestRetries: 0,
+      maxSessionRotations: 0,
       saveHtml: false,
       saveMarkdown: false,
       maxConcurrency: 1,
@@ -329,7 +332,10 @@ export class ApifyProvider {
   }
 
   async fetchFromActor(actorId, source) {
-    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=${this.maxTotalChargeUsd}`;
+    const runTimeoutSecs = actorId === CONTENT_CRAWLER_ACTOR_ID
+      ? BROWSER_ACTOR_RUN_TIMEOUT_SECS
+      : ACTOR_RUN_TIMEOUT_SECS;
+    const endpoint = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&clean=true&maxTotalChargeUsd=${this.maxTotalChargeUsd}&timeout=${runTimeoutSecs}&restartOnError=false`;
     const captureToken = randomUUID();
     const input = buildInput(actorId, source, captureToken);
     const controller = new AbortController();
@@ -397,6 +403,8 @@ export class ApifyProvider {
         textVisibility: "UNVERIFIED_TEXT",
       };
     } catch (error) {
+      // A failed HTTP wait does not prove the Actor stopped or incurred no cost.
+      // The server timeout bounds its run independently; do not retry this POST.
       return { ok: false, error: error.name === "AbortError" ? "Apify timeout" : error.message, runId: `apify-error-${Date.now()}` };
     } finally {
       clearTimeout(timeout);
