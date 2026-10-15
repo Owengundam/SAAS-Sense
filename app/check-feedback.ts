@@ -3,6 +3,7 @@ type CheckJobFeedback = {
   id: string;
   status: "running" | "finished";
   failed: number;
+  unconfirmed?: number;
   message: string;
 };
 
@@ -17,5 +18,5 @@ export function getCheckFeedback(
   if (fetcherState !== "idle" || !action?.message) return null;
   if (!action.checkJobId) return { ok: Boolean(action.ok), message: action.message };
   if (!job || job.id !== action.checkJobId) return null;
-  return { ok: job.failed === 0, message: job.message };
+  return { ok: job.failed === 0 && !job.unconfirmed, message: job.message };
 }

@@ -3,6 +3,7 @@ import { Link, useFetcher, useLoaderData, redirect } from "react-router";
 import { loader as loadWatchlist, action as mutateWatchlist } from "../watchlist.server";
 import { getSupplierSignal } from "../core.server";
 import { formatTime, stateLabel, stateClass } from "../watchlist-ui";
+import { unconfirmedStatus, checkRecovery, sourceCheckError } from "../check-outcome.js";
 import { getCheckFeedback } from "../check-feedback";
 import { useCheckRefresh } from "../watchlist-hooks";
 import styles from "../styles/dashboard.module.css";
@@ -27,19 +28,23 @@ export default function ProductDetails() {
   const observations = data.observations.filter((o: any) => o.source_id === source.id);
   const observation: any = observations.find((o: any) => o.checked_at === source.lastAttemptAt);
   const decision = observation && data.decisions.find((d: any) => d.observation_id === observation.id);
+  const jobError = sourceCheckError(source, data.checkJob);
   const failed = ["PRODUCT_MISMATCH", "SOURCE_ERROR", "UNCERTAIN"].includes(source.lastAttemptStatus);
+  const reason = source.availabilityHoldReason || observation?.reason;
   return <div className={`${styles.page} ${styles.focused}`}>
     <ui-title-bar title="Product details" /><Link className={styles.back} to="/app">← Watchlist</Link>
     <header className={styles.hero}><h1 className={styles.title}>{source.productTitle}</h1></header>
     {source.availabilityHoldReason && <p role="alert" className={`${styles.notice} ${styles.warningNotice}`}>The previous availability result was withdrawn because its captured evidence conflicted. Its original evidence remains in History. A fresh verified check is needed.</p>}
     {feedback && <p role="status" className={`${styles.notice} ${feedback.ok ? "" : styles.error}`}>{feedback.message}</p>}
-    <section className={styles.card}><span className={stateClass(source.lastState, source.stale)}>Supplier status: {stateLabel(source.lastState, false)}</span>
-      <p>Last confirmed {formatTime(source.lastConfirmedAt, zone)}{source.stale && source.lastConfirmedAt ? " · confirmation overdue" : ""}</p>
-      {failed && !source.availabilityHoldReason && <p className={`${styles.notice} ${styles.warningNotice}`}>{source.lastAttemptStatus === "PRODUCT_MISMATCH" ? "The supplier page describes a different product. Change the supplier connection." : "The latest check couldn't confirm availability. The last confirmed result remains above."}</p>}
-      {source.candidateState && <p>Possible change to {stateLabel(source.candidateState, false)}. Checking again {formatTime(source.nextRecheckAt, zone)}.</p>}
+    <section className={styles.card}><span className={stateClass(source.lastState, source.stale)}>Supplier status: {unconfirmedStatus(source, jobError) || stateLabel(source.lastState, false)}</span>
+      <p>{source.lastConfirmedAt ? `Last confirmed ${formatTime(source.lastConfirmedAt, zone)}` : "No confirmed availability yet"}{source.stale && source.lastConfirmedAt ? " · confirmation overdue" : ""}</p>
+      {jobError && <p role="status" className={`${styles.notice} ${styles.warningNotice}`}>Latest check request: {formatTime(jobError.occurredAt, zone)}. {jobError.message}{source.lastState ? " The last confirmed result remains above." : " Availability is still unknown."}</p>}
+      {failed && !jobError && !source.availabilityHoldReason && <p className={`${styles.notice} ${styles.warningNotice}`}>{source.lastAttemptStatus === "PRODUCT_MISMATCH" ? "The supplier page describes a different product. Change the supplier connection." : source.lastState ? "The latest check couldn't confirm availability. The last confirmed result remains above." : "The check finished without confirming availability."}</p>}
+      {failed && !jobError && <div role="status"><p><strong>Latest check:</strong> {formatTime(source.lastAttemptAt, zone)}</p><p>{reason || "The supplier check did not produce verifiable availability evidence."}</p><p>{checkRecovery(source.lastAttemptStatus, reason)}</p><Link to="/app/add">Change supplier</Link></div>}
+      {source.candidateState && <p>Possible change to {stateLabel(source.candidateState, false)}. {data.schedulerEnabled ? "Checking again" : "Run Check now again after"} {formatTime(source.nextRecheckAt, zone)}.</p>}
       <div className={styles.toolbar}><a href={source.url} target="_blank" rel="noreferrer">Open supplier page ↗</a><fetcher.Form method="post"><input type="hidden" name="intent" value="check-one" /><input type="hidden" name="sourceId" value={source.id} /><button className={`${styles.button} ${styles.secondary}`} disabled={fetcher.state !== "idle" || data.checkJob?.status === "running"}>{data.checkJob?.status === "running" ? "Checking…" : "Check now"}</button></fetcher.Form></div>
     </section>
-    <details className={`${styles.card} ${styles.detailSection}`}><summary>Why this result?</summary><p>{source.availabilityHoldReason || observation?.reason || "The first availability check has not completed yet."}</p>{observation && <><p className={styles.muted}>Captured {formatTime(observation.checked_at, zone)}</p>{observation.raw_excerpt && <blockquote>{observation.raw_excerpt}</blockquote>}</>}</details>
+    <details className={`${styles.card} ${styles.detailSection}`}><summary>Why this result?</summary><p>{jobError?.message || source.availabilityHoldReason || observation?.reason || (source.lastAttemptAt ? "No explanation was saved for the latest attempt." : "The first availability check has not completed yet.")}</p>{observation && <><p className={styles.muted}>Captured {formatTime(observation.checked_at, zone)}</p>{observation.raw_excerpt && <blockquote>{observation.raw_excerpt}</blockquote>}</>}</details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>History</summary><p className={styles.muted}>Most recent 100 checks for this product.</p><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Checked</th><th>Observation</th><th>Evidence</th></tr></thead><tbody>{observations.map((o: any) => <tr key={o.id}><td>{formatTime(o.checked_at, zone)}</td><td>{stateLabel(o.state, false)}</td><td>{o.reason}</td></tr>)}</tbody></table></div>{!observations.length && <p>No checks yet.</p>}</details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Connection details</summary><dl className={styles.auditGrid}><dt>Shopify variant</dt><dd>{source.shopifyVariantId}</dd><dt>Supplier identifier</dt><dd>{source.supplierSku}</dd><dt>Supplier page</dt><dd>{source.url}</dd></dl><p>To change suppliers, add this Shopify product again. We'll verify the new page and ask you to confirm replacement.</p><Link to="/app/add">Change supplier</Link></details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Technical diagnostics</summary>{decision ? <dl className={styles.auditGrid}>{Object.entries(decision).map(([key,value]) => <div key={key} style={{ display: "contents" }}><dt>{key.replaceAll("_", " ")}</dt><dd>{String(value ?? "—")}</dd></div>)}</dl> : <p>No diagnostic record for the latest attempt.</p>}</details>
