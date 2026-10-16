@@ -16,7 +16,8 @@ export default function Watchlist() {
   const [query, setQuery] = useState("");
   const zone = useCheckRefresh(data.checkJob?.status === "running");
   const attention = (s: any) => Boolean(sourceCheckError(s, data.checkJob)) || !s.lastState || s.stale || ["PRODUCT_MISMATCH", "SOURCE_ERROR", "UNCERTAIN"].includes(s.lastAttemptStatus);
-  const changed = new Set(data.alerts.map((a: any) => a.source_id));
+  const changed = new Set(data.alerts.filter((a: any) => data.sources.some((s: any) =>
+    s.id === a.source_id && s.connectionRevision === a.connection_revision)).map((a: any) => a.source_id));
   const sources = data.sources.filter((s: any) =>
     `${s.productTitle} ${s.supplierSku || ""} ${s.url}`.toLowerCase().includes(query.toLowerCase()) &&
     (filter === "all" || (filter === "attention" ? attention(s) : changed.has(s.id))));

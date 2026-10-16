@@ -1,3 +1,4 @@
+import { checkErrorCode } from "./check-errors.js";
 import { unresolvedAvailability } from "./availability-safety.js";
 import { classifyObservation, decideTransition, evaluateAiObservation, isStale } from "./domain.js";
 import { evidenceContextForReference } from "./evidence.js";
@@ -117,21 +118,17 @@ export class SupplierSignalService {
   }
 
   async checkSource(shop, sourceId) {
-    const tenant = this.db.getTenant(shop);
-    if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
     const source = this.db.getSource(shop, sourceId);
-    if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
-    validateSupplierUrl(source.url, this.supportedDomains);
-    const usage = this.db.reserveCheckUsage(
-      shop,
-      source.id,
-      this.now(),
-      undefined,
-      this.globalMonthlyCheckLimit,
-    );
+    const requestId = source ? this.db.startCheckRequest(shop, source, this.now()) : null;
+    let usage = null;
     let providerAttemptsRecorded = false;
 
     try {
+      const tenant = this.db.getTenant(shop);
+      if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
+      if (!source || !source.enabled) throw new Error("SOURCE_NOT_FOUND");
+      validateSupplierUrl(source.url, this.supportedDomains);
+      usage = this.db.reserveCheckUsage(shop, source.id, this.now(), undefined, this.globalMonthlyCheckLimit);
       let providerResult = await this.provider.fetchPage(source);
       const providerAttempts = providerResult?.providerAttempts?.length
         ? providerResult.providerAttempts
@@ -244,72 +241,82 @@ export class SupplierSignalService {
         finalState: observation.state,
         finalConfidence: observation.confidence,
       };
-      const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "");
-      if (inserted.id) {
-        this.db.insertDecisionRecord(
-          shop,
-          source.id,
-          inserted.id,
-          usage.operationId,
-          decision,
-          this.now(),
-        );
-        if (inserted.inserted && Array.isArray(aiResult?.modelEvaluations)) {
-          this.db.insertModelEvaluations(
+      const committed = this.db.commitSourceCheck(shop, source.id, source.connectionRevision, currentSource => {
+        const inserted = this.db.insertObservation(shop, source.id, providerRunId, observation, providerResult.text || "", source);
+        if (inserted.inserted && inserted.id) {
+          this.db.insertDecisionRecord(
             shop,
             source.id,
             inserted.id,
             usage.operationId,
-            aiResult.modelEvaluations,
+            decision,
             this.now(),
           );
+          if (inserted.inserted && Array.isArray(aiResult?.modelEvaluations)) {
+            this.db.insertModelEvaluations(
+              shop,
+              source.id,
+              inserted.id,
+              usage.operationId,
+              aiResult.modelEvaluations,
+              this.now(),
+            );
+          }
         }
-      }
-      if (!inserted.inserted) {
+        if (!inserted.inserted) {
+          this.db.completeCheckUsage(shop, usage.operationId, {
+            outcome: "DUPLICATE_DELIVERY",
+            providerRunId,
+            completedAt: this.now(),
+          });
+          this.db.completeCheckRequest(shop, requestId, "COMPLETED", "DUPLICATE_DELIVERY", this.now());
+          return { duplicate: true, source: this.db.getSource(shop, source.id), observation };
+        }
+
+        const transition = decideTransition(currentSource, observation, this.confirmationCount);
+        const nextRecheckAt = transition.candidateState
+          ? new Date(new Date(observation.checkedAt).getTime() + this.recheckDelayMinutes * 60 * 1000).toISOString()
+          : null;
+        const confirmedAt = observation.factual && observation.confidence >= 0.8 &&
+          transition.confirmedState === observation.state && !transition.candidateState
+          ? observation.checkedAt
+          : null;
+        this.db.updateTransition(shop, source.id, transition, observation, nextRecheckAt, confirmedAt);
+        if (transition.alert) this.db.insertAlert(shop, source.id, transition.alert, this.now());
         this.db.completeCheckUsage(shop, usage.operationId, {
-          outcome: "DUPLICATE_DELIVERY",
+          outcome: observation.state,
           providerRunId,
           completedAt: this.now(),
         });
-        return { duplicate: true, source: this.db.getSource(shop, source.id), observation };
-      }
 
-      const transition = decideTransition(source, observation, this.confirmationCount);
-      const nextRecheckAt = transition.candidateState
-        ? new Date(new Date(observation.checkedAt).getTime() + this.recheckDelayMinutes * 60 * 1000).toISOString()
-        : null;
-      const confirmedAt = observation.factual && observation.confidence >= 0.8 &&
-        transition.confirmedState === observation.state && !transition.candidateState
-        ? observation.checkedAt
-        : null;
-      this.db.updateTransition(shop, source.id, transition, observation, nextRecheckAt, confirmedAt);
-      if (transition.alert) this.db.insertAlert(shop, source.id, transition.alert, this.now());
-      this.db.completeCheckUsage(shop, usage.operationId, {
-        outcome: observation.state,
-        providerRunId,
-        completedAt: this.now(),
+        this.db.completeCheckRequest(shop, requestId, "COMPLETED", observation.state, this.now());
+        return {
+          duplicate: false,
+          observation,
+          transition,
+          source: this.db.getSource(shop, source.id),
+        };
       });
-
-      return {
-        duplicate: false,
-        observation,
-        transition,
-        source: this.db.getSource(shop, source.id),
-      };
+      if (committed.stale) {
+        this.db.completeCheckUsage(shop, usage.operationId, {
+          outcome: "STALE_CONNECTION", providerRunId, completedAt: this.now(),
+        });
+        this.db.completeCheckRequest(shop, requestId, "SUPERSEDED", "STALE_CONNECTION", this.now());
+      }
+      return committed;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!providerAttemptsRecorded) {
+      const code = checkErrorCode(error);
+      if (usage && !providerAttemptsRecorded) {
         this.db.recordProviderAttempt(shop, usage.operationId, {
           provider: this.provider.constructor?.name || "provider",
           role: "primary",
           outcome: "FAILED",
         }, this.now());
       }
-      this.db.completeCheckUsage(shop, usage.operationId, {
-        status: "FAILED",
-        outcome: message || "CHECK_FAILED",
-        completedAt: this.now(),
+      if (usage) this.db.completeCheckUsage(shop, usage.operationId, {
+        status: "FAILED", outcome: code, completedAt: this.now(),
       });
+      if (requestId) this.db.completeCheckRequest(shop, requestId, "FAILED", code, this.now());
       throw error;
     }
   }

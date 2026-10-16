@@ -118,6 +118,37 @@ try {
   const failedRefreshHtml = await checkAndRender({ ok: false, error: "Fixture supplier unavailable", runId: "refresh-failed" });
   assert.match(failedRefreshHtml, /Supplier status: <!-- -->Available now/);
   assert.equal(service.db.getSource(shop, source.id).lastConfirmedAt, prior.lastConfirmedAt);
+  // Quota failures have no observation, but must stay visible after unrelated
+  // jobs replace the in-memory latest job and after SQLite is reopened.
+  const originalProvider = service.provider;
+  service.db.raw.prepare("UPDATE tenants SET monthly_check_limit=0 WHERE shop=?").run(shop);
+  const beforeQuota = service.db.getSource(shop, source.id);
+  await assert.rejects(service.checkSource(shop, source.id), /CHECK_QUOTA_EXCEEDED/);
+  const other = service.addSource(shop, { sku: "OTHER", productTitle: "Other Lamp", supplierSku: "OTHER",
+    matchTerms: ["OTHER"], matchConfirmed: true, url: "https://supplier.test/other-lamp" });
+  await assert.rejects(service.checkSource(shop, other.id), /CHECK_QUOTA_EXCEEDED/);
+  globalThis.supplierSignalCheckJobs.clear();
+  service.db.close();
+  const { createDatabase } = await import("../src/db.js");
+  const reopened = createDatabase(process.env.SUPPLIER_DATABASE_PATH);
+  service.db = reopened;
+  globalThis.supplierSignalCore.db = reopened;
+  const durableHtml = await (await handle(request(`/app/products/${source.id}`))).text();
+  assert.match(durableHtml.split("<details")[0], /monthly check allowance is used up/);
+  assert.match(durableHtml, /Check requests/);
+  assert.equal(reopened.getSource(shop, source.id).lastConfirmedAt, beforeQuota.lastConfirmedAt);
+  assert.equal(reopened.getSource(shop, source.id).lastAttemptAt, beforeQuota.lastAttemptAt);
+  const watchlistHtml = await (await handle(request("/app"))).text();
+  assert.match(watchlistHtml, /Couldn&#x27;t refresh/);
+  // A replacement starts unknown while its History names the original page.
+  service.updateSource(shop, source.id, { sku: "NEW", productTitle: "Replacement Lamp", supplierSku: "NEW",
+    matchTerms: ["NEW"], matchConfirmed: true, url: "https://supplier.test/replacement-lamp" });
+  const replacementHtml = await (await handle(request(`/app/products/${source.id}`))).text();
+  assert.match(replacementHtml, /Previous supplier connection/);
+  assert.match(replacementHtml, /href="https:\/\/supplier.test\/pricing-smoke-lamp"/);
+  assert.match(replacementHtml.split("<details")[0], /First check pending/);
+  assert.doesNotMatch(replacementHtml.split("<details")[0], /monthly check allowance is used up/);
+  service.provider = originalProvider;
   const anonymous = await handle(new Request("https://public-page-smoke.example/app/pricing.data"));
   assert.doesNotMatch(await anonymous.text(), /pricing_plans/, "anonymous request must not disclose a shop plan URL");
   process.env.SHOPIFY_APP_PRICING_ENABLED = "false";
@@ -127,7 +158,7 @@ try {
   const disabledLegacy = await handle(request("/app/pricing"));
   assert.equal(disabledLegacy.status, 302);
   assert.equal(disabledLegacy.headers.get("location"), "https://public-page-smoke.example/app");
-  console.log("Review-flow smoke passed: authenticated pricing navigation, repeated visits, disabled pricing, real async check actions and rendered outcomes; no live calls or charges.");
+  console.log("Review-flow smoke passed: authenticated pricing navigation, repeated visits, disabled pricing, real async check actions, durable failure feedback, replacement history and rendered outcomes; no live calls or charges.");
 } finally {
   globalThis.fetch = originalFetch;
   await globalThis.prismaGlobal.$disconnect();

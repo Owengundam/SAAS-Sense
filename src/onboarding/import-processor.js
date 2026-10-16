@@ -299,10 +299,11 @@ export class ImportProcessor {
       };
     });
 
-    const sourceIds = this.db.commitImportApprovals(shop, batchId, approvals, {
+    const { sourceIds, newlyApprovedSourceIds } = this.db.commitImportApprovals(shop, batchId, approvals, {
       reviewer,
       now: this.now(),
+      returnDetails: true,
     });
-    return { sourceIds, approved: sourceIds.length };
+    return { sourceIds, newlyApprovedSourceIds, approved: newlyApprovedSourceIds.length };
   }
 }

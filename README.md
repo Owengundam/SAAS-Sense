@@ -68,6 +68,14 @@ The reviewer sees Shopify and supplier identities side by side, opens the suppli
 
 Manual review reuses saved metadata without another scrape. One newly approved mapping queues one initial availability check. Duplicate/replayed approval returns the recorded connection and does not queue another baseline. Existing source-limit, tenant, replacement-confirmation and safety gates remain in force. The automatic strong-identifier bulk-approval path is unchanged.
 
+## Check integrity and request history
+
+Supplier connections have a monotonically increasing revision. Editing or replacing a connection resets its availability baseline and increments that revision. A check captures the revision before provider work and commits its observation, decision, model evaluations, transition and alert under a single SQLite write transaction only if the connection is still current and enabled. Late results are marked `STALE_CONNECTION` in the usage/request audit and cannot become the replacement supplier's baseline. Already-incurred usage remains counted.
+
+New observations and alerts preserve an immutable snapshot of the original connection identity. History shows the captured supplier URL/revision; old records whose original identity was never saved are explicitly marked unavailable rather than relabelled as today's supplier. The Changed filter uses only alerts for the current connection revision.
+
+Check requests are stored separately from availability evidence, including sanitized quota/pre-observation failures. They survive another source's job and application restarts without changing last-observed or last-confirmed timestamps. A replacement begins with no request feedback inherited from the previous supplier. Repeated bulk approvals return their saved source IDs but queue only newly approved connections.
+
 ## Provider modes
 
 ### Mock — tested
