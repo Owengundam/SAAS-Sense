@@ -6,6 +6,14 @@ import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { productIdentityConflict, IDENTITY_MISMATCH_REASON } from "./product-identity.js";
 
+// Snapshot only connection identity, never mutable availability or request feedback.
+function sourceSnapshot(source) {
+  return JSON.stringify({ url: source.url, sku: source.sku, productTitle: source.productTitle,
+    shopifyProductId: source.shopifyProductId, shopifyVariantId: source.shopifyVariantId,
+    supplierProductId: source.supplierProductId, supplierVariantId: source.supplierVariantId,
+    supplierSku: source.supplierSku, matchTerms: source.matchTerms });
+}
+
 const JSON_FIELDS = ["matchTerms", "inStockTerms", "outOfStockTerms"];
 
 function decodeSource(row) {
@@ -58,6 +66,19 @@ export function createDatabase(path = ":memory:") {
       created_at TEXT NOT NULL,
       UNIQUE(shop, sku, url)
     );
+    CREATE TABLE IF NOT EXISTS check_requests (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+      shop TEXT NOT NULL REFERENCES tenants(shop) ON DELETE CASCADE,
+      connection_revision INTEGER NOT NULL,
+      source_snapshot TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      completed_at TEXT,
+      status TEXT NOT NULL,
+      outcome TEXT
+    );
+    CREATE INDEX IF NOT EXISTS check_requests_source_revision
+      ON check_requests(shop, source_id, connection_revision);
     CREATE TABLE IF NOT EXISTS observations (
       id TEXT PRIMARY KEY,
       source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -310,6 +331,14 @@ export function createDatabase(path = ":memory:") {
   if (!sourceColumns.has("supplier_sku")) db.exec("ALTER TABLE sources ADD COLUMN supplier_sku TEXT");
   if (!sourceColumns.has("match_confirmed_at")) db.exec("ALTER TABLE sources ADD COLUMN match_confirmed_at TEXT");
   if (!sourceColumns.has("availability_hold_reason")) db.exec("ALTER TABLE sources ADD COLUMN availability_hold_reason TEXT");
+  if (!sourceColumns.has("connection_revision")) db.exec("ALTER TABLE sources ADD COLUMN connection_revision INTEGER NOT NULL DEFAULT 1");
+  // Legacy evidence cannot safely be attributed to today's mutable connection.
+  // Leave its identity unknown rather than relabeling an old supplier as a new one.
+  for (const table of ["observations", "alerts"]) {
+    const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+    if (!columns.has("connection_revision")) db.exec(`ALTER TABLE ${table} ADD COLUMN connection_revision INTEGER`);
+    if (!columns.has("source_snapshot")) db.exec(`ALTER TABLE ${table} ADD COLUMN source_snapshot TEXT`);
+  }
   const usageColumns = new Set(db.prepare("PRAGMA table_info(usage_ledger)").all().map(column => column.name));
   if (!usageColumns.has("superseded_by_operation_id")) db.exec("ALTER TABLE usage_ledger ADD COLUMN superseded_by_operation_id TEXT");
   const decisionColumns = new Set(db.prepare("PRAGMA table_info(decision_records)").all().map((column) => column.name));
@@ -431,6 +460,14 @@ export function createDatabase(path = ":memory:") {
     supplierVariantId: row.supplier_variant_id,
     supplierSku: row.supplier_sku,
     matchConfirmedAt: row.match_confirmed_at,
+    connectionRevision: row.connection_revision,
+    lastCheckRequest: (() => {
+      const request = db.prepare(`SELECT id, requested_at, completed_at, status, outcome FROM check_requests
+        WHERE shop=? AND source_id=? AND connection_revision=? ORDER BY rowid DESC LIMIT 1`)
+        .get(row.shop, row.id, row.connection_revision);
+      return request ? { id: request.id, requestedAt: request.requested_at, completedAt: request.completed_at,
+        status: request.status, outcome: request.outcome } : null;
+    })(),
     availabilityHoldReason: row.availability_hold_reason,
     url: row.url,
     matchTerms: row.match_terms,
@@ -452,6 +489,36 @@ export function createDatabase(path = ":memory:") {
   return {
     raw: db,
     close: () => db.close(),
+    startCheckRequest(shop, source, now = new Date()) {
+      const id = randomUUID();
+      db.prepare(`INSERT INTO check_requests
+        (id, source_id, shop, connection_revision, source_snapshot, requested_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'RUNNING')`).run(
+        id, source.id, shop, source.connectionRevision, sourceSnapshot(source), now.toISOString());
+      return id;
+    },
+    completeCheckRequest(shop, id, status, outcome, now = new Date()) {
+      db.prepare(`UPDATE check_requests SET status=?, outcome=?, completed_at=? WHERE shop=? AND id=?`)
+        .run(status, outcome, now.toISOString(), shop, id);
+    },
+    listCheckRequests(shop, sourceId, limit = 100) {
+      return db.prepare(`SELECT * FROM check_requests WHERE shop=? AND source_id=? ORDER BY rowid DESC LIMIT ?`)
+        .all(shop, sourceId, limit);
+    },
+    // The revision check and every evidence/state/alert write share one write lock.
+    // The callback must be synchronous: provider and AI work finish before entry.
+    commitSourceCheck(shop, sourceId, expectedRevision, commit) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = this.getSource(shop, sourceId);
+        const tenant = this.getTenant(shop);
+        const result = !current?.enabled || !tenant?.active || current.connectionRevision !== expectedRevision
+          ? { stale: true, source: current }
+          : commit(current);
+        db.exec("COMMIT");
+        return result;
+      } catch (error) { db.exec("ROLLBACK"); throw error; }
+    },
     upsertTenant(tenant) {
       db.prepare(`INSERT INTO tenants (shop, demo_token, plan, active, source_limit, monthly_check_limit, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1087,7 +1154,8 @@ export function createDatabase(path = ":memory:") {
               url=?, match_terms=?, in_stock_terms=?, out_of_stock_terms=?, stale_after_hours=?,
               last_state=NULL, candidate_state=NULL, candidate_count=0,
               last_checked_at=NULL, last_attempt_at=NULL, last_attempt_status=NULL,
-              last_confirmed_at=NULL, next_recheck_at=NULL, enabled=1
+              last_confirmed_at=NULL, next_recheck_at=NULL, availability_hold_reason=NULL, enabled=1,
+              connection_revision=connection_revision+1
               WHERE shop=? AND id=?`).run(
               approval.source.sku,
               approval.source.productTitle,
@@ -1226,6 +1294,7 @@ export function createDatabase(path = ":memory:") {
       const rows = db.prepare(`SELECT s.id, s.last_state, o.id AS observation_id, o.raw_excerpt,
         d.evidence_context, d.decision_details FROM sources s
         JOIN observations o ON o.source_id=s.id AND o.shop=s.shop AND o.checked_at=s.last_confirmed_at
+          AND (o.connection_revision=s.connection_revision OR (o.connection_revision IS NULL AND s.connection_revision=1))
         LEFT JOIN decision_records d ON d.observation_id=o.id AND d.shop=o.shop
         WHERE s.shop=? AND s.last_state IS NOT NULL AND o.factual=1 AND o.state=s.last_state`).all(shop);
       let count = 0;
@@ -1253,6 +1322,7 @@ export function createDatabase(path = ":memory:") {
       if (this.getAppState(key)) return 0;
       const rows = db.prepare(`SELECT s.*,
         (SELECT raw_excerpt FROM observations o WHERE o.source_id=s.id
+         AND (o.connection_revision=s.connection_revision OR (o.connection_revision IS NULL AND s.connection_revision=1))
          ORDER BY o.checked_at DESC LIMIT 1) AS latest_excerpt
         FROM sources s WHERE s.shop=? AND s.last_state IS NOT NULL
         AND s.shopify_variant_id IS NOT NULL`).all(shop);
@@ -1281,7 +1351,8 @@ export function createDatabase(path = ":memory:") {
         shopify_product_id=?, shopify_variant_id=?, supplier_product_id=?, supplier_variant_id=?,
         supplier_sku=?, match_confirmed_at=?, url=?, match_terms=?,
         last_state=NULL, candidate_state=NULL, candidate_count=0, last_checked_at=NULL,
-        last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL, availability_hold_reason=NULL
+        last_attempt_at=NULL, last_attempt_status=NULL, last_confirmed_at=NULL, next_recheck_at=NULL, availability_hold_reason=NULL,
+        connection_revision=connection_revision+1
         WHERE shop=? AND id=?`).run(
         input.sku, input.productTitle,
         input.shopifyProductId || null, input.shopifyVariantId || null,
@@ -1306,15 +1377,16 @@ export function createDatabase(path = ":memory:") {
         confirmedAt, nextRecheckAt, observation.factual && observation.confidence >= 0.8 ? 1 : 0, shop, id,
       );
     },
-    insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "") {
+    insertObservation(shop, sourceId, providerRunId, observation, rawExcerpt = "", capturedSource = null) {
       const id = randomUUID();
+      const source = capturedSource || this.getSource(shop, sourceId);
       try {
         db.prepare(`INSERT INTO observations
-          (id, source_id, shop, provider_run_id, state, confidence, reason, factual, checked_at, raw_excerpt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          (id, source_id, shop, provider_run_id, state, confidence, reason, factual, checked_at, raw_excerpt, connection_revision, source_snapshot)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           id, sourceId, shop, providerRunId, observation.state, observation.confidence,
           observation.reason, observation.factual ? 1 : 0, observation.checkedAt,
-          String(rawExcerpt).slice(0, 500),
+          String(rawExcerpt).slice(0, 500), source.connectionRevision, sourceSnapshot(source),
         );
         return { inserted: true, id };
       } catch (error) {
@@ -1388,32 +1460,41 @@ export function createDatabase(path = ":memory:") {
     },
     insertAlert(shop, sourceId, alert, now = new Date()) {
       const id = randomUUID();
-      db.prepare(`INSERT INTO alerts (id, source_id, shop, from_state, to_state, message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-        id, sourceId, shop, alert.from, alert.to, alert.message, now.toISOString(),
+      const source = this.getSource(shop, sourceId);
+      db.prepare(`INSERT INTO alerts (id, source_id, shop, from_state, to_state, message, created_at, connection_revision, source_snapshot)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, sourceId, shop, alert.from, alert.to, alert.message, now.toISOString(), source.connectionRevision, sourceSnapshot(source),
       );
       return id;
     },
     listObservations(shop, limit = 30, sourceId = null) {
-      return db.prepare(`SELECT o.*, s.sku, s.product_title FROM observations o
+      return db.prepare(`SELECT o.*, json_extract(o.source_snapshot, '$.sku') AS sku,
+        COALESCE(json_extract(o.source_snapshot, '$.productTitle'), 'Legacy connection (identity unavailable)') AS product_title,
+        json_extract(o.source_snapshot, '$.url') AS source_url FROM observations o
         JOIN sources s ON s.id=o.source_id WHERE o.shop=? AND (? IS NULL OR o.source_id=?) ORDER BY o.checked_at DESC LIMIT ?`).all(shop, sourceId, sourceId, limit);
     },
     listDecisionRecords(shop, limit = 30, sourceId = null) {
-      return db.prepare(`SELECT d.*, o.checked_at, s.sku, s.product_title
+      return db.prepare(`SELECT d.*, o.checked_at, o.connection_revision, json_extract(o.source_snapshot, '$.sku') AS sku,
+        COALESCE(json_extract(o.source_snapshot, '$.productTitle'), 'Legacy connection (identity unavailable)') AS product_title,
+        json_extract(o.source_snapshot, '$.url') AS source_url
         FROM decision_records d
         JOIN observations o ON o.id=d.observation_id
         JOIN sources s ON s.id=d.source_id
         WHERE d.shop=? AND (? IS NULL OR d.source_id=?) ORDER BY d.created_at DESC LIMIT ?`).all(shop, sourceId, sourceId, limit);
     },
     listModelEvaluations(shop, limit = 100) {
-      return db.prepare(`SELECT m.*, o.checked_at, s.sku, s.product_title
+      return db.prepare(`SELECT m.*, o.checked_at, o.connection_revision, json_extract(o.source_snapshot, '$.sku') AS sku,
+        COALESCE(json_extract(o.source_snapshot, '$.productTitle'), 'Legacy connection (identity unavailable)') AS product_title,
+        json_extract(o.source_snapshot, '$.url') AS source_url
         FROM model_evaluations m
         JOIN observations o ON o.id=m.observation_id
         JOIN sources s ON s.id=m.source_id
         WHERE m.shop=? ORDER BY m.created_at DESC, m.id LIMIT ?`).all(shop, limit);
     },
     listAlerts(shop, limit = 20) {
-      return db.prepare(`SELECT a.*, s.sku, s.product_title FROM alerts a
+      return db.prepare(`SELECT a.*, json_extract(a.source_snapshot, '$.sku') AS sku,
+        COALESCE(json_extract(a.source_snapshot, '$.productTitle'), 'Legacy connection (identity unavailable)') AS product_title,
+        json_extract(a.source_snapshot, '$.url') AS source_url FROM alerts a
         JOIN sources s ON s.id=a.source_id WHERE a.shop=? ORDER BY a.created_at DESC LIMIT ?`).all(shop, limit);
     },
     recordWebhook(deliveryId, topic, shop, now = new Date()) {

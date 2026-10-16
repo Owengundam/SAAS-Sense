@@ -70,6 +70,12 @@ test("existing observations migrate into durable usage and freshness fields", ()
 
     const db = createDatabase(path);
     const source = db.getSource("legacy.myshopify.com", "source-1");
+    assert.equal(source.connectionRevision, 1);
+    assert.equal(source.lastCheckRequest, null);
+    const legacyObservation = db.listObservations("legacy.myshopify.com")[0];
+    assert.equal(legacyObservation.connection_revision, null);
+    assert.equal(legacyObservation.source_url, null);
+    assert.equal(legacyObservation.product_title, "Legacy connection (identity unavailable)");
     assert.equal(source.lastAttemptAt, "2026-09-15T12:00:00.000Z");
     assert.equal(source.lastAttemptStatus, "IN_STOCK");
     assert.equal(source.lastConfirmedAt, "2026-09-15T12:00:00.000Z");

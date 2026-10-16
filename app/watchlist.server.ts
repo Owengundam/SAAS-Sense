@@ -201,14 +201,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         selections,
         String((session as any).id || session.shop),
       );
-      const baselineStarted = approved.sourceIds.length
-        ? startCheckJob(session.shop, approved.sourceIds, service, true)
+      // A repeated submission returns saved source IDs without buying another check.
+      const baselineStarted = approved.newlyApprovedSourceIds.length
+        ? startCheckJob(session.shop, approved.newlyApprovedSourceIds, service, true)
         : false;
       return {
         ok: true,
         sourceIds: approved.sourceIds,
         mappingsApproved: approved.approved,
-        message: `Approved ${approved.approved} mapping${approved.approved === 1 ? "" : "s"}. ${baselineStarted ? "First availability checks are queued." : "Stock remains unknown until the normal availability checker runs."}`,
+        message: approved.approved === 0 ? "These mappings were already saved."
+          : `Approved ${approved.approved} mapping${approved.approved === 1 ? "" : "s"}. ${baselineStarted ? "First availability checks are queued." : "Stock remains unknown until the normal availability checker runs."}`,
       };
     }
     if (intent === "check-all") {

@@ -3,7 +3,7 @@ import { Link, useFetcher, useLoaderData, redirect } from "react-router";
 import { loader as loadWatchlist, action as mutateWatchlist } from "../watchlist.server";
 import { getSupplierSignal } from "../core.server";
 import { formatTime, stateLabel, stateClass } from "../watchlist-ui";
-import { unconfirmedStatus, checkRecovery, sourceCheckError } from "../check-outcome.js";
+import { unconfirmedStatus, checkRecovery, sourceCheckError, checkErrorMessage } from "../check-outcome.js";
 import { getCheckFeedback } from "../check-feedback";
 import { useCheckRefresh } from "../watchlist-hooks";
 import styles from "../styles/dashboard.module.css";
@@ -12,7 +12,7 @@ export async function loader(args: LoaderFunctionArgs) {
   const source = data.sources.find((s: any) => s.id === args.params.sourceId);
   if (!source) throw new Response("Product not found", { status: 404 });
   const { db } = getSupplierSignal();
-  return { ...data, source, observations: db.listObservations(data.shop, 100, source.id), decisions: db.listDecisionRecords(data.shop, 100, source.id) };
+  return { ...data, source, observations: db.listObservations(data.shop, 100, source.id), decisions: db.listDecisionRecords(data.shop, 100, source.id), checkRequests: db.listCheckRequests(data.shop, source.id) };
 }
 export async function action(args: ActionFunctionArgs) {
   const result = await mutateWatchlist(args);
@@ -26,7 +26,7 @@ export default function ProductDetails() {
   const source = data.source;
   const zone = useCheckRefresh(data.checkJob?.status === "running");
   const observations = data.observations.filter((o: any) => o.source_id === source.id);
-  const observation: any = observations.find((o: any) => o.checked_at === source.lastAttemptAt);
+  const observation: any = observations.find((o: any) => o.checked_at === source.lastAttemptAt && (o.connection_revision === source.connectionRevision || (o.connection_revision == null && source.connectionRevision === 1)));
   const decision = observation && data.decisions.find((d: any) => d.observation_id === observation.id);
   const jobError = sourceCheckError(source, data.checkJob);
   const failed = ["PRODUCT_MISMATCH", "SOURCE_ERROR", "UNCERTAIN"].includes(source.lastAttemptStatus);
@@ -45,7 +45,8 @@ export default function ProductDetails() {
       <div className={styles.toolbar}><a href={source.url} target="_blank" rel="noreferrer">Open supplier page ↗</a><fetcher.Form method="post"><input type="hidden" name="intent" value="check-one" /><input type="hidden" name="sourceId" value={source.id} /><button className={`${styles.button} ${styles.secondary}`} disabled={fetcher.state !== "idle" || data.checkJob?.status === "running"}>{data.checkJob?.status === "running" ? "Checking…" : "Check now"}</button></fetcher.Form></div>
     </section>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Why this result?</summary><p>{jobError?.message || source.availabilityHoldReason || observation?.reason || (source.lastAttemptAt ? "No explanation was saved for the latest attempt." : "The first availability check has not completed yet.")}</p>{observation && <><p className={styles.muted}>Captured {formatTime(observation.checked_at, zone)}</p>{observation.raw_excerpt && <blockquote>{observation.raw_excerpt}</blockquote>}</>}</details>
-    <details className={`${styles.card} ${styles.detailSection}`}><summary>History</summary><p className={styles.muted}>Most recent 100 checks for this product.</p><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Checked</th><th>Observation</th><th>Evidence</th></tr></thead><tbody>{observations.map((o: any) => <tr key={o.id}><td>{formatTime(o.checked_at, zone)}</td><td>{stateLabel(o.state, false)}</td><td>{o.reason}</td></tr>)}</tbody></table></div>{!observations.length && <p>No checks yet.</p>}</details>
+    <details className={`${styles.card} ${styles.detailSection}`}><summary>History</summary><p className={styles.muted}>Most recent 100 checks for this product.</p><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Checked</th><th>Supplier connection</th><th>Observation</th><th>Evidence</th></tr></thead><tbody>{observations.map((o: any) => <tr key={o.id}><td>{formatTime(o.checked_at, zone)}</td><td>{o.source_url ? <a href={o.source_url} target="_blank" rel="noreferrer">{o.product_title} · connection {o.connection_revision}</a> : "Original connection identity unavailable"}{o.connection_revision != null && o.connection_revision !== source.connectionRevision && <span className={styles.muted}>Previous supplier connection</span>}</td><td>{stateLabel(o.state, false)}</td><td>{o.reason}</td></tr>)}</tbody></table></div>{!observations.length && <p>No checks yet.</p>}</details>
+    <details className={`${styles.card} ${styles.detailSection}`}><summary>Check requests</summary><p className={styles.muted}>Most recent 100 requests. Request failures do not refresh availability or create supplier evidence.</p>{data.checkRequests.map((request: any) => <p key={request.id}>{formatTime(request.completed_at || request.requested_at, zone)} · connection {request.connection_revision}: {request.status === "FAILED" ? checkErrorMessage(new Error(request.outcome)) : request.status === "SUPERSEDED" ? "Supplier connection changed before this check finished; its result was not applied." : request.status === "RUNNING" ? "No completion recorded yet. The check may still be running or may have been interrupted." : "Check completed; see the saved evidence for its availability result."}</p>)}{!data.checkRequests.length && <p>No requests recorded yet.</p>}</details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Connection details</summary><dl className={styles.auditGrid}><dt>Shopify variant</dt><dd>{source.shopifyVariantId}</dd><dt>Supplier identifier</dt><dd>{source.supplierSku}</dd><dt>Supplier page</dt><dd>{source.url}</dd></dl><p>To change suppliers, add this Shopify product again. We'll verify the new page and ask you to confirm replacement.</p><Link to="/app/add">Change supplier</Link></details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Technical diagnostics</summary>{decision ? <dl className={styles.auditGrid}>{Object.entries(decision).map(([key,value]) => <div key={key} style={{ display: "contents" }}><dt>{key.replaceAll("_", " ")}</dt><dd>{String(value ?? "—")}</dd></div>)}</dl> : <p>No diagnostic record for the latest attempt.</p>}</details>
     <details className={`${styles.card} ${styles.detailSection}`}><summary>Remove product</summary><p>This permanently deletes the connection, captured evidence, and alerts. Already-incurred usage remains counted.</p><fetcher.Form method="post" className={styles.form}><input type="hidden" name="intent" value="delete-source" /><input type="hidden" name="sourceId" value={source.id} /><label className={styles.checkbox}><input type="checkbox" required />I want to permanently remove this product's monitoring history.</label><button className={`${styles.button} ${styles.danger}`} disabled={fetcher.state !== "idle"}>Remove product</button></fetcher.Form></details>

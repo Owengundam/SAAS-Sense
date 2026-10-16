@@ -1,3 +1,6 @@
+import { checkErrorMessage } from "../src/check-errors.js";
+export { checkErrorMessage } from "../src/check-errors.js";
+
 // A completed request is not necessarily a verified availability result.
 /** @param {{ duplicate?: boolean, observation?: { state?: string, checkedAt?: string, factual?: boolean }, source?: { lastConfirmedAt?: string | null, lastState?: string | null } } | null | undefined} result */
 export function checkOutcome(result) {
@@ -28,22 +31,19 @@ export function checkRecovery(status, reason) {
   return "Open the supplier page and check that availability is stated for this exact product and variant. If it is missing, hidden behind sign-in, or conflicting, use Change supplier to connect a public page with clear availability. A retry may help after the page changes.";
 }
 
-/** Safe, bounded messages only: never expose raw provider exceptions or credentials. @param {unknown} error */
-export function checkErrorMessage(error) {
-  const code = error instanceof Error ? error.message : "";
-  if (code === "CHECK_QUOTA_EXCEEDED") return "This store's monthly check allowance is used up. Review usage in Settings and try again after the next UTC calendar month begins.";
-  if (code === "GLOBAL_CHECK_BUDGET_EXCEEDED") return "Supplier checks are paused because the service's monthly check budget is used up. Contact support or try again next month.";
-  if (code === "TENANT_DISABLED") return "Monitoring is disabled for this store. Reopen the app from Shopify and contact support if it remains disabled.";
-  if (code === "SOURCE_NOT_FOUND") return "This supplier connection is missing or disabled. Refresh the watchlist and review the connection before trying again.";
-  return "The check could not finish, so no new availability was confirmed. Try Check now again later. If it keeps failing, contact support.";
-}
-
 /**
- * Job failures are temporary request feedback, not persisted observations.
- * @param {{ id: string, lastAttemptAt?: string | null }} source
+ * Persisted request outcomes are authoritative and separate from availability evidence.
+ * In-memory job feedback is only a fallback for callers without persisted requests.
+ * @param {{ id: string, lastAttemptAt?: string | null, lastCheckRequest?: { status: string, outcome: string | null, completedAt: string | null } | null }} source
  * @param {{ sourceErrors?: { sourceId: string, occurredAt: string, message: string }[] } | null | undefined} job
  */
 export function sourceCheckError(source, job) {
+  if (Object.hasOwn(source, "lastCheckRequest")) {
+    const request = source.lastCheckRequest;
+    return request?.status === "FAILED" && request.completedAt
+      ? { sourceId: source.id, occurredAt: request.completedAt, message: checkErrorMessage(new Error(request.outcome || "CHECK_FAILED")) }
+      : null;
+  }
   const error = job?.sourceErrors?.find(item => item.sourceId === source.id);
   if (!error || (source.lastAttemptAt && source.lastAttemptAt >= error.occurredAt)) return null;
   return error;
