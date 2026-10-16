@@ -1,3 +1,4 @@
+import { checkOutcome, checkErrorMessage } from "./check-outcome.js";
 import { randomUUID } from "node:crypto";
 import { tryAcquireCheckRun } from "../src/check-coordinator.js";
 import type { SupplierSignalService } from "../src/service.js";
@@ -8,7 +9,10 @@ type CheckJob = {
   total: number;
   completed: number;
   failed: number;
+  confirmed: number;
+  unconfirmed: number;
   message: string;
+  sourceErrors: { sourceId: string; occurredAt: string; message: string }[];
 };
 
 declare global {
@@ -23,7 +27,7 @@ globalThis.supplierSignalCheckQueues = queues;
 
 export function getCheckJob(shop: string): CheckJob | null {
   const job = jobs.get(shop);
-  return job ? { ...job } : null;
+  return job ? { ...job, sourceErrors: job.sourceErrors.map(error => ({ ...error })) } : null;
 }
 
 export function startCheckJob(shop: string, sourceIds: string[], service: SupplierSignalService, enqueue = false): boolean {
@@ -41,7 +45,7 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
   if (!release) return false;
   const queue = [...new Set(sourceIds)];
   queues.set(shop, queue);
-  const job: CheckJob = { id: randomUUID(), status: "running", total: queue.length, completed: 0, failed: 0, message: "Checking supplier pages…" };
+  const job: CheckJob = { id: randomUUID(), status: "running", total: queue.length, completed: 0, failed: 0, confirmed: 0, unconfirmed: 0, sourceErrors: [], message: "Checking supplier pages…" };
   jobs.set(shop, job);
 
   // Keep slow supplier requests outside the authenticated App Bridge form response.
@@ -49,11 +53,17 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
     try {
       while (queue.length) {
         const sourceId = queue.shift()!;
+        job.sourceErrors = job.sourceErrors.filter(error => error.sourceId !== sourceId);
         try {
-          await service.checkSource(shop, sourceId);
+          const result = await service.checkSource(shop, sourceId);
+          job[checkOutcome(result)] += 1;
         } catch (error) {
           job.failed += 1;
-          console.error("Supplier check failed", error);
+          // Keep only bounded, source-scoped feedback; no synthetic observation or raw error.
+          if (job.sourceErrors.length < 100) job.sourceErrors.push({
+            sourceId, occurredAt: new Date().toISOString(), message: checkErrorMessage(error),
+          });
+          console.error("Supplier check failed", { sourceId, message: checkErrorMessage(error) });
         } finally {
           job.completed += 1;
         }
@@ -63,9 +73,12 @@ export function startCheckJob(shop: string, sourceIds: string[], service: Suppli
     }
     queues.delete(shop);
     job.status = "finished";
-    job.message = job.failed
-      ? `Finished ${job.total} check${job.total === 1 ? "" : "s"}; ${job.failed} failed. Review the watchlist for details.`
-      : `Finished ${job.total} check${job.total === 1 ? "" : "s"}. Review the watchlist for results.`;
+    const results = [
+      `${job.confirmed} confirmed`,
+      ...(job.unconfirmed ? [`${job.unconfirmed} unconfirmed`] : []),
+      ...(job.failed ? [`${job.failed} failed`] : []),
+    ].join(", ");
+    job.message = `Finished ${job.total} check${job.total === 1 ? "" : "s"}: ${results}. ${job.failed || job.unconfirmed ? "Open product details for the reason and next steps." : "Review the watchlist for results."}`;
   })();
   return true;
 }

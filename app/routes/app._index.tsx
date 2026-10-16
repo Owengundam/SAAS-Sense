@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import { loader, action } from "../watchlist.server";
 import { formatTime, stateClass, stateLabel } from "../watchlist-ui";
+import { unconfirmedStatus, sourceCheckError } from "../check-outcome.js";
 import { getCheckFeedback } from "../check-feedback";
 import { useCheckRefresh } from "../watchlist-hooks";
 import styles from "../styles/dashboard.module.css";
@@ -14,7 +15,7 @@ export default function Watchlist() {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const zone = useCheckRefresh(data.checkJob?.status === "running");
-  const attention = (s: any) => !s.lastState || s.stale || ["PRODUCT_MISMATCH", "SOURCE_ERROR", "UNCERTAIN"].includes(s.lastAttemptStatus);
+  const attention = (s: any) => Boolean(sourceCheckError(s, data.checkJob)) || !s.lastState || s.stale || ["PRODUCT_MISMATCH", "SOURCE_ERROR", "UNCERTAIN"].includes(s.lastAttemptStatus);
   const changed = new Set(data.alerts.map((a: any) => a.source_id));
   const sources = data.sources.filter((s: any) =>
     `${s.productTitle} ${s.supplierSku || ""} ${s.url}`.toLowerCase().includes(query.toLowerCase()) &&
@@ -43,7 +44,7 @@ export default function Watchlist() {
         {filter === "changed" && <p className={styles.muted}>Products with recorded availability changes.</p>}
         <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Product</th><th>Supplier status</th><th>Last confirmed</th></tr></thead><tbody>
           {sources.map((s: any) => <tr key={s.id}><td><Link className={styles.product} to={`/app/products/${s.id}`}>{s.productTitle}</Link><span className={styles.muted}>{new URL(s.url).hostname}</span></td>
-            <td><span className={attention(s) ? `${styles.state} ${styles.warn}` : stateClass(s.lastState, false)}>{s.lastAttemptStatus === "PRODUCT_MISMATCH" ? "Wrong supplier product" : ["SOURCE_ERROR", "UNCERTAIN"].includes(s.lastAttemptStatus) ? "Couldn't refresh" : stateLabel(s.lastState, false)}</span>{s.candidateState && <span className={styles.muted}>Possible change—checking again</span>}</td>
+            <td><span className={attention(s) ? `${styles.state} ${styles.warn}` : stateClass(s.lastState, false)}>{s.lastAttemptStatus === "PRODUCT_MISMATCH" ? "Wrong supplier product" : !s.lastState ? unconfirmedStatus(s, sourceCheckError(s, data.checkJob)) : (sourceCheckError(s, data.checkJob) || ["SOURCE_ERROR", "UNCERTAIN"].includes(s.lastAttemptStatus)) ? "Couldn't refresh" : stateLabel(s.lastState, false)}</span>{s.candidateState && <span className={styles.muted}>{data.schedulerEnabled ? "Possible change—checking again" : "Possible change—needs another check"}</span>}</td>
             <td>{formatTime(s.lastConfirmedAt, zone)}{s.stale && s.lastConfirmedAt && <span className={styles.muted}>Confirmation is overdue</span>}{attention(s) && s.lastState && <span className={styles.muted}>Last confirmed: {stateLabel(s.lastState, false)}</span>}</td></tr>)}
           {!sources.length && <tr><td colSpan={3}>No products match this view.</td></tr>}
         </tbody></table></div>
