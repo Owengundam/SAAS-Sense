@@ -48,3 +48,32 @@ export function startImportJob(shop: string, batchId: string, processor: ImportP
 
   return true;
 }
+
+// Reserve synchronously so double clicks and another process cannot buy the same
+// review twice. The capture itself uses exactly the normal metadata provider path.
+export function startImportRefreshJob(
+  shop: string, batchId: string, rowId: string, expectedReviewVersion: number, processor: ImportProcessor,
+) {
+  const jobKey = key(shop, batchId);
+  if (jobs.get(jobKey)?.status === "running") return false;
+  const claim = processor.claimRowRefresh(shop, batchId, rowId, expectedReviewVersion);
+  const job: ImportJob = {
+    status: "running", completed: 0, total: 1,
+    message: "Rechecking the saved supplier page. Review the new evidence before connecting.",
+  };
+  jobs.set(jobKey, job);
+  Promise.resolve()
+    .then(() => processor.processClaim(shop, batchId, claim))
+    .then((row: { status: string; error?: string }) => {
+      job.completed = 1;
+      job.status = "finished";
+      job.message = row.status === "BLOCKED"
+        ? row.error || "The supplier page could not be read. Review the row below."
+        : "Supplier page rechecked. Review its current product and variant evidence below.";
+    })
+    .catch((error: unknown) => {
+      job.status = "failed";
+      job.message = error instanceof Error ? error.message : String(error);
+    });
+  return true;
+}

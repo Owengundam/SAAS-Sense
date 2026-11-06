@@ -8,7 +8,7 @@ import { stageSupplierConnectionBatch } from "../src/onboarding/supplier-connect
 import { MANUAL_REVIEW_CONFIRMATION } from "../src/onboarding/manual-review.js";
 import { scheduledChecksEnabledForShop } from "../src/scheduled-checks.js";
 import { getCheckJob, startCheckJob } from "./check-jobs.server";
-import { getImportJob, startImportJob } from "./import-jobs.server";
+import { getImportJob, startImportJob, startImportRefreshJob } from "./import-jobs.server";
 import { getSupplierDiscoveryJob, startSupplierDiscoveryJob } from "./supplier-discovery-jobs.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -150,6 +150,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       startImportJob(session.shop, batchId, importProcessor);
       return { ok: true, message: "Updated. Checking the product match again." };
     }
+    if (intent === "refresh-import-row") {
+      const batchId = String(form.get("batchId") || "");
+      const started = startImportRefreshJob(session.shop, batchId, String(form.get("rowId") || ""),
+        Number(form.get("reviewVersion") || Number.NaN), importProcessor);
+      return { ok: started, message: started
+        ? "Rechecking the saved supplier page. Confirm the new evidence before connecting."
+        : "A supplier check is already running. Wait for it to finish before rechecking." };
+    }
     if (intent === "approve-manual-import-row") {
       const batchId = String(form.get("batchId") || "");
       const selection = {
@@ -250,10 +258,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       SHOPIFY_VARIANT_CHANGED: "The Shopify product or variant changed since this review was prepared. Start a new setup with its current details.",
       SELECT_IMPORT_ROWS: "Select at least one matching product before confirming.",
       IMPORT_REVIEW_STALE: "This match changed while you were reviewing it. Refresh and review it again.",
+      IMPORT_ROW_ALREADY_APPROVED: "This connection is already saved. Use its watchlist check to refresh availability.",
+      IMPORT_ROW_REFRESH_NOT_READY: "This supplier page is queued or being checked. Wait for it to finish, or resume an interrupted check.",
       IMPORT_ROW_NOT_READY: "This product still needs matching details. Resolve it before confirming.",
       IMPORT_MAPPING_CHANGED: "The product match changed. Review the updated details before confirming.",
       IMPORT_MONTHLY_DISCOVERY_BUDGET_EXCEEDED: "You've reached this month's supplier-page lookup allowance. Your saved progress is safe.",
-      IMPORT_BATCH_DISCOVERY_BUDGET_EXCEEDED: "This setup has reached its retry allowance. Start a new setup with the corrected product links.",
+      IMPORT_BATCH_DISCOVERY_BUDGET_EXCEEDED: "This setup has reached its supplier-page retry allowance. Your saved progress is safe; repeated clicks will not run another capture.",
       SOURCE_QUOTA_EXCEEDED: "Your product-link allowance is full. Remove an unused connection or review your plan in Settings.",
       CSV_URL_COLUMN_REQUIRED: "Map a column to Supplier link before checking this CSV.",
       CSV_REQUIRES_HEADER_AND_ROW: "Include column headers and at least one product in your CSV.",
