@@ -14,6 +14,9 @@ function meaningfulOptions(variant) {
 }
 
 export function optionCompatibility(variant, candidate, _row, pageText = "") {
+  if (candidate?.optionEvidenceIncomplete) {
+    return { compatible: false, reasons: ["Supplier variant option evidence is incomplete."] };
+  }
   const options = meaningfulOptions(variant);
   if (!options.length) return { compatible: true, reasons: [] };
 
