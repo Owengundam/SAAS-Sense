@@ -2,7 +2,8 @@ import { unresolvedAvailability } from "../availability-safety.js";
 import { randomUUID } from "node:crypto";
 import { extractStructuredPage } from "./page-content.js";
 import { apifyRenderedPageFunction, parseRenderedCapture } from "./rendered-capture.js";
-import { classifyObservation } from "../domain.js";
+import { classifyObservation, hasRequiredProductIdentity } from "../domain.js";
+import { productIdentityConflict } from "../product-identity.js";
 
 const ECOMMERCE_ACTOR_ID = "apify~e-commerce-scraping-tool";
 const CONTENT_CRAWLER_ACTOR_ID = "apify~website-content-crawler";
@@ -319,6 +320,21 @@ function providerAttempt(result, actorId, role) {
   };
 }
 
+function configuredIdentifierConflict(source, result) {
+  const records = result.evidenceRecords || [];
+  return [
+    [source.supplierProductId, /^(?:productId)$/],
+    // supplierSku can hold a confirmed SKU, MPN or barcode. Compare all root
+    // identity aliases rather than assuming a different SKU disproves an MPN.
+    [source.supplierSku, /^(?:(?:identifiers|productIdentifiers)\.)?(?:sku|mpn|gtin)$/],
+  ].some(([expected, paths]) => {
+    if (!expected) return false;
+    const observed = records.filter(record => record.origin === "STRUCTURED_FIELD" && paths.test(record.path || ""))
+      .map(record => String(record.text).trim()).filter(Boolean);
+    return observed.length > 0 && !observed.includes(String(expected).trim());
+  });
+}
+
 export class ApifyProvider {
   constructor({
     token,
@@ -443,14 +459,33 @@ export class ApifyProvider {
 
     const primary = await this.fetchFromActor(this.actorId, source);
     const attempts = [providerAttempt(primary, this.actorId, "primary")];
+    // Stock alone is insufficient when metadata approval selected an identity
+    // that only the rendered page exposed. Keep the same factual identity gate
+    // for the fast path, but never recapture to override a known wrong title.
+    const knownTitleMismatch = primary.ok && primary.title && productIdentityConflict(source, primary.title);
+    const identityRecapture = primary.ok && !hasRequiredProductIdentity(source, primary);
+    const primaryIdentifierConflict = identityRecapture && configuredIdentifierConflict(source, primary);
     const shouldFallback = this.actorId === ECOMMERCE_ACTOR_ID &&
-      (!primary.ok || !primary.availabilityState || unresolvedAvailability(primary));
-    if (!shouldFallback) return { ...primary, providerAttempts: attempts };
+      !primary.terminal && !knownTitleMismatch && !primaryIdentifierConflict &&
+      (!primary.ok || !primary.availabilityState || unresolvedAvailability(primary) || identityRecapture);
+    if (!shouldFallback) return { ...primary,
+      // A later actor or AI must not erase a conflicting configured ID.
+      ...(primaryIdentifierConflict ? { terminal: true, availabilityBlockedReason: "CAPTURE_EVIDENCE_CONFLICT" } : {}),
+      providerAttempts: attempts };
 
     const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
     attempts.push(providerAttempt(fallback, CONTENT_CRAWLER_ACTOR_ID, "fallback"));
     if (!fallback.ok) return { ...primary, fallbackError: fallback.error, providerAttempts: attempts };
     if (!primary.ok) return { ...fallback, fallbackUsed: true, primaryError: primary.error, providerAttempts: attempts };
+    if (identityRecapture) return {
+      // Require identity and availability from the same fallback capture.
+      // Combining an unbound primary stock value with a later ID is not proof.
+      ...fallback,
+      runId: `${primary.runId}+${fallback.runId}`,
+      structuredPrimary: primary,
+      fallbackUsed: true,
+      providerAttempts: attempts,
+    };
 
     return {
       ...primary,

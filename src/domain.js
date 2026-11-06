@@ -51,6 +51,33 @@ function containsTerm(haystack, term) {
   return normalizedTerm && ` ${haystack} `.includes(` ${normalizedTerm} `);
 }
 
+function scopedProductIdentifiers(providerResult) {
+  // The page extractor reindexes the uniquely selected Product to [0]. IDs
+  // from that Product may be JSON-LD-only; do not pretend they were visible
+  // text or accept identifiers from sibling products, offers, or old captures.
+  if (providerResult.captureScope?.matchedProductCount !== 1 || !providerResult.pageSnapshotId) return new Set();
+  return new Set((providerResult.evidenceRecords || [])
+    .filter(record => record.origin === "STRUCTURED_FIELD" &&
+      /^jsonld\.products\[0\]\.(?:sku|mpn|gtin(?:8|12|13|14)?|productID|model)$/.test(record.path || "") &&
+      record.snapshotId === providerResult.pageSnapshotId && record.sourceUrl === providerResult.url)
+    .map(record => normalize(record.text)).filter(Boolean));
+}
+
+function productTermMatch(source, providerResult) {
+  const text = normalize(providerResult.text);
+  const expectedTerms = (source.matchTerms || []).map(normalize).filter(Boolean);
+  const structuredIdentifiers = scopedProductIdentifiers(providerResult);
+  const matchedTerms = expectedTerms.filter(term =>
+    containsTerm(`${normalize(providerResult.title)} ${text}`, term) || structuredIdentifiers.has(term));
+  return { text, expectedTerms, matchedTerms,
+    matchConfidence: expectedTerms.length === 0 ? 0.85 : matchedTerms.length / expectedTerms.length };
+}
+
+export function hasRequiredProductIdentity(source, providerResult) {
+  return Boolean(providerResult?.ok && providerResult.url && providerResult.text) &&
+    !productIdentityConflict(source, providerResult.title) && productTermMatch(source, providerResult).matchConfidence >= 0.8;
+}
+
 function result(state, reason, checkedAt, confidence = 0.9) {
   return { state, confidence, reason, checkedAt, factual: true };
 }
@@ -251,11 +278,7 @@ export function classifyObservation(source, providerResult, now = new Date()) {
     state: STATES.UNCERTAIN, confidence: 0, factual: false,
     reason: UNRESOLVED_AVAILABILITY_REASON, checkedAt: now.toISOString(),
   };
-  const title = normalize(providerResult.title);
-  const text = normalize(providerResult.text);
-  const expectedTerms = (source.matchTerms || []).map(normalize).filter(Boolean);
-  const matchedTerms = expectedTerms.filter((term) => containsTerm(`${title} ${text}`, term));
-  const matchConfidence = expectedTerms.length === 0 ? 0.85 : matchedTerms.length / expectedTerms.length;
+  const { text, expectedTerms, matchedTerms, matchConfidence } = productTermMatch(source, providerResult);
 
   if (!providerResult.url || !providerResult.text || matchConfidence < 0.8) {
     return {
