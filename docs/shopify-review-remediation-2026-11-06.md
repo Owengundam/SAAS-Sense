@@ -22,3 +22,13 @@ Classifier thresholds, matching approval, variant gates, provider mode, retry li
 - All verification runs use offline fixtures and intercepted requests. Live testing is a separate bounded operation within the approved provider budget; offline success alone does not prove the review-store flow or authorize resubmission.
 
 Recording: https://screenshot.click/03-13-1tzbj-0fjav.mp4
+
+## Follow-up: identity available only in the rendered capture
+
+The live E-commerce capture `rBbX0jiOOKdhaRkQF` (November 6) contains the exact product title, price and InStock offer, but no product ID, SKU, MPN or variant identifiers. The saved November 3 rendered capture `ljrujgCOaRBAcIwbS` contains the observed SKU `sku-untracked-1` in the selected Product and Offer, and the exact Offer URL ending `?variant=44779837817003`. That Product has no numeric productID. The review store's private saved identifier remains uninspected.
+
+This exposes a second reproducible gap: onboarding correctly escalates to the rendered page to discover an identifier, while availability checks previously stopped at primary stock before verifying that same identifier. Preserving identifiers that are present in the primary response does not solve identifiers that are absent there.
+
+The follow-up requires primary stock to pass the existing identity decision before taking the fast path. When identity is missing, the bounded second capture must supply its own identity and availability together. Exact structured identifiers from the uniquely selected Product in the current snapshot can satisfy identity without pretending they were visible stock text. Wrong IDs, titles, products, variants, snapshots and URLs must remain unconfirmed. A conflicting fallback product title is rejected before any merge, including for legacy connections with empty match terms, and cannot be promoted by AI. Actor and AI attempt/charge caps remain unchanged.
+
+The earlier successful live check used a legacy connection with no saved match terms. It verified UI refresh and persistence, but was not a fresh identifier-bearing onboarding test. A fresh test will use the observed exact-variant Offer URL rather than an arbitrary cache-busting parameter.
