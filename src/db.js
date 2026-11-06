@@ -925,7 +925,7 @@ export function createDatabase(path = ":memory:") {
           updatedAt: row.updated_at,
         }));
     },
-    claimImportRow(shop, batchId, now = new Date(), tenantMonthlyLimit = 50) {
+    claimImportRow(shop, batchId, now = new Date(), tenantMonthlyLimit = 50, refresh = null) {
       const timestamp = now.toISOString();
       let transactionOpen = false;
       try {
@@ -935,6 +935,26 @@ export function createDatabase(path = ":memory:") {
         if (!tenant || !tenant.active) throw new Error("TENANT_DISABLED");
         const batch = db.prepare("SELECT id, row_count FROM import_batches WHERE shop = ? AND id = ?").get(shop, batchId);
         if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");
+        const row = refresh
+          ? db.prepare("SELECT * FROM import_rows WHERE shop=? AND batch_id=? AND id=?")
+            .get(shop, batchId, refresh.rowId)
+          : db.prepare(`SELECT * FROM import_rows
+            WHERE shop=? AND batch_id=? AND status='DRAFT' ORDER BY row_index LIMIT 1`).get(shop, batchId);
+        if (refresh) {
+          if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+          if (!Number.isSafeInteger(refresh.expectedReviewVersion) ||
+            row.review_version !== refresh.expectedReviewVersion) throw new Error("IMPORT_REVIEW_STALE");
+          if (row.status === "APPROVED" || row.approved_source_id) throw new Error("IMPORT_ROW_ALREADY_APPROVED");
+          if (!["READY_FOR_REVIEW", "NEEDS_REVIEW", "NO_MATCH", "BLOCKED"].includes(row.status)) {
+            throw new Error("IMPORT_ROW_REFRESH_NOT_READY");
+          }
+        }
+        // A finished batch is a no-op even when its last attempt used the allowance.
+        if (!row) {
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return null;
+        }
         const batchAttempts = db.prepare("SELECT COUNT(*) AS count FROM import_attempts WHERE shop=? AND batch_id=?")
           .get(shop, batchId).count;
         if (batchAttempts >= Math.max(Number(batch.row_count || 0) * 2, 1)) {
@@ -946,18 +966,21 @@ export function createDatabase(path = ":memory:") {
             WHERE shop=? AND substr(reserved_at, 1, 7)=?`).get(shop, month).count;
           if (tenantAttempts >= tenantMonthlyLimit) throw new Error("IMPORT_MONTHLY_DISCOVERY_BUDGET_EXCEEDED");
         }
-        const row = db.prepare(`SELECT * FROM import_rows
-          WHERE shop = ? AND batch_id = ? AND status = 'DRAFT'
-          ORDER BY row_index LIMIT 1`).get(shop, batchId);
-        if (!row) {
-          db.exec("COMMIT");
-          transactionOpen = false;
-          return null;
-        }
         const operationId = randomUUID();
-        db.prepare(`UPDATE import_rows SET status='PROCESSING', error=NULL,
-          last_processed_at=?, updated_at=? WHERE shop=? AND id=? AND status='DRAFT'`)
-          .run(timestamp, timestamp, shop, row.id);
+        if (refresh) {
+          // Reserve the existing allowance and invalidate this exact review together.
+          // Never edit an approved connection or allow an old confirmation to survive.
+          db.prepare(`UPDATE import_rows SET status='PROCESSING', error=NULL,
+            canonical_url=NULL, extracted_metadata=NULL, suggested_variant_id=NULL,
+            suggested_candidate_key=NULL, match_reason=NULL, match_terms=NULL,
+            primary_identifier=NULL, provider_run_id=NULL, review_version=review_version+1,
+            last_processed_at=?, updated_at=? WHERE shop=? AND batch_id=? AND id=?`)
+            .run(timestamp, timestamp, shop, batchId, row.id);
+        } else {
+          db.prepare(`UPDATE import_rows SET status='PROCESSING', error=NULL,
+            last_processed_at=?, updated_at=? WHERE shop=? AND id=? AND status='DRAFT'`)
+            .run(timestamp, timestamp, shop, row.id);
+        }
         db.prepare(`INSERT INTO import_attempts
           (operation_id, row_id, batch_id, shop, status, reserved_at)
           VALUES (?, ?, ?, ?, 'RESERVED', ?)`)
@@ -966,7 +989,7 @@ export function createDatabase(path = ":memory:") {
           .run(timestamp, shop, batchId);
         db.exec("COMMIT");
         transactionOpen = false;
-        return { operationId, row: mapImportRow({ ...row, status: "PROCESSING", error: null, last_processed_at: timestamp, updated_at: timestamp }) };
+        return { operationId, row: mapImportRow(db.prepare("SELECT * FROM import_rows WHERE shop=? AND id=?").get(shop, row.id)) };
       } catch (error) {
         if (transactionOpen) db.exec("ROLLBACK");
         throw error;

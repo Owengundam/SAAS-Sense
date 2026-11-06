@@ -79,6 +79,20 @@ export class ImportProcessor {
   async processNext(shop, batchId) {
     const claim = this.db.claimImportRow(shop, batchId, this.now(), this.monthlyDiscoveryLimit);
     if (!claim) return null;
+    return this.processClaim(shop, batchId, claim);
+  }
+
+  claimRowRefresh(shop, batchId, rowId, expectedReviewVersion) {
+    const batch = this.db.getImportBatch(shop, batchId);
+    const row = batch?.rows.find(item => item.id === rowId);
+    if (!row) throw new Error("IMPORT_ROW_NOT_FOUND");
+    // The action only recaptures the saved URL, never an unreviewed form target.
+    validateSupplierUrl(row.url, this.supportedDomains);
+    return this.db.claimImportRow(shop, batchId, this.now(), this.monthlyDiscoveryLimit,
+      { rowId, expectedReviewVersion });
+  }
+
+  async processClaim(shop, batchId, claim) {
     const { operationId, row } = claim;
     const batch = this.db.getImportBatch(shop, batchId);
     if (!batch) throw new Error("IMPORT_BATCH_NOT_FOUND");

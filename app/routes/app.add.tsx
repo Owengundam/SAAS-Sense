@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useFetcher, useLoaderData, useNavigate } from "react-router";
+import { Link, useFetcher, useFetchers, useLoaderData, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { loader, action } from "../watchlist.server";
 import { onboardingStatusLabel } from "../watchlist-ui";
@@ -29,7 +29,8 @@ export default function AddProducts() {
   const draftKey = `supplier-signal:add:${data.shop}`;
   const running = data.importJob?.status === "running" || data.supplierDiscoveryJob?.status === "running";
   useCheckRefresh(running || data.checkJob?.status === "running");
-  const busy = fetcher.state !== "idle" || running;
+  const pendingForms = useFetchers();
+  const busy = pendingForms.some(form => form.state !== "idle") || running;
   // Keep a pre-submission draft across refreshes and billing navigation. Server batches
   // become the source of truth as soon as Check links is submitted.
   useEffect(() => {
@@ -125,6 +126,7 @@ function ReviewRow({ row, batch, sources, busy }: any) {
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
   const [confirmedIdentity, setConfirmedIdentity] = useState<string | null>(null);
+  const [selectedIdentity, setSelectedIdentity] = useState<string | null>(null);
   useEffect(() => {
     if (fetcher.data?.ok && "manualSourceId" in fetcher.data && fetcher.data.manualSourceId) {
       navigate(`/app/products/${encodeURIComponent(fetcher.data.manualSourceId)}`);
@@ -142,7 +144,7 @@ function ReviewRow({ row, batch, sources, busy }: any) {
     <div className={styles.comparison}><div><span className={styles.muted}>Your Shopify product</span>{variant?.imageUrl && <img src={variant.imageUrl} alt="" className={styles.productImage} />}<h3>{variant ? `${variant.parentTitle}${variant.variantTitle ? ` · ${variant.variantTitle}` : ""}` : "Choose the matching product below"}</h3>{variant?.selectedOptions?.map((o: any) => <span key={o.name} className={styles.muted}>{o.name}: {o.value}</span>)}</div>
       <div><span className={styles.muted}>Supplier product</span><h3>{candidate?.title || row.extractedMetadata?.pageTitle || "Not identified yet"}</h3>{candidate?.optionValues?.map((o: string) => <span className={styles.muted} key={o}>{o}</span>)}{row.url && <a href={row.canonicalUrl || row.url} target="_blank" rel="noreferrer">Open supplier page ↗</a>}</div></div>
     <p><span className={`${styles.state} ${approved || ready ? styles.good : styles.warn}`}>{approved ? "Connected" : onboardingStatusLabel(row.status)}</span></p>
-    {!approved && <p>{row.matchReason || (row.status === "BLOCKED" ? "We couldn't read this page. Retry or use another link." : row.status === "INVALID" ? "Check the supplier link and product selection below." : row.error || "Checking supplier details…")}</p>}
+    {!approved && <p>{row.matchReason || (row.status === "BLOCKED" ? row.error || "We couldn't read this page. Retry or use another link." : row.status === "INVALID" ? "Check the supplier link and product selection below." : row.error || "Checking supplier details…")}</p>}
     {row.status === "NEEDS_REVIEW" && row.manualReview && !row.manualReview.eligible && <p className={styles.muted}>{row.manualReview.reason}</p>}
     {row.manualReview?.eligible && <section aria-label="Review this connection manually">
       <h3>Confirm this one connection</h3>
@@ -161,19 +163,26 @@ function ReviewRow({ row, batch, sources, busy }: any) {
         <label className={styles.confirm}><input type="checkbox" required name="manualConfirmation" value="same-product-and-variant-v1" checked={manualConfirmed} onChange={event => setConfirmedIdentity(event.target.checked ? confirmationIdentity : null)} />I reviewed the supplier page and confirm this is the exact Shopify product and variant I buy{existing ? ", replacing the current supplier connection" : ""}.</label>
         <button className={styles.button} disabled={busy || fetcher.state !== "idle" || !manualConfirmed}>Confirm this connection and check availability</button>
       </fetcher.Form>
-      {fetcher.data?.message && <p role={fetcher.data.ok ? "status" : "alert"}>{fetcher.data.message}</p>}
     </section>}
-    {ready && <label className={styles.confirm}><input type="checkbox" name="approval" form="approve-products" value={JSON.stringify({ rowId: row.id, expectedReviewVersion: row.reviewVersion, replaceSourceId: existing?.id, replaceSourceUrl: existing?.url })} />{existing ? `Replace the existing supplier connection (${new URL(existing.url).hostname}) with this product. Its current availability will reset.` : "This is the product and variant I buy."}</label>}
+    {ready && <label className={styles.confirm}><input type="checkbox" name="approval" form="approve-products" disabled={busy} checked={selectedIdentity === confirmationIdentity} onChange={event => setSelectedIdentity(event.target.checked ? confirmationIdentity : null)} value={JSON.stringify({ rowId: row.id, expectedReviewVersion: row.reviewVersion, replaceSourceId: existing?.id, replaceSourceUrl: existing?.url })} />{existing ? `Replace the existing supplier connection (${new URL(existing.url).hostname}) with this product. Its current availability will reset.` : "This is the product and variant I buy."}</label>}
     {!approved && !["PROCESSING", "DISCOVERING", "DISCOVERY_PENDING"].includes(row.status) && <details className={styles.resolve} open={!ready && !["DRAFT"].includes(row.status)}><summary>{ready ? "Change link or product details" : "Resolve this product"}</summary>
       <fetcher.Form method="post" className={styles.form}>
         <input type="hidden" name="intent" value="resolve-import-row" /><input type="hidden" name="batchId" value={batch.id} /><input type="hidden" name="rowId" value={row.id} /><input type="hidden" name="reviewVersion" value={row.reviewVersion} />
         <label>Shopify product<select name="variantId" required defaultValue={variant?.shopifyVariantId || ""}><option value="" disabled>Choose product</option>{batch.variants.map((v: any) => <option key={v.shopifyVariantId} value={v.shopifyVariantId}>{v.parentTitle}{v.variantTitle ? ` · ${v.variantTitle}` : ""}</option>)}</select></label>
         <label>Supplier product link<input type="url" name="url" required defaultValue={row.url || ""} /></label>
         <label>Supplier model number or SKU (if needed)<input name="supplierIdentifier" defaultValue={row.supplierSkuHint || ""} placeholder="Enter the exact identifier from your supplier" /></label>
-        <p className={styles.formHelp}>We verify this identifier and your variant against the captured supplier page. Conflicting evidence cannot be approved.</p>
-        <button className={`${styles.button} ${styles.secondary}`} disabled={busy || fetcher.state !== "idle"}>Check updated details</button>
-        {fetcher.data?.message && <p role={fetcher.data.ok ? "status" : "alert"}>{fetcher.data.message}</p>}
+        <p className={styles.formHelp}>We verify this identifier and your variant against the captured supplier page. For the same link, this uses the saved capture. Use Recheck supplier page for fresh evidence. Conflicting evidence cannot be approved.</p>
+        <button className={`${styles.button} ${styles.secondary}`} disabled={busy || fetcher.state !== "idle"}>Update product match</button>
       </fetcher.Form>
     </details>}
+    {!approved && row.url && ["READY_FOR_REVIEW", "NEEDS_REVIEW", "NO_MATCH", "BLOCKED"].includes(row.status) && <fetcher.Form method="post" className={styles.form} onSubmit={() => { setConfirmedIdentity(null); setSelectedIdentity(null); }}>
+      <input type="hidden" name="intent" value="refresh-import-row" />
+      <input type="hidden" name="batchId" value={batch.id} />
+      <input type="hidden" name="rowId" value={row.id} />
+      <input type="hidden" name="reviewVersion" value={row.reviewVersion} />
+      <p className={styles.formHelp}>Fetch fresh evidence from the saved supplier link. This uses one supplier-page lookup and clears your selection so you can review the new capture. Unsaved edits above are not included.</p>
+      <button className={`${styles.button} ${styles.secondary}`} disabled={busy || fetcher.state !== "idle"}>Recheck supplier page</button>
+    </fetcher.Form>}
+    {fetcher.data?.message && <p role={fetcher.data.ok ? "status" : "alert"}>{fetcher.data.message}</p>}
   </section>;
 }
