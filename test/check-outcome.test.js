@@ -69,6 +69,7 @@ test("unknown and duplicate results never claim new confirmation; pending is res
   assert.match(checkRecovery("SOURCE_ERROR", "Timeout"), /try Check now again later/);
   assert.match(checkRecovery("UNCERTAIN", "No recognized availability statement"), /public page with clear availability/);
   assert.match(checkRecovery("PRODUCT_MISMATCH", "Wrong product"), /exact product and variant/);
+  assert.match(checkRecovery("UNCERTAIN", "Product match ambiguous (0/1 terms)"), /connection is saved.*could not verify its product identifier/);
 });
 
 test("mixed batches report each outcome once and never show all-clear feedback", async () => {

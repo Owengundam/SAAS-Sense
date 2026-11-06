@@ -111,6 +111,12 @@ try {
   const uncertainHtml = await checkAndRender({ ok: true, runId: "uncertain", url: source.url, title: "Arc Floor Lamp", text: "LAMP-1. Product details only." });
   assert.match(uncertainHtml, /Availability not confirmed/);
   assert.match(uncertainHtml, /0 confirmed, 1 unconfirmed/);
+  const identityUnconfirmedHtml = await checkAndRender({ ok: true, runId: "missing-identifier", url: source.url, title: "Arc Floor Lamp", text: "Arc Floor Lamp. In stock." });
+  assert.match(identityUnconfirmedHtml, /Product match ambiguous \(0\/1 terms\)/);
+  assert.match(identityUnconfirmedHtml, /Your supplier connection is saved/);
+  assert.match(identityUnconfirmedHtml, /Captured supplier evidence/);
+  assert.match(identityUnconfirmedHtml, /Stock wording in the excerpt is not a confirmed availability result/);
+  assert.match(identityUnconfirmedHtml, /Availability not confirmed/);
   const confirmedHtml = await checkAndRender({ ok: true, runId: "confirmed", url: source.url, title: "Arc Floor Lamp", text: "LAMP-1. In stock." });
   assert.match(confirmedHtml, /Available now/);
   assert.match(confirmedHtml, /1 confirmed/);

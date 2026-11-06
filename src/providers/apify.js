@@ -169,7 +169,13 @@ function ecommerceEvidence(item) {
   );
   return [
     firstText(item.name, item.title, item.productName, item.product?.title),
-    firstText(item.sku, item.mpn, item.gtin, item.productId, identifiers.sku, identifiers.mpn, identifiers.gtin),
+    // Metadata approval can select any of these exact identifiers. Preserve all
+    // of them, including numeric IDs, in the same capture's searchable text.
+    // firstText silently dropped numeric IDs and all but the first string ID.
+    [...new Set([item.sku, item.mpn, item.gtin, item.productId,
+      identifiers.sku, identifiers.mpn, identifiers.gtin]
+      .filter(value => typeof value === "string" || typeof value === "number" && Number.isFinite(value))
+      .map(value => String(value).trim()).filter(Boolean))].join(". "),
     availabilityText(item),
     offers?.price != null ? `Price ${offers.price} ${offers.priceCurrency || ""}`.trim() : "",
     firstText(item.shipping, item.shippingInformation, item.description),
@@ -378,9 +384,10 @@ export class ApifyProvider {
       const text = ecommerce ? ecommerceEvidence(item) : rawPageText;
       const availability = ecommerce ? structuredAvailability(item) : { state: null, records: [] };
       let availabilityState = availability.state;
-      if (availabilityState && availability.records.length) {
-        // New nested fields must agree with the existing text conflict/deferred
-        // checks before they can bypass the crawler and evidence reader.
+      if (availabilityState) {
+        // Every structured state must agree with captured text, including root
+        // fields. Otherwise mixed variant stock or deferred availability could
+        // bypass the conflict checks as soon as product identity matches.
         const unstructured = classifyObservation({}, { ok: true, url: sourceUrl, text });
         if (!unstructured.factual || unstructured.state !== availabilityState) availabilityState = null;
       }

@@ -22,6 +22,9 @@ export function unconfirmedStatus(source, jobError = null) {
 
 /** @param {string | null | undefined} status @param {string | null | undefined} reason */
 export function checkRecovery(status, reason) {
+  if (/^Product match ambiguous/.test(reason || "")) {
+    return "Your supplier connection is saved, but this check could not verify its product identifier in the captured evidence. Open the supplier page to compare the exact product and variant. If the connection is correct, retry later; otherwise use Change supplier.";
+  }
   if (status === "PRODUCT_MISMATCH" || /different product|identity|product match|title conflicts/i.test(reason || "")) {
     return "Open the supplier page and verify the exact product and variant. Use Change supplier if the connection is wrong.";
   }
