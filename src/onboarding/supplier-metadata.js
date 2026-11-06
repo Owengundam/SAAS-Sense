@@ -47,18 +47,64 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function relativePath(path, scope) {
+  const value = clean(path).toLowerCase();
+  const prefix = `${scope.toLowerCase()}.`;
+  return scope !== "root" && value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
+
+function scopedValues(scope, records, pattern) {
+  return records.filter((record) => pattern.test(relativePath(record.path, scope)))
+    .map((record) => clean(record.text)).filter(Boolean);
+}
+
+function propertyLabelPath(path) {
+  return /(?:^|\.)(?:additionaldetails|additionalproperty|additionalproperties|additional_properties|properties)(?:\.extraproperties)?(?:\[\d+\])?\.name$/.test(path);
+}
+
+function variantOptionValues(scope, records, title) {
+  const values = records.filter((record) => {
+    const path = relativePath(record.path, scope);
+    const field = lastPathPart(path);
+    // Preserve explicit color/size evidence through every existing wrapper,
+    // including object Offers and itemOffered. Do not silently discard a real
+    // option just because its container is outside a positive path allowlist.
+    if (field === "color" || field === "size") return true;
+    if (field !== "name" && field !== "title") return false;
+    if (/(?:^|\.)(?:brand|manufacturer|seller)(?:\[\d+\])?(?:\.|$)/.test(path) || propertyLabelPath(path)) return false;
+    if (/^(?:product\.)?(?:name|title)$/.test(path)) return /^variants\[\d+\]$/i.test(scope);
+    if (field === "title" && !/(?:^|\.)(?:offers|variants|itemoffered)(?:\[\d+\])?\./.test(path)) return false;
+    // Other nested names retain their conservative prior option meaning.
+    // Only a name repeating the exact product title is identity, not an option.
+    return clean(record.text) !== title;
+  }).map((record) => clean(record.text));
+  let incomplete = false;
+  for (const record of records) {
+    const path = relativePath(record.path, scope);
+    // PropertyValue.name is a label. Only a recognized option label can give
+    // its own sibling value option meaning; never borrow another property's
+    // value, a different variant's value, or the label itself as a value.
+    if (!propertyLabelPath(path) || !/^(?:color|size)$/i.test(clean(record.text))) continue;
+    const valuePath = path.slice(0, -"name".length) + "value";
+    const observed = records.filter((item) => relativePath(item.path, scope) === valuePath)
+      .map((item) => clean(item.text)).filter(Boolean);
+    if (!observed.length) incomplete = true;
+    values.push(...observed);
+  }
+  return { optionValues: unique(values), optionEvidenceIncomplete: incomplete };
+}
+
 function candidateFromRecords(scope, records, result, index) {
-  const titles = fieldValues(records, ["name", "title", "productName"]);
+  const titles = scopedValues(scope, records, /^(?:product\.)?(?:name|title|productname)$/);
   const skus = fieldValues(records, ["sku"]);
   const mpns = fieldValues(records, ["mpn", "model"]);
   const productIds = fieldValues(records, ["productid", "productId"]);
   const gtins = unique(fieldValues(records, ["gtin", "gtin8", "gtin12", "gtin13", "gtin14"])
     .map(gtin)
     .filter(Boolean));
-  const brands = fieldValues(records, ["brand", "manufacturer"]);
-  const optionValues = unique(fieldValues(records, ["color", "size", "name"])
-    .filter((value) => value !== titles[0]));
+  const brands = scopedValues(scope, records, /^(?:product\.)?(?:brand|manufacturer)(?:\.name)?$/);
   const title = titles[0] || (scope === "root" ? clean(result?.title) : "");
+  const options = variantOptionValues(scope, records, title);
   const evidence = records.slice(0, 40).map((record) => ({
     origin: record.origin,
     path: record.path || null,
@@ -76,7 +122,7 @@ function candidateFromRecords(scope, records, result, index) {
     mpns: unique(mpns),
     productIds: unique(productIds),
     gtins,
-    optionValues,
+    ...options,
     identityValues,
     evidence,
   };
