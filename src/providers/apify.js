@@ -476,6 +476,18 @@ export class ApifyProvider {
     const fallback = await this.fetchFromActor(CONTENT_CRAWLER_ACTOR_ID, source);
     attempts.push(providerAttempt(fallback, CONTENT_CRAWLER_ACTOR_ID, "fallback"));
     if (!fallback.ok) return { ...primary, fallbackError: fallback.error, providerAttempts: attempts };
+    if (fallback.title && productIdentityConflict(source, fallback.title)) return {
+      // Never hide a different fallback product behind the primary title,
+      // including legacy connections without configured match terms.
+      ...fallback,
+      runId: primary.ok ? `${primary.runId}+${fallback.runId}` : fallback.runId,
+      availabilityState: null,
+      availabilityBlockedReason: "CAPTURE_EVIDENCE_CONFLICT",
+      terminal: true,
+      structuredPrimary: primary.ok ? primary : null,
+      fallbackUsed: true,
+      providerAttempts: attempts,
+    };
     if (!primary.ok) return { ...fallback, fallbackUsed: true, primaryError: primary.error, providerAttempts: attempts };
     if (identityRecapture) return {
       // Require identity and availability from the same fallback capture.

@@ -218,9 +218,9 @@
   },
   {
     "id": "miele-plinth-filter-07070070",
-    "category": "explicit-out-of-stock",
-    "expected": "OUT_OF_STOCK",
-    "labelEvidence": "Unavailable online",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
     "source": {
       "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid07070070/",
       "productTitle": "Plinth filter for tumble dryers",
@@ -242,9 +242,9 @@
   },
   {
     "id": "miele-plinth-filter-09688381",
-    "category": "explicit-out-of-stock",
-    "expected": "OUT_OF_STOCK",
-    "labelEvidence": "Unavailable online",
+    "category": "explicit-in-stock",
+    "expected": "IN_STOCK",
+    "labelEvidence": "In stock",
     "source": {
       "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid09688381/",
       "productTitle": "Plinth filter for tumble dryers",
@@ -278,9 +278,9 @@
   },
   {
     "id": "miele-plinth-filter-09499230",
-    "category": "explicit-in-stock",
-    "expected": "IN_STOCK",
-    "labelEvidence": "In stock",
+    "category": "explicit-out-of-stock",
+    "expected": "OUT_OF_STOCK",
+    "labelEvidence": "Unavailable online",
     "source": {
       "url": "https://shop.miele.hk/en/laundry/laundry-spare-parts/plinth-filter-for-tumble-dryers-zid09499230/",
       "productTitle": "Plinth filter for tumble dryers",

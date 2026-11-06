@@ -338,3 +338,45 @@ test("an AI reader cannot override conflicting primary identity when structured 
     assert.equal(result.source.lastConfirmedAt, null);
   } finally { db.close(); }
 });
+
+for (const identity of ["legacy empty-term", "configured"])
+for (const structuredStock of [true, false]) test(`${identity} source cannot borrow the primary title for an unrelated fallback (${structuredStock ? "structured" : "text"} stock)`, async () => {
+  const wrongTitle = "Dawn Powerwash Dish Soap";
+  const captured = fallbackCapture({ product: { name: wrongTitle,
+    ...(structuredStock ? {} : { offers: [] }) }, capture: { title: wrongTitle, visibleText: `${wrongTitle}. In stock` } });
+  const { provider, calls } = fallbackProvider({ primary: { offers: { price: 949.95 },
+    ...(identity === "configured" ? { productId: numericId } : {}) }, rendered: false, captured });
+  const db = createDatabase();
+  const shop = "legacy-empty-identity.myshopify.com";
+  let aiCalls = 0;
+  let capturedResult;
+  const fetchPage = provider.fetchPage.bind(provider);
+  provider.fetchPage = async source => { capturedResult = await fetchPage(source); return capturedResult; };
+  try {
+    db.upsertTenant({ shop });
+    // Direct database insertion reproduces a pre-validation legacy connection.
+    // The modern add-source flow rejects an entirely empty supplier identity.
+    const source = db.addSource(shop, { ...approvedSource, sku: "legacy-fixture",
+      ...(identity === "legacy empty-term" ? { supplierProductId: null, supplierSku: null, supplierVariantId: null, matchTerms: [] } : {}) });
+    assert.deepEqual(db.getSource(shop, source.id).matchTerms, identity === "legacy empty-term" ? [] : approvedSource.matchTerms);
+    const service = new SupplierSignalService({ db, provider, supportedDomains: ["supplier.example"],
+      evidenceReader: { analyze: async () => { aiCalls++; return { ok: true, productMatch: "MATCH", availability: "IN_STOCK",
+        evidenceQuote: "In stock", confidence: 0.99 }; } } });
+    const result = await service.checkSource(shop, source.id);
+    assertBoundedCalls(calls);
+    assert.equal(result.observation.state, "UNCERTAIN");
+    assert.match(result.observation.reason, /different product/);
+    assert.equal(result.observation.factual, false);
+    assert.equal(result.source.lastConfirmedAt, null);
+    assert.equal(db.getSource(shop, source.id).lastState, null);
+    assert.equal(db.listObservations(shop, 30, source.id)[0].state, "UNCERTAIN");
+    assert.equal(db.listDecisionRecords(shop, 30, source.id)[0].decision_source, "SAFETY_GATE");
+    assert.equal(db.listAlerts(shop).length, 0);
+    assert.equal(aiCalls, 0);
+    assert.equal(capturedResult.title, wrongTitle);
+    assert.equal(capturedResult.text, captured.visibleText);
+    assert.equal(capturedResult.terminal, true);
+    assert.equal(capturedResult.availabilityBlockedReason, "CAPTURE_EVIDENCE_CONFLICT");
+    assert.ok(capturedResult.evidenceRecords.every(record => record.snapshotId === capturedResult.pageSnapshotId));
+  } finally { db.close(); }
+});
